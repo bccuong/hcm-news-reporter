@@ -142,6 +142,8 @@ export const SettingsSchema = z.object({
     .default({}),
   collection: z
     .object({
+      /** articles downloaded per publisher per run (all sources); a source may set a LOWER limit of its own */
+      maxArticlesPerSource: z.number().int().min(1).max(2000).default(50),
       maxConcurrentRequests: z.number().int().min(1).max(16).default(5),
       maxRequestsPerHost: z.number().int().min(1).max(8).default(2),
       timeoutMs: z.number().int().min(2000).max(120000).default(15000),

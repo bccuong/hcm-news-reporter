@@ -120,6 +120,20 @@ describe('collection run with candidate ledger (DIS-01..07, LED-01/02, UI-03)', 
     expect((await stores.getCandidates('run_limit')).some((c) => c.url === U.late)).toBe(false);
   });
 
+  it('global per-publisher article limit (Cài đặt): FETCH_LIMIT recorded, in-window articles fetched first', async () => {
+    const { stores, settings, http } = setup();
+    settings.collection.maxArticlesPerSource = 1;
+    const m = await runCollection({ runId: 'run_cap', window: WINDOW, trigger: 'fixture', settings, sources: [fixtureSources()[0]!], stores, http });
+    const cands = await stores.getCandidates('run_cap');
+    const fetched = cands.filter((c) => c.attempts > 0);
+    expect(fetched).toHaveLength(1);
+    expect(cands.some((c) => c.reasonCode === 'FETCH_LIMIT')).toBe(true);
+    expect(m.sources[0]!.limitReached).toBe(true);
+    // the one fetch went to an article dated inside the window (by its feed date)
+    const fd = fetched[0]!.discoveredVia.map((d) => d.feedPublishedAt).find(Boolean);
+    if (fd) expect(Date.parse(fd) >= Date.parse(WINDOW.from) && Date.parse(fd) < Date.parse(WINDOW.to)).toBe(true);
+  });
+
   it('recovers after interruption and retry delta is visible (LED-01, LED-03)', async () => {
     const { stores, settings, http } = setup();
     const ctl = new AbortController();

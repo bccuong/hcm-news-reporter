@@ -275,10 +275,26 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
 
     // Triage + fetch
     let fetches = 0;
-    const todo = mine.filter((c) => {
-      if (ctx.retryCandidateIds) return ctx.retryCandidateIds.includes(c.id);
-      return ['discovered', 'fetch_queued', 'fetched', 'retry_pending', 'fetch_failed'].includes(c.state);
-    });
+    // global per-publisher limit (Cài đặt › Hiệu năng); a source can only lower it
+    const cap = Math.min(src.crawlLimits.maxArticleFetches, settings.collection.maxArticlesPerSource);
+    const winFrom = new Date(ctx.window.from).getTime();
+    const winTo = new Date(ctx.window.to).getTime();
+    /** fetch order under a limit: dated inside the window (newest first) → undated → dated outside */
+    const rank = (c: Candidate): [number, number] => {
+      const fd = c.discoveredVia.map((d) => d.feedPublishedAt).find(Boolean);
+      const hint = fd ? null : urlDateHint(c.url);
+      const t = fd ? new Date(fd).getTime() : hint ? new Date(`${hint}T12:00:00+07:00`).getTime() : NaN;
+      if (Number.isNaN(t)) return [1, 0];
+      return [t >= winFrom && t < winTo ? 0 : 2, -t];
+    };
+    const todo = mine
+      .filter((c) => {
+        if (ctx.retryCandidateIds) return ctx.retryCandidateIds.includes(c.id);
+        return ['discovered', 'fetch_queued', 'fetched', 'retry_pending', 'fetch_failed'].includes(c.state);
+      })
+      .map((c) => ({ c, r: rank(c) }))
+      .sort((a, b) => a.r[0] - b.r[0] || a.r[1] - b.r[1])
+      .map((x) => x.c);
     for (const c of todo) {
       if (ctx.signal?.aborted) break;
       if (excludeRe && excludeRe.test(new URL(c.url).pathname)) {
@@ -309,8 +325,8 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
           continue;
         }
       }
-      if (fetches >= src.crawlLimits.maxArticleFetches) {
-        ledger.set(c, 'retry_pending', 'FETCH_LIMIT', `Vượt giới hạn ${src.crawlLimits.maxArticleFetches} bài/nguồn – bấm "Mở rộng quét" để tải tiếp`);
+      if (fetches >= cap) {
+        ledger.set(c, 'retry_pending', 'FETCH_LIMIT', `Vượt giới hạn ${cap} bài/báo mỗi lượt (Cài đặt › Hiệu năng) – tăng giới hạn hoặc bấm "Thử lại" để tải tiếp`);
         stats.limitReached = true;
         continue;
       }

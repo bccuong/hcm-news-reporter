@@ -506,6 +506,8 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
 function PerfPanel({ s, up }: { s: Settings; up: Up }) {
   return (
     <Section title="Mạng & hiệu năng">
+      <NumberField label="Tối đa bài tải mỗi báo / lượt thu thập" value={s.collection.maxArticlesPerSource} min={1} max={2000} onChange={(n) => up('collection', { maxArticlesPerSource: n })} />
+      <p className="-mt-1 text-xs text-slate-500">Áp dụng cho mọi báo; ưu tiên tải bài có ngày trong khung giờ, mới nhất trước. Mỗi nguồn (Nguồn tin) có thể đặt giới hạn thấp hơn. Bài vượt giới hạn ghi "FETCH_LIMIT" trong Sổ ứng viên.</p>
       <NumberField label="Tổng yêu cầu đồng thời" value={s.collection.maxConcurrentRequests} min={1} max={16} onChange={(n) => up('collection', { maxConcurrentRequests: n })} />
       <NumberField label="Yêu cầu đồng thời mỗi báo" value={s.collection.maxRequestsPerHost} min={1} max={8} onChange={(n) => up('collection', { maxRequestsPerHost: n })} help="Giữ 1–2 để lịch sự với máy chủ báo" />
       {s.collection.maxRequestsPerHost > 3 && <p className="text-xs text-amber-700">Cảnh báo: nhiều kết nối/báo có thể khiến báo chặn IP.</p>}

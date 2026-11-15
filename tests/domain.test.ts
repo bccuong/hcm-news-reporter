@@ -144,11 +144,13 @@ describe('editorial assessment is independent of topic', () => {
 });
 
 describe('Skill websites.txt import (UI-09)', () => {
-  it('imports every entry as editable source; web: lines become manual_only', () => {
+  it('imports every entry as editable source; Dân trí enabled by default; web: lines become manual_only', () => {
     const txt = readFileSync('src/domain/data/skill-websites.txt', 'utf8');
     const r = parseWebsitesTxt(txt);
     expect(r.sources.map((s) => s.id)).toEqual(['thanhnien-vn', 'vnexpress-net', 'dantri-com-vn', 'tuoitre-vn', 'baoxaydung-vn', 'sggp-org-vn']);
-    const dt = r.sources.find((s) => s.id === 'dantri-com-vn')!;
+    expect(r.sources.every((s) => s.enabled)).toBe(true); // owner's decision 15/11/2026: Dân trí collected by default
+    // the original Skill's "web:" prefix still means "publisher blocks automatic collection"
+    const dt = parseWebsitesTxt('web: https://dantri.com.vn').sources[0]!;
     expect(dt.fetchMode).toBe('manual_only');
     expect(dt.enabled).toBe(false);
     expect(r.sources.find((s) => s.id === 'thanhnien-vn')!.rssUrls).toContain('https://thanhnien.vn/rss/thoi-su.rss');
