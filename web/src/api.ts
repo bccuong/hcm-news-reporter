@@ -13,7 +13,9 @@ export interface ExportResult { ok: boolean; dryRun?: boolean; blockers?: string
 export interface HistoryEntry { id: string; at: string; kind: string; summary: string }
 
 export interface Api {
-  mode: 'local' | 'demo';
+  mode: 'local' | 'demo' | 'live';
+  meta?(): Promise<{ generatedAt: string; schedule: string } | null>;
+  refresh?(): void;
   getSettings(): Promise<Settings>;
   saveSettings(s: Settings, summary: string): Promise<Settings>;
   getSources(): Promise<Source[]>;
@@ -136,14 +138,55 @@ const store = {
 };
 
 interface DemoBundle { manifest: RunManifest; candidates: Candidate[]; articles: Article[] }
-const NO_NET = 'Bản demo trên GitHub Pages không truy cập trực tiếp được website báo (trình duyệt chặn CORS). Hãy chạy bản local trên Windows (npm start) để thu thập thật.';
+const NO_NET = 'Bản web trên GitHub Pages chỉ để xem: dữ liệu được thu thập tự động mỗi giờ trên máy chủ GitHub. Muốn tự thu thập, sửa cấu hình hay xuất báo cáo theo mẫu Sở, hãy dùng bản local trên Windows (npm start).';
+
+/** Redacted public article (scripts/cloud-collect.ts) → Article shape used by the UI (no full text, no photos). */
+function fromPublic(p: any, runId: string, generatedAt: string): Article {
+  return {
+    id: p.id, runId, sourceId: p.sourceId, sourceName: p.sourceName, originType: 'website', originalUrl: p.url, canonicalUrl: p.url, title: p.title, sapo: p.sapo,
+    bodyText: '', contentSections: [], articleLinks: [], author: null, publishedAt: p.publishedAt, modifiedAt: p.modifiedAt, collectedAt: generatedAt,
+    dateConfidence: p.dateConfidence, dateEvidence: p.dateEvidence ?? [], extractionAdapterVersion: 'cloud', extractionCompleteness: p.extractionCompleteness,
+    extractionWarnings: p.extractionWarnings ?? [], continuation: { detected: false, urls: [] }, location: p.location, relevance: p.relevance,
+    primaryCategory: p.primaryCategory, secondaryCategories: [], classificationEvidence: p.classificationEvidence ?? [], suggestedAssessment: p.suggestedAssessment,
+    assessmentEvidence: p.assessmentEvidence ?? [], imageCandidates: [], duplicateGroupId: p.duplicateGroupId, warnings: [],
+    publicSections: p.sections,
+  } as Article & { publicSections: unknown };
+}
 
 class DemoApi implements Api {
-  mode = 'demo' as const;
-  private bundle: Promise<DemoBundle> | null = null;
-  private load() {
-    this.bundle ??= fetch(`${import.meta.env.BASE_URL}demo/run.json`).then((r) => r.json() as Promise<DemoBundle>);
-    return this.bundle;
+  mode: 'demo' | 'live' = import.meta.env.VITE_LIVE ? 'live' : 'demo';
+  private bundles = new Map<string, Promise<DemoBundle>>();
+  private index: Promise<any> | null = null;
+  private liveIndex() {
+    this.index ??= fetch(`${import.meta.env.BASE_URL}live/index.json`, { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null));
+    return this.index;
+  }
+  private latestId = '';
+  private load(id?: string): Promise<DemoBundle> {
+    if (this.mode === 'demo') {
+      if (!this.bundles.has('demo')) this.bundles.set('demo', fetch(`${import.meta.env.BASE_URL}demo/run.json`).then((r) => r.json() as Promise<DemoBundle>));
+      return this.bundles.get('demo')!;
+    }
+    const runId = id || this.latestId;
+    if (!this.bundles.has(runId)) {
+      const date = runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+      this.bundles.set(
+        runId,
+        fetch(`${import.meta.env.BASE_URL}live/${date}.json`, { cache: 'no-cache' })
+          .then((r) => r.json())
+          .then((d: any) => ({ manifest: d.manifest, candidates: d.candidates.map((c: Candidate) => ({ ...c, history: [] })), articles: d.articles.map((a: any) => fromPublic(a, runId, d.generatedAt)) })),
+      );
+    }
+    return this.bundles.get(runId)!;
+  }
+  refresh() {
+    this.index = null;
+    this.bundles.clear();
+  }
+  async meta() {
+    if (this.mode !== 'live') return null;
+    const i = await this.liveIndex();
+    return i ? { generatedAt: i.generatedAt as string, schedule: i.schedule as string } : null;
   }
   private hist(kind: string, summary: string, value: unknown) {
     const h = store.get<Array<HistoryEntry & { value: unknown }>>('history') ?? [];
@@ -209,25 +252,34 @@ class DemoApi implements Api {
     await this.saveSettings(b.settings, 'Khôi phục từ bản sao lưu');
     await this.saveSources(b.sources, 'Khôi phục từ bản sao lưu');
   }
-  async listRuns() {
-    return [{ ...(await this.load()).manifest, active: false }];
+  async listRuns(): Promise<RunInfo[]> {
+    if (this.mode === 'demo') return [{ ...(await this.load()).manifest, active: false }];
+    const i = await this.liveIndex();
+    const days: any[] = i?.days ?? [];
+    const runs = days.map((d) => ({
+      runId: `run_live_${d.reportDate.replace(/-/g, '')}`, createdAt: d.generatedAt, finishedAt: d.generatedAt, window: d.window, trigger: 'auto' as const,
+      status: 'completed' as const, sources: [], counts: d.counts, completeness: d.completeness, settingsHash: '', notes: d.provisional ? ['Kỳ đang diễn ra – tạm thời'] : [], active: false,
+    }));
+    this.latestId = runs[0]?.runId ?? '';
+    return runs;
   }
   async startRun(): Promise<never> {
     throw new ApiError(NO_NET);
   }
-  async getRun() {
-    const b = await this.load();
-    return { ...b.manifest, active: false, reconciliation: { total: b.candidates.length, accounted: b.candidates.length, transient: 0, balanced: true } };
+  async getRun(id: string) {
+    const b = await this.load(id);
+    const rec = (b.manifest as RunInfo).reconciliation ?? { total: b.candidates.length, accounted: b.candidates.length, transient: 0, balanced: true };
+    return { ...b.manifest, active: false, reconciliation: rec };
   }
   async cancel() {}
   async retry(): Promise<never> {
     throw new ApiError(NO_NET);
   }
-  async candidates() {
-    return (await this.load()).candidates;
+  async candidates(id: string) {
+    return (await this.load(id)).candidates;
   }
-  async articles() {
-    return (await this.load()).articles;
+  async articles(id: string) {
+    return (await this.load(id)).articles;
   }
   async review(id: string) {
     return store.get<Record<string, ReviewDecision>>(`review:${id}`) ?? {};
@@ -249,10 +301,10 @@ class DemoApi implements Api {
   async exportRun(id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean): Promise<ExportResult> {
     const { assembleStories } = await import('../../src/reports/assemble');
     const { buildReportPptx, checkFit } = await import('../../src/reports/pptx');
-    const b = await this.load();
+    const b = await this.load(id);
     const settings = await this.getSettings();
     const asm = assembleStories(b.articles, await this.review(id), settings);
-    const warn = [...asm.warnings, ...checkFit(asm.stories).map((f) => f.message), 'Bản demo: không nhúng ảnh (fixture không có ảnh thật).'];
+    const warn = [...asm.warnings, ...checkFit(asm.stories).map((f) => f.message), 'Bản web: bố cục DEMO, không nhúng ảnh báo (báo cáo theo mẫu Sở chỉ xuất ở bản local).'];
     if (asm.blockers.length || dryRun) return { ok: false, dryRun, blockers: asm.blockers, warnings: warn, stories: asm.stories.length };
     const w = b.manifest.window;
     const d = w.to.slice(0, 10).split('-');

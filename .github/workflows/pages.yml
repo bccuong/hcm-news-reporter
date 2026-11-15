@@ -1,6 +1,8 @@
-name: Test & deploy demo to GitHub Pages
+name: Live data – hourly collection & GitHub Pages deploy
 
 on:
+  schedule:
+    - cron: '7 * * * *' # hourly (UTC; GitHub may start scheduled runs a few minutes late)
   push:
     branches: [main]
   workflow_dispatch:
@@ -12,11 +14,12 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false # never cut a running collection; runs queue instead
 
 jobs:
-  build:
+  collect-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,17 +27,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:ui
+      # Real collection from the configured publishers (redacted public dataset: no full text, no photos).
+      # If this step fails, the job stops and the previously deployed site stays online unchanged.
+      - name: Collect live data
+        run: npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/hcm-news-reporter/" --out web/public/live
       - run: npm run build:pages
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/pages
 
   deploy:
-    needs: build
+    needs: collect-and-build
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -101,6 +101,30 @@ export function App() {
     };
   }, [runId, loadRun]);
 
+  // live (GitHub Pages) mode: show last update and check for a newer hourly dataset every 5 minutes
+  const [live, setLive] = useState<{ generatedAt: string; schedule: string } | null>(null);
+  useEffect(() => {
+    if (api.mode !== 'live' || !api.meta) return;
+    api.meta().then(setLive).catch(() => {});
+    const t = setInterval(async () => {
+      api.refresh?.();
+      const m = await api.meta!().catch(() => null);
+      if (!m) return;
+      setLive((prev) => {
+        if (prev && prev.generatedAt !== m.generatedAt) {
+          toast('info', `Có dữ liệu mới (cập nhật ${formatVn(m.generatedAt)}) – đang tải lại`);
+          api.listRuns().then((rs) => {
+            setRuns(rs);
+            if (rs[0]) setRunId(rs[0].runId);
+            if (rs[0]) loadRun(rs[0].runId).catch(() => {});
+          });
+        }
+        return m;
+      });
+    }, 5 * 60_000);
+    return () => clearInterval(t);
+  }, [loadRun, toast]);
+
   const windowIso = useMemo(() => {
     try {
       return { from: localInputToVnIso(from), to: localInputToVnIso(to) };
@@ -172,6 +196,11 @@ export function App() {
           <b>BẢN DEMO trên GitHub Pages</b> – dữ liệu là bài <b>mẫu thử tổng hợp</b> (fixture, không phải tin thật) chạy qua đúng bộ thu thập/bóc tách của ứng dụng. Cài đặt lưu trong trình duyệt này. Thu thập báo thật cần bản local trên Windows.
         </div>
       )}
+      {api.mode === 'live' && (
+        <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
+          <b>DỮ LIỆU THẬT</b> – thu thập tự động mỗi giờ trên máy chủ GitHub{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}. Bản web <b>chỉ để xem</b>: tiêu đề, sapo ngắn, nguồn, độ phủ (không đăng toàn văn bài). Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.
+        </div>
+      )}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-[1500px] items-center gap-3 px-4 py-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-navy-700 text-sm font-bold text-white">ĐT</div>
@@ -192,6 +221,26 @@ export function App() {
 
       <main className="mx-auto max-w-[1500px] space-y-4 px-4 py-4">
         {/* reporting window */}
+        {api.mode === 'live' ? (
+          <section className="card flex flex-wrap items-end gap-3 p-3" data-testid="live-periods">
+            <label>
+              <span className="label">Kỳ báo cáo (dữ liệu thu thập tự động)</span>
+              <select className="input w-96" value={runId ?? ''} onChange={(e) => setRunId(e.target.value)}>
+                {runs.map((r) => (
+                  <option key={r.runId} value={r.runId}>
+                    Sáng {formatVn(r.window.to).slice(6)} · {formatVn(r.window.from)} → {formatVn(r.window.to)}{r.notes.some((x) => /đang diễn ra/.test(x)) ? ' · ĐANG DIỄN RA' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="text-xs text-slate-500">
+              Asia/Ho_Chi_Minh · khung [từ, đến)
+              {run?.notes.some((x) => /đang diễn ra/.test(x)) && <div className="font-semibold text-amber-700">Kỳ chưa kết thúc – số liệu còn thay đổi ở các lần cập nhật sau.</div>}
+            </div>
+            <span className="flex-1" />
+            <div className="text-right text-xs text-slate-500">{live?.schedule}</div>
+          </section>
+        ) : (
         <section className="card flex flex-wrap items-end gap-3 p-3">
           <div>
             <span className="label">Khung giờ</span>
@@ -222,7 +271,7 @@ export function App() {
               <Square className="h-4 w-4" /> Dừng
             </button>
           ) : (
-            <button className="btn-primary" disabled={!!windowErr || api.mode === 'demo' || !online} onClick={collect} title={api.mode === 'demo' ? 'Bản demo không thu thập báo thật' : ''}>
+            <button className="btn-primary" disabled={!!windowErr || api.mode !== 'local' || !online} onClick={collect} title={api.mode !== 'local' ? 'Bản web chỉ để xem – dữ liệu tự thu thập mỗi giờ; tự thu thập bằng bản local' : ''}>
               <Play className="h-4 w-4" /> Thu thập
             </button>
           )}
@@ -239,6 +288,7 @@ export function App() {
             </label>
           )}
         </section>
+        )}
 
         {/* source strip */}
         {run && (
@@ -523,7 +573,7 @@ function Coverage({ run, cands, onRetry, onOpenSettings }: { run: RunInfo; cands
           </b>
         </div>
         <span className="flex-1" />
-        <button className="btn-ghost" disabled={run.active || api.mode === 'demo'} onClick={() => onRetry({ mode: 'failed' })}><RefreshCw className="h-4 w-4" /> Thử lại link lỗi</button>
+        <button className="btn-ghost" disabled={run.active || api.mode !== 'local'} onClick={() => onRetry({ mode: 'failed' })}><RefreshCw className="h-4 w-4" /> Thử lại link lỗi</button>
       </div>
       <p className="text-xs text-slate-500">"Đủ 100%" chỉ có nghĩa mọi link <b>đã phát hiện</b> đều có trạng thái; không khẳng định đã bắt được mọi bài báo đăng (bài không xuất hiện ở RSS/sitemap/chuyên mục sẽ không thấy được).</p>
       {run.sources.map((s) => {
@@ -537,8 +587,8 @@ function Coverage({ run, cands, onRetry, onOpenSettings }: { run: RunInfo; cands
               {s.limitReached && <span className="chip border-amber-300 bg-amber-50 text-amber-800">Chạm giới hạn quét – có thể còn bài chưa thấy</span>}
               {s.error && <span className="text-xs text-red-700">{s.error}</span>}
               <span className="flex-1" />
-              <button className="btn-ghost btn-xs" disabled={run.active || api.mode === 'demo'} onClick={() => onRetry({ mode: 'source', sourceId: s.sourceId })}>Quét lại nguồn này</button>
-              <button className="btn-ghost btn-xs" disabled={run.active || api.mode === 'demo'} onClick={() => onRetry({ mode: 'expand', sourceId: s.sourceId, extraLookbackHours: 12 })}>Mở rộng quét (+12 giờ)</button>
+              <button className="btn-ghost btn-xs" disabled={run.active || api.mode !== 'local'} onClick={() => onRetry({ mode: 'source', sourceId: s.sourceId })}>Quét lại nguồn này</button>
+              <button className="btn-ghost btn-xs" disabled={run.active || api.mode !== 'local'} onClick={() => onRetry({ mode: 'expand', sourceId: s.sourceId, extraLookbackHours: 12 })}>Mở rộng quét (+12 giờ)</button>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-8">
               {[['Trang DS đã duyệt', `${s.listingPagesVisited}/${s.listingPageLimit}`], ['Link duy nhất', mine.length], ['Sẵn sàng', by('ready_for_review')], ['Bóc tách thiếu', by('parsed_partial')], ['Chưa rõ giờ', by('date_unverified')], ['Ngoài khung', by('outside_window')], ['Không liên quan', by('irrelevant_with_evidence')], ['Lỗi/chặn', by('fetch_failed') + by('blocked') + by('parse_failed')]].map(([l, v]) => (
@@ -546,7 +596,7 @@ function Coverage({ run, cands, onRetry, onOpenSettings }: { run: RunInfo; cands
               ))}
             </div>
             {(s as any).newSinceLast !== undefined && <p className="mt-1 text-xs text-slate-500">Lần quét gần nhất thêm mới: {(s as any).newSinceLast} link</p>}
-            {s.adapter && <AdapterHealthCard h={s.adapter} disabled={run.active || api.mode === 'demo'} onRescan={() => onRetry({ mode: 'source', sourceId: s.sourceId })} onOpenSettings={onOpenSettings} />}
+            {s.adapter && <AdapterHealthCard h={s.adapter} disabled={run.active || api.mode !== 'local'} onRescan={() => onRetry({ mode: 'source', sourceId: s.sourceId })} onOpenSettings={onOpenSettings} />}
             <table className="mt-2 w-full">
               <thead><tr><th className="th">Kênh</th><th className="th">URL</th><th className="th">Kết quả</th><th className="th">Link</th></tr></thead>
               <tbody>
@@ -600,7 +650,19 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
             <div className={`rounded border p-2 text-xs ${a.extractionCompleteness === 'auto_checks_passed' ? 'border-green-200 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
               <b>Độ đầy đủ:</b> {a.extractionCompleteness === 'auto_checks_passed' ? 'Đạt các kiểm tra tự động (chưa phải xác nhận của người duyệt)' : a.extractionCompleteness === 'partial' ? 'Có dấu hiệu thiếu nội dung' : 'Lỗi'}
               {a.extractionWarnings.map((w) => <div key={w} className="text-amber-900">⚠ {w}</div>)}
-              <div className="mt-1">Bộ bóc tách: {a.extractionAdapterVersion} · {a.contentSections.filter((s) => s.type === 'paragraph').length} đoạn · {a.contentSections.filter((s) => s.type === 'heading').length} tiêu đề phụ · {a.contentSections.filter((s) => s.type === 'table').length} bảng · {a.contentSections.filter((s) => s.type === 'figure').length} ảnh</div>
+              {(() => {
+                const pub = (a as Article & { publicSections?: { paragraphs: number; headings: number; tables: number; figures: number } }).publicSections;
+                const k = pub ?? {
+                  paragraphs: a.contentSections.filter((s) => s.type === 'paragraph').length, headings: a.contentSections.filter((s) => s.type === 'heading').length,
+                  tables: a.contentSections.filter((s) => s.type === 'table').length, figures: a.contentSections.filter((s) => s.type === 'figure').length,
+                };
+                return (
+                  <div className="mt-1">
+                    Bộ bóc tách: {a.extractionAdapterVersion} · {k.paragraphs} đoạn · {k.headings} tiêu đề phụ · {k.tables} bảng · {k.figures} ảnh
+                    {pub && <div className="mt-1 text-slate-600">Bản web công khai không đăng toàn văn bài – bấm "Mở bài gốc" để đọc đầy đủ.</div>}
+                  </div>
+                );
+              })()}
               <label className="mt-1 flex items-center gap-1"><input type="checkbox" checked={!!r?.extractionMarkedComplete} onChange={(e) => onPatch({ extractionMarkedComplete: e.target.checked })} /> Tôi đã đối chiếu bài gốc – xác nhận đủ nội dung quan trọng</label>
             </div>
             <div className="rounded border border-slate-200 p-2 text-xs">

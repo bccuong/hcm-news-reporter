@@ -2,7 +2,7 @@
 
 Ứng dụng **local-first** (chạy trên máy Windows) tổng hợp điểm tin báo chí ngành xây dựng TP.HCM: thu thập bài từ các báo cấu hình, ghi **sổ ứng viên** cho mọi link phát hiện (không bỏ sót âm thầm), bóc tách toàn văn có kiểm tra độ đầy đủ, duyệt biên tập, và xuất PowerPoint.
 
-- **Demo trực tuyến (dữ liệu mẫu thử, không phải tin thật):** https://bccuong.github.io/hcm-news-reporter/
+- **Trang web dữ liệu thật (chỉ xem, cập nhật tự động mỗi giờ):** https://bccuong.github.io/hcm-news-reporter/ – xem [deploy/README.md](deploy/README.md)
 - Mọi cấu hình (nguồn tin, RSS/sitemap/chuyên mục, từ khóa, quy tắc AND/OR/NOT, địa bàn, khung giờ, giới hạn quét, mẫu báo cáo…) **chỉnh trong giao diện Cài đặt**. Không cần sửa JSON.
 
 > **Trạng thái:** MVP. Xem [PROGRESS.md](PROGRESS.md) và [ACCEPTANCE_REPORT.md](ACCEPTANCE_REPORT.md). Xuất PPTX theo **đúng mẫu gốc của Sở** (khi đã tải mẫu) và PDF; đã kiểm tra bằng Microsoft PowerPoint và LibreOffice. Tin cùng sự kiện từ nhiều báo được gộp thành một tin nhiều nguồn.

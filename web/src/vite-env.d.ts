@@ -5,4 +5,5 @@ declare module '*.txt?raw' {
 }
 interface ImportMetaEnv {
   readonly VITE_DEMO?: string;
+  readonly VITE_LIVE?: string;
 }

@@ -31,3 +31,4 @@ Thumbs.db
 /dist/
 /test-results/
 /playwright-report/
+/web/public/live/

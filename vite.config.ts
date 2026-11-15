@@ -1,13 +1,18 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 
 export default defineConfig(({ mode }) => ({
   root: path.resolve(__dirname, 'web'),
   base: mode === 'pages' ? '/hcm-news-reporter/' : '/',
   plugins: [react()],
   // static GitHub Pages build runs the in-browser demo API (no secrets involved)
-  define: { 'import.meta.env.VITE_DEMO': JSON.stringify(mode === 'pages' ? '1' : '') },
+  // live mode when the hourly cloud collector produced real data (web/public/live/index.json), demo fixtures otherwise
+  define: {
+    'import.meta.env.VITE_DEMO': JSON.stringify(mode === 'pages' ? '1' : ''),
+    'import.meta.env.VITE_LIVE': JSON.stringify(mode === 'pages' && existsSync(path.resolve(__dirname, 'web/public/live/index.json')) ? '1' : ''),
+  },
   build: {
     outDir: path.resolve(__dirname, mode === 'pages' ? 'dist/pages' : 'dist/web'),
     emptyOutDir: true,
