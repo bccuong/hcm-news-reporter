@@ -165,6 +165,8 @@ export const SettingsSchema = z.object({
       activePresetId: z.string().default(''),
       /** When no rule/keyword matches: send to review queue instead of excluding */
       unknownRelevancePolicy: z.enum(['review', 'exclude_with_reason']).default('review'),
+      /** title or sapo must contain a sector keyword (tuned on the 15/11/2026 live sample) */
+      requireSectorInLead: z.boolean().default(true),
     })
     .default({}),
   location: z
@@ -173,6 +175,10 @@ export const SettingsSchema = z.object({
       otherProvinces: z.array(z.string()).default([]),
       requireHcmEvidence: z.boolean().default(true),
       connectedAreasForReview: z.boolean().default(true),
+      /** no HCM area/alias/landmark at all → excluded with reason (visible in ledger) or review queue */
+      noEvidencePolicy: z.enum(['review', 'exclude_with_reason']).default('exclude_with_reason'),
+      /** HCM not in title/sapo: at least this many distinct HCM places in the body to be "ready" (else review) */
+      minBodyAreasWithoutLead: z.number().int().min(1).max(10).default(2),
     })
     .default({}),
   categories: z.array(CategorySchema).default([]),

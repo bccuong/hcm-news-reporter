@@ -5,6 +5,10 @@ export interface LocationResult {
   status: 'hcm' | 'connected' | 'other_province' | 'unknown';
   evidence: string[];
   score: number;
+  /** an HCM area/alias appears in the title or sapo (the lead) */
+  leadHit?: boolean;
+  /** number of distinct HCM areas matched anywhere */
+  distinct?: number;
 }
 
 /**
@@ -12,11 +16,19 @@ export interface LocationResult {
  * ward/commune names (prefixed where ambiguous), landmarks and legacy district names count as evidence.
  * Absence of evidence yields "unknown" (review queue), never a silent exclusion.
  */
-export function detectLocation(title: string, body: string, loc: Settings['location']): LocationResult {
+export function detectLocation(title: string, body: string, loc: Settings['location'], lead = ''): LocationResult {
+  const r = detectLocationInner(title, body, loc, lead);
+  return r;
+}
+
+function detectLocationInner(title: string, body: string, loc: Settings['location'], lead: string): LocationResult {
   const text = `${title}\n${body}`;
+  const leadText = `${title}\n${lead}`;
   const evidence: string[] = [];
   let score = 0;
   let connected = false;
+  let leadHit = false;
+  let distinct = 0;
 
   for (const area of loc.areas) {
     const names = [area.name, ...area.aliases];
@@ -30,6 +42,10 @@ export function detectLocation(title: string, body: string, loc: Settings['locat
         if (idx >= 0) {
           const weight = area.kind === 'city' ? 3 : area.kind === 'connected_area' ? 1 : 2;
           if (area.kind === 'connected_area') connected = true;
+          else {
+            distinct++;
+            if (findWord(leadText, f) >= 0) leadHit = true;
+          }
           score += weight;
           const inTitle = findWord(title, f) >= 0;
           evidence.push(`${area.kind === 'connected_area' ? 'Liên vùng' : 'Địa bàn'}: "${f}"${inTitle ? ' (tiêu đề)' : ''} – ${snippet(text, idx, f.length, 30)}`);
@@ -45,15 +61,16 @@ export function detectLocation(title: string, body: string, loc: Settings['locat
     if (findWord(title, p) >= 0) others.push(p);
   }
 
+  const extra = { leadHit, distinct };
   if (score >= 2 && !(others.length && score < 3)) {
-    return { status: connected && score <= 1 ? 'connected' : 'hcm', evidence, score };
+    return { status: connected && score <= 1 ? 'connected' : 'hcm', evidence, score, ...extra };
   }
-  if (connected) return { status: 'connected', evidence, score };
+  if (connected) return { status: 'connected', evidence, score, ...extra };
   if (others.length) {
-    return { status: 'other_province', evidence: [...evidence, `Tiêu đề nêu địa phương khác: ${others.join(', ')}`], score };
+    return { status: 'other_province', evidence: [...evidence, `Tiêu đề nêu địa phương khác: ${others.join(', ')}`], score, ...extra };
   }
-  if (score > 0) return { status: 'unknown', evidence: [...evidence, 'Bằng chứng địa bàn yếu – cần kiểm tra'], score };
-  return { status: 'unknown', evidence: ['Không tìm thấy bằng chứng địa bàn TP.HCM – cần kiểm tra'], score };
+  if (score > 0) return { status: 'unknown', evidence: [...evidence, 'Bằng chứng địa bàn yếu – cần kiểm tra'], score, ...extra };
+  return { status: 'unknown', evidence: ['Không tìm thấy bằng chứng địa bàn TP.HCM nào (kể cả phường, xã, địa danh)'], score, ...extra };
 }
 
 export function normalizeAreaName(s: string): string {

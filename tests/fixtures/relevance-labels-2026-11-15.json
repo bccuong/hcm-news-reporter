@@ -1,0 +1,15 @@
+{
+  "note": "Relevance labels for the in-window articles of the live run 2026-11-15 (17:00 14/11 -> 08:00 15/11). Labelled by Claude following the Skill criteria (six sectors in HCMC; drop general politics/culture/society/sports even if TP.HCM is mentioned). R = relevant, N = not relevant, B = borderline (excluded from metrics). To be reviewed by the editor.",
+  "run": "run_20261115_mwhq1m59",
+  "R": [
+    "Vụ nổ sập nhà ở TP.HCM: Phong tỏa đường Bùi Văn Ba, di dời bình gas",
+    "Bồi thường đất giấy tay thế nào cho công bằng?",
+    "Gần 30 km Vành đai 3 TP HCM trước thời điểm thông xe",
+    "Gỡ nút thắt đơn giá nhân công để công trường tăng tốc",
+    "Dự án chống ngập hơn 10.000 tỷ đồng: Dự kiến ngày 30-11 vận hành 6 cống ngăn triều"
+  ],
+  "B": [
+    "Bãi cát xây dựng thành điểm vui chơi",
+    "Bắc bộ sắp đón thêm không khí lạnh, mưa dông ở Nam bộ gia tăng"
+  ]
+}

@@ -21,8 +21,8 @@ export function activePresetFor(settings: Settings, sourceId: string) {
  * Combine topic rule + geography into a verdict. Missing evidence -> review (never silently dropped).
  * Only explicit evidence (exclusion phrase, rule NOT branch, other-province title without HCM evidence) yields irrelevant.
  */
-export function judgeRelevance(title: string, body: string, sourceId: string, settings: Settings): RelevanceVerdict {
-  const location = detectLocation(title, body, settings.location);
+export function judgeRelevance(title: string, body: string, sourceId: string, settings: Settings, sapo = ''): RelevanceVerdict {
+  const location = detectLocation(title, body, settings.location, sapo);
   const preset = activePresetFor(settings, sourceId);
   const evidence: string[] = [];
   let ruleTrace: string[] = [];
@@ -51,6 +51,16 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
       location,
     };
   }
+  // Sector must be named in the lead (title/sapo): broad body words ("dự án", "công trình") match too many stories.
+  if (settings.rules.requireSectorInLead) {
+    const lead = classifyCategory(title, sapo, settings.categories);
+    if (!lead.primary) {
+      return {
+        status: 'irrelevant', reasonCode: 'NO_SECTOR_IN_LEAD',
+        evidence: [...evidence, 'Tiêu đề và sapo không có từ khóa của lĩnh vực nào (Cài đặt › Từ khóa & quy tắc để tắt quy tắc này)'], ruleTrace, location,
+      };
+    }
+  }
   if (!topicOk) {
     // Rule did not match. If geography is strongly HCM, still keep for review per unknownRelevancePolicy.
     const policyReview = settings.rules.unknownRelevancePolicy === 'review' && location.status === 'hcm';
@@ -62,7 +72,25 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
       location,
     };
   }
-  if (location.status === 'hcm') return { status: 'relevant', reasonCode: null, evidence: [...evidence, ...location.evidence], ruleTrace, location };
+  if (location.status === 'unknown' && location.score === 0 && settings.location.noEvidencePolicy === 'exclude_with_reason') {
+    // a clear sector keyword in the TITLE keeps the story reviewable even without place names (never silently lose it)
+    const titleSector = classifyCategory(title, '', settings.categories);
+    const strong = Math.max(0, ...Object.values(titleSector.scores).map((v) => v ?? 0)) >= 3;
+    if (strong) {
+      return { status: 'review', reasonCode: 'LOCATION_UNVERIFIED', evidence: [...evidence, ...location.evidence, `Tiêu đề có từ khóa lĩnh vực (${titleSector.evidence[0] ?? ''}) – giữ lại để kiểm tra địa bàn`], ruleTrace, location };
+    }
+    return { status: 'irrelevant', reasonCode: 'NO_HCM_EVIDENCE', evidence: [...evidence, ...location.evidence], ruleTrace, location };
+  }
+  if (location.status === 'hcm') {
+    // HCM named only in passing deep in the body → editor confirms
+    if (!location.leadHit && (location.distinct ?? 0) < settings.location.minBodyAreasWithoutLead) {
+      return {
+        status: 'review', reasonCode: 'HCM_ONLY_IN_BODY',
+        evidence: [...evidence, ...location.evidence, `TP.HCM không có trong tiêu đề/sapo, chỉ ${location.distinct} địa danh trong thân bài`], ruleTrace, location,
+      };
+    }
+    return { status: 'relevant', reasonCode: null, evidence: [...evidence, ...location.evidence], ruleTrace, location };
+  }
   if (location.status === 'connected' && settings.location.connectedAreasForReview) {
     return { status: 'review', reasonCode: 'CONNECTED_AREA', evidence: [...evidence, ...location.evidence], ruleTrace, location };
   }
@@ -78,7 +106,7 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
 /** Fill relevance/classification fields on an extracted article. */
 export function annotateArticle(a: Article, settings: Settings): Article & { _verdict: RelevanceVerdict } {
   const body = [a.sapo, a.bodyText].join('\n');
-  const verdict = judgeRelevance(a.title, body, a.sourceId, settings);
+  const verdict = judgeRelevance(a.title, body, a.sourceId, settings, a.sapo);
   const cat = classifyCategory(a.title, body, settings.categories);
   const asmt = suggestAssessment(a.title, body);
   // Broad keywords ("dự án", "đất"…) match many unrelated stories: without sector evidence in the title or

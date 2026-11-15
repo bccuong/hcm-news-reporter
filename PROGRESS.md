@@ -9,6 +9,14 @@
 ## Assets
 See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.md`. Tools on this PC: Node 26, Git, gh, **LibreOffice** (installed session 2), Microsoft Edge (used by Playwright locally). Python not installed (not needed).
 
+## Session 6 – done (with evidence)
+- **Relevance precision** measured on the labelled live sample (`tests/fixtures/relevance-labels-2026-11-15.json`, 64 in-window articles, labels by Claude per Skill criteria – editor to review) with `scripts/eval-relevance.ts`:
+  ready precision **0.56 → 0.80**, review queue **37 → 6**, relevant excluded **0** (recall 1.00).
+  Rules (all editable in Settings): sector keyword required in title/sapo (`NO_SECTOR_IN_LEAD`); no HCM evidence at all → excluded (`NO_HCM_EVIDENCE`) unless the title has a clear sector keyword (→ review); HCM only in body with <2 places → review (`HCM_ONLY_IN_BODY`); sports/price exclude phrases; "mưa lớn", "công trường" keywords.
+- Cross-check on 16/11 live data (different day): both HCMC rain/flood stories kept, 17 off-topic excluded with reasons.
+- Regression tests `tests/relevance.test.ts` (7 relevant never excluded, 7 irrelevant with expected reason, settings toggle).
+- Commands: tsc 0 · vitest **68/68** · playwright **7/7**.
+
 ## Session 5 – done (with evidence)
 - **Live public site** (user decision: GitHub Pages auto-updating hourly): `scripts/cloud-collect.ts` runs the real collector on GitHub Actions (`.github/workflows/pages.yml`, cron `7 * * * *` + push), publishes a redacted dataset (titles, links, sapo ≤300 chars, ledger, coverage, adapter health, clusters – no full text, no publisher photos) to `live/`; previous days + adapter baseline carried over from the deployed site; last completed window frozen 2 h after it ends. Pages UI switches to read-only LIVE mode (period selector, last-update banner, 5-min refresh). Tests moved to `.github/workflows/ci.yml`. First cloud run: all 5 sources reachable from GitHub runners (16/11 in-progress 1238 links, 15/11 1223 links).
 - **SGGP adapter:** all 14 `ARTICLE_BODY_MISSING` were video pages (cms-body with `figure.video`, or "short video" feed with no h1). Extractor now recognises video/podcast articles → `parsed_partial` with `MEDIA_ARTICLE` (title, sapo, verified time kept); adapter health ignores media partials; SGGP print-edition pages excluded by URL pattern. Live run: parse_failed 14→**0** (all sources 0), SGGP failure rate 24%→**12%**, 15 video stories kept.
@@ -63,7 +71,7 @@ See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.
 - Demo (GitHub Pages) still uses the DEMO renderer: the Department template is private and not published.
 
 ## Next single executable action
-Relevance precision: live data still marks off-topic stories "ready" (e.g. "Ngày hội Đại đoàn kết", "Sinh viên trường nghề học về xe năng lượng" tagged Xây dựng from generic body words). Build a labelled sample from the live dataset (`live/<date>.json`, ~60 titles marked relevant/irrelevant by the editor), measure precision/recall of `judgeRelevance`, then tighten category keywords/weights in `src/domain/defaults.ts` + `relevance.ts` with a regression test.
+Editor feedback loop: add "Đúng / Không liên quan" buttons in the review list that store a label per article (review file), and extend `scripts/eval-relevance.ts` to read these editor labels across runs – so precision/recall are tracked on real editorial decisions instead of Claude's sample labels.
 
 ## Session handoff log
 | Session date | Changes made | Tests actually run | Next action |
@@ -73,3 +81,4 @@ Relevance precision: live data still marks off-topic stories "ready" (e.g. "Ngà
 | 2026-11-15 (3) | Multi-source stories, PowerPoint verification + PDF backend, list-fit fix | tsc, vitest 42/42, playwright 6/6, PowerPoint render QA | DIS-08 degraded adapter |
 | 2026-11-15 (4) | DIS-08 adapter health + UI, clustering rewrite (union-find, IDF, mutual-best) | tsc, vitest 47/47, playwright 7/7, live run, cluster eval | SGGP adapter |
 | 2026-11-15 (5) | Live GitHub Pages (hourly cloud collection), SGGP video articles | tsc, vitest 52/52, playwright 7/7, cloud run, live run | Relevance precision |
+| 2026-11-15 (6) | Relevance precision rules + labelled evaluation + UI settings | tsc, vitest 68/68, playwright 7/7, eval 15/11 + cross-check 16/11 | Editor feedback labels |

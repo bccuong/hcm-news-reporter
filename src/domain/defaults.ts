@@ -105,7 +105,7 @@ export function parseWebsitesTxt(text: string): { sources: Source[]; comments: s
 
 const TOPIC_KEYWORDS = [
   'xây dựng', 'chung cư', 'nhà ở', 'bất động sản', 'quy hoạch', 'mặt bằng', 'bồi thường', 'thu hồi đất', 'tái định cư', 'metro',
-  'đường sắt', 'cầu', 'nút giao', 'cao tốc', 'vành đai', 'giao thông', 'ùn tắc', 'kẹt xe', 'ngập', 'triều cường', 'thoát nước',
+  'đường sắt', 'cầu', 'nút giao', 'cao tốc', 'vành đai', 'giao thông', 'ùn tắc', 'kẹt xe', 'ngập', 'triều cường', 'mưa lớn', 'thoát nước',
   'hạ tầng', 'công trình', 'sạt lở', 'sụt lún', 'kênh', 'rạch', 'vỉa hè', 'căn hộ', 'sổ hồng', 'giấy phép', 'đô thị', 'xe buýt',
   'đầu tư công', 'giải ngân', 'sập', 'cây xanh', 'công viên', 'cống', 'đê', 'kè', 'thi công', 'dự án', 'nhà xưởng', 'đất đai',
 ];
@@ -183,14 +183,14 @@ export function defaultSettings(): Settings {
         { canonical: 'metro', aliases: ['đường sắt đô thị', 'tàu điện ngầm'] },
         { canonical: 'giải phóng mặt bằng', aliases: ['GPMB', 'bồi thường, hỗ trợ, tái định cư'] },
       ],
-      excludePhrases: ['tuyển dụng', 'khuyến mãi', 'xổ số'],
+      excludePhrases: ['tuyển dụng', 'khuyến mãi', 'xổ số', 'pickleball', 'bóng đá', 'giải chạy', 'tennis', 'cầu lông', 'U23', 'U19', 'dự đoán tỷ số', 'giá vàng', 'giá USD'],
       excludeUrlSections: EXCLUDE_SECTIONS,
     },
     rules: { presets: [defaultRulePreset()], activePresetId: 'preset_nganh_xay_dung' },
     location: { areas: defaultAreas(), otherProvinces: places.other_provinces },
     categories: [
       { code: 'LAND', label: 'Đất đai', priority: 1, keywords: ['thu hồi đất', 'bồi thường', 'giải phóng mặt bằng', 'GPMB', 'quy hoạch sử dụng đất', 'tái định cư', 'đất đai', 'giá đất', 'quỹ đất'] },
-      { code: 'BUILD', label: 'Xây dựng', priority: 2, keywords: ['xây dựng', 'công trình', 'giấy phép xây dựng', 'chất lượng công trình', 'an toàn', 'vi phạm', 'xây dựng trái phép', 'chung cư cũ', 'cấp D', 'thi công', 'sập'] },
+      { code: 'BUILD', label: 'Xây dựng', priority: 2, keywords: ['xây dựng', 'công trình', 'giấy phép xây dựng', 'chất lượng công trình', 'an toàn', 'vi phạm', 'xây dựng trái phép', 'chung cư cũ', 'cấp D', 'thi công', 'công trường', 'sập'] },
       { code: 'INFRA', label: 'Hạ tầng kỹ thuật', priority: 3, keywords: ['thoát nước', 'cấp nước', 'hạ tầng', 'cống', 'vỉa hè', 'cây xanh', 'chiếu sáng', 'công viên', 'kè', 'kênh', 'rạch'] },
       { code: 'TRAFFIC', label: 'Giao thông', priority: 4, keywords: ['giao thông', 'metro', 'đường sắt', 'cầu', 'nút giao', 'cao tốc', 'vành đai', 'ùn tắc', 'kẹt xe', 'xe buýt', 'mở rộng đường'] },
       { code: 'REALESTATE', label: 'Bất động sản/nhà ở', priority: 5, keywords: ['bất động sản', 'nhà ở', 'chung cư', 'căn hộ', 'nhà ở xã hội', 'sổ hồng', 'dự án nhà ở', 'thị trường'] },

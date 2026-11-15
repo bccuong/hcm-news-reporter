@@ -217,6 +217,12 @@ function RulesPanel({ s, setS, sources }: { s: Settings; setS: (fn: (p: Settings
           )}
           <Select label="Khi không khớp quy tắc nhưng đúng địa bàn" value={s.rules.unknownRelevancePolicy} onChange={(v) => setS((x) => (x ? { ...x, rules: { ...x.rules, unknownRelevancePolicy: v } } : x))} options={[['review', 'Đưa vào hàng Cần kiểm tra'], ['exclude_with_reason', 'Loại kèm lý do']]} />
         </div>
+        <Toggle
+          checked={s.rules.requireSectorInLead}
+          onChange={(v) => setS((x) => (x ? { ...x, rules: { ...x.rules, requireSectorInLead: v } } : x))}
+          label="Tiêu đề hoặc sapo phải có từ khóa của một lĩnh vực (bài không có bị loại kèm lý do NO_SECTOR_IN_LEAD, vẫn xem được trong Sổ ứng viên)"
+          help="Đo trên dữ liệu thật 15/11/2026: hàng Cần kiểm tra giảm 37 → 4 bài, không loại nhầm bài liên quan nào. Tắt nếu thấy bỏ sót."
+        />
         {preset && (
           <>
             <div>
@@ -294,6 +300,20 @@ function LocationPanel({ s, up }: { s: Settings; up: Up }) {
       <Section title="Quy tắc địa bàn">
         <Toggle checked={s.location.requireHcmEvidence} onChange={(v) => up('location', { requireHcmEvidence: v })} label="Bắt buộc có bằng chứng địa bàn TP.HCM để vào nhóm sẵn sàng (không có → Cần kiểm tra, không bị bỏ)" />
         <Toggle checked={s.location.connectedAreasForReview} onChange={(v) => up('location', { connectedAreasForReview: v })} label="Dự án liên vùng (Vành đai 3, Long Thành…) đưa vào Cần kiểm tra" />
+        <Select
+          label="Bài không có bất kỳ dấu hiệu địa bàn TP.HCM nào (kể cả phường, xã, địa danh)"
+          value={s.location.noEvidencePolicy}
+          onChange={(v) => up('location', { noEvidencePolicy: v })}
+          options={[['exclude_with_reason', 'Loại kèm lý do NO_HCM_EVIDENCE (xem được trong Sổ ứng viên)'], ['review', 'Đưa vào hàng Cần kiểm tra']]}
+        />
+        <NumberField
+          label="TP.HCM không có ở tiêu đề/sapo: số địa danh TP.HCM tối thiểu trong thân bài để vào nhóm Sẵn sàng"
+          value={s.location.minBodyAreasWithoutLead}
+          min={1}
+          max={10}
+          onChange={(n) => up('location', { minBodyAreasWithoutLead: n })}
+          help="Ít hơn → bài vào hàng Cần kiểm tra (HCM_ONLY_IN_BODY), không bị loại."
+        />
         <ChipEditor values={s.location.otherProvinces} onChange={(v) => up('location', { otherProvinces: v })} label="Địa phương khác (nêu trong tiêu đề mà không có bằng chứng TP.HCM → loại kèm lý do)" />
       </Section>
       <Section
