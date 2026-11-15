@@ -554,7 +554,7 @@ function BackupPanel({ onRestored }: { onRestored: () => void }) {
     const b = await api.backup();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(b, null, 2)], { type: 'application/json' }));
-    a.download = `hcm-news-reporter-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `news-reporter-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
   };
   const restore = async (f: File) => {

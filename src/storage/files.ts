@@ -1,10 +1,14 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-/** Atomic write: temp file + fsync + rename. */
+let tmpSeq = 0;
+/**
+ * Atomic write: temp file + fsync + rename. On Windows the rename fails with EPERM/EBUSY/EACCES while another
+ * handle (a concurrent reader, the indexer or an antivirus scan) has the target open – retried briefly.
+ */
 export async function writeFileAtomic(file: string, data: string | Uint8Array): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  const tmp = `${file}.${process.pid}.${Date.now()}.${++tmpSeq}.tmp`; // unique even for two writes in the same ms
   const fh = await fs.open(tmp, 'w');
   try {
     await fh.writeFile(data);
@@ -12,7 +16,19 @@ export async function writeFileAtomic(file: string, data: string | Uint8Array): 
   } finally {
     await fh.close();
   }
-  await fs.rename(tmp, file);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(tmp, file);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(code ?? '') || attempt >= 12) {
+        await fs.unlink(tmp).catch(() => undefined);
+        throw e;
+      }
+      await new Promise((r) => setTimeout(r, 15 * (attempt + 1)));
+    }
+  }
 }
 
 export async function writeJsonAtomic(file: string, value: unknown): Promise<void> {

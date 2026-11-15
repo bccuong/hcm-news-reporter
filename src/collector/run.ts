@@ -464,7 +464,8 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
   if (degradedArticles.length) await stores.appendArticles(ctx.runId, degradedArticles);
 
   // Same-event clustering (near-duplicates) for reviewer – never auto-merged
-  const arts = [...existingArticles.values()];
+  // deterministic order: concurrent fetches finish in any order, the grouping must not depend on it
+  const arts = [...existingArticles.values()].sort((a, b) => a.id.localeCompare(b.id));
   const beforeGroups = new Map(arts.map((a) => [a.id, a.duplicateGroupId]));
   clusterArticles(arts);
   const regrouped = arts.filter((a) => a.duplicateGroupId !== beforeGroups.get(a.id));

@@ -15,4 +15,4 @@ const { app } = await createApp({
 });
 
 await app.listen({ host: HOST, port });
-console.log(`HCM News Reporter API: http://${HOST}:${port}  (UI: http://${HOST}:${port}/ sau khi build, hoặc http://127.0.0.1:5173 khi chạy npm run dev)`);
+console.log(`News Reporter API: http://${HOST}:${port}  (UI: http://${HOST}:${port}/ sau khi build, hoặc http://127.0.0.1:5173 khi chạy npm run dev)`);

@@ -1,9 +1,9 @@
-# PROGRESS — HCM News Reporter (Claude Code)
+# PROGRESS — News Reporter (formerly HCM News Reporter) (Claude Code)
 
 ## Current status
 - Specification: v1.2
 - Milestones: **M0 DONE · M1 DONE · M2 DONE · M5 DONE (original template; PDF via Microsoft PowerPoint or LibreOffice, visually inspected)** · M3/M4 mostly done · M6 partial
-- Repository: https://github.com/bccuong/hcm-news-reporter (branch `main`, public) · Live site: https://bccuong.github.io/hcm-news-reporter/ (real data, hourly auto collection switchable on the web + on-demand "Thu thập")
+- Repository: https://github.com/bccuong/news-reporter (renamed from hcm-news-reporter on 15/11/2026; branch `main`, public) · Live site: https://bccuong.github.io/news-reporter/ (real data, hourly auto collection switchable on the web + on-demand "Thu thập")
 - Last session: 2026-11-15 (session 8) – last commit `6293e33` (shared team review), all tests green locally
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 

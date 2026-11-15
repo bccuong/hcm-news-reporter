@@ -1,8 +1,8 @@
 {
-  "name": "hcm-news-reporter",
+  "name": "news-reporter",
   "version": "0.1.0",
   "private": true,
-  "description": "HCM News Reporter - ứng dụng local-first tổng hợp điểm tin ngành xây dựng TP.HCM",
+  "description": "News Reporter - ứng dụng local-first tổng hợp điểm tin báo chí theo địa bàn (mặc định: ngành xây dựng TP.HCM)",
   "type": "module",
   "engines": {
     "node": ">=20"

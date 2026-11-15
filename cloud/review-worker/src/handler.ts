@@ -1,5 +1,5 @@
 /**
- * Shared review store for HCM News Reporter (Cloudflare Worker + KV, free tier).
+ * Shared review store for News Reporter (Cloudflare Worker + KV, free tier).
  *
  * Reviewers open the GitHub Pages app, enter their name + the shared ACCESS_CODE, and label collected articles:
  * relevant / not relevant, correct sector and editorial assessment, optional note. Labels from all reviewers are
@@ -22,7 +22,7 @@ export interface Env {
   ALLOWED_ORIGINS: string; // comma separated
   /** fine-grained PAT (this repo only, Actions: read & write) – lets reviewers start an on-demand collection */
   GITHUB_TOKEN?: string;
-  GITHUB_REPO?: string; // e.g. bccuong/hcm-news-reporter
+  GITHUB_REPO?: string; // e.g. bccuong/news-reporter
   COLLECT_WORKFLOW?: string; // e.g. pages.yml
 }
 

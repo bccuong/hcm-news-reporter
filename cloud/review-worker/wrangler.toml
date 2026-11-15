@@ -9,7 +9,7 @@ crons = ["7 * * * *"]
 
 [vars]
 ALLOWED_ORIGINS = "https://bccuong.github.io"
-GITHUB_REPO = "bccuong/hcm-news-reporter"
+GITHUB_REPO = "bccuong/news-reporter"
 COLLECT_WORKFLOW = "pages.yml"
 
 # KV namespace id is filled in by `npx wrangler kv namespace create REVIEWS` (see cloud/README.md)
@@ -18,4 +18,4 @@ binding = "REVIEWS"
 id = "229cb5fc8b7a4474a199d2b025c71c35"
 
 # Secrets (never committed): npx wrangler secret put ACCESS_CODE / EXPORT_TOKEN / GITHUB_TOKEN
-# GITHUB_TOKEN = fine-grained PAT, repository bccuong/hcm-news-reporter only, permission "Actions: Read and write"
+# GITHUB_TOKEN = fine-grained PAT, repository bccuong/news-reporter only, permission "Actions: Read and write"

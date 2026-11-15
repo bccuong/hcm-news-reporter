@@ -71,7 +71,7 @@ describe('shared review worker', () => {
       if (url.includes('/runs?per_page')) return new Response(JSON.stringify({ workflow_runs: [{ id: 7, status: 'in_progress', conclusion: null, created_at: 'c', updated_at: 'u', event: 'workflow_dispatch', display_title: 'Thu thập theo yêu cầu', html_url: 'https://github.com/x' }] }), { status: 200 });
       return new Response('{}', { status: 404 });
     };
-    const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/hcm-news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
+    const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
     const req = (body: unknown, code = 'HCM-test-1234') =>
       new Request('https://w.example/collect', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const W = { from: '2026-11-14T17:00+07:00', to: '2026-11-15T08:00+07:00', reviewer: 'A' };
@@ -109,7 +109,7 @@ describe('shared review worker', () => {
       if (url.includes('/runs?per_page')) return new Response(JSON.stringify({ workflow_runs: running }), { status: 200 });
       return new Response('{}', { status: 404 });
     };
-    const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/hcm-news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
+    const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
     const setAuto = (e: Env, enabled: unknown, code = 'HCM-test-1234') =>
       handle(new Request('https://w.example/auto', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ enabled, reviewer: 'B' }) }), e, gh);
 
@@ -210,7 +210,7 @@ describe('shared review worker', () => {
       expect((await req(e, 'DELETE', '/profiles/hcm')).status).toBe(400); // never the last one
     });
     it('cron: one run for every profile switched on; off when none; on-demand names the profile', async () => {
-      const e = { ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/hcm-news-reporter', COLLECT_WORKFLOW: 'pages.yml' };
+      const e = { ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/news-reporter', COLLECT_WORKFLOW: 'pages.yml' };
       const calls: string[] = [];
       const f = async (url: string, init?: RequestInit) => {
         calls.push(`${url} ${init?.body ?? ''}`);

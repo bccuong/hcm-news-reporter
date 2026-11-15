@@ -1,21 +1,21 @@
-# HCM News Reporter
+# News Reporter
 
-Ứng dụng **local-first** (chạy trên máy Windows) tổng hợp điểm tin báo chí ngành xây dựng TP.HCM: thu thập bài từ các báo cấu hình, ghi **sổ ứng viên** cho mọi link phát hiện (không bỏ sót âm thầm), bóc tách toàn văn có kiểm tra độ đầy đủ, duyệt biên tập, và xuất PowerPoint.
+Ứng dụng **local-first** (chạy trên máy Windows) tổng hợp điểm tin báo chí theo **cấu hình địa bàn** (mặc định: ngành xây dựng TP.HCM; tạo thêm Hà Nội, Đà Nẵng… hoặc sao chép cấu hình có sẵn): thu thập bài từ các báo cấu hình, ghi **sổ ứng viên** cho mọi link phát hiện (không bỏ sót âm thầm), bóc tách toàn văn có kiểm tra độ đầy đủ, duyệt biên tập, và xuất PowerPoint.
 
-- **Trang web dữ liệu thật (chỉ xem, cập nhật tự động mỗi giờ):** https://bccuong.github.io/hcm-news-reporter/ – xem [deploy/README.md](deploy/README.md)
+- **Trang web (cùng giao diện bản local, dữ liệu thật):** https://bccuong.github.io/news-reporter/ – thu thập tự động mỗi giờ (bật/tắt theo từng cấu hình) hoặc bấm Thu thập; duyệt tin theo nhóm. Xem [deploy/README.md](deploy/README.md), [cloud/README.md](cloud/README.md)
 - Mọi cấu hình (nguồn tin, RSS/sitemap/chuyên mục, từ khóa, quy tắc AND/OR/NOT, địa bàn, khung giờ, giới hạn quét, mẫu báo cáo…) **chỉnh trong giao diện Cài đặt**. Không cần sửa JSON.
 
-> **Trạng thái:** MVP. Xem [PROGRESS.md](PROGRESS.md) và [ACCEPTANCE_REPORT.md](ACCEPTANCE_REPORT.md). Xuất PPTX theo **đúng mẫu gốc của Sở** (khi đã tải mẫu) và PDF; đã kiểm tra bằng Microsoft PowerPoint và LibreOffice. Tin cùng sự kiện từ nhiều báo được gộp thành một tin nhiều nguồn.
+> **Trạng thái:** MVP. Xem [PROGRESS.md](PROGRESS.md) và [ACCEPTANCE_REPORT.md](ACCEPTANCE_REPORT.md). Xuất PPTX theo **mẫu gốc của Sở (từ Skill, mặc định)** hoặc 4 mẫu thiết kế riêng (Hành chính trang trọng, Bản tin hiện đại, Tối giản, Ảnh lớn) – chọn khi xuất – và PDF; đã kiểm tra bằng Microsoft PowerPoint và LibreOffice. Tin cùng sự kiện từ nhiều báo được gộp thành một tin nhiều nguồn.
 
 ## Chạy trên Windows
 
 Yêu cầu: [Node.js LTS](https://nodejs.org) (≥ 20). Xuất PDF: tự dùng **Microsoft PowerPoint** nếu máy có Office, nếu không thì [LibreOffice](https://www.libreoffice.org).
 
-Mẫu PPTX của Sở: tải trong **Cài đặt › Báo cáo & mẫu** (ứng dụng lưu bản sao, không sửa tệp gốc). Khi chưa tải mẫu, báo cáo dùng bố cục DEMO có nhãn rõ ràng.
+Mẫu báo cáo: mẫu Sở từ Skill có sẵn (`web/public/templates/`); chọn mẫu mặc định ở **Cài đặt › Báo cáo & mẫu**, hoặc tải mẫu riêng cùng cấu trúc.
 
 ```powershell
-git clone https://github.com/bccuong/hcm-news-reporter.git
-cd hcm-news-reporter
+git clone https://github.com/bccuong/news-reporter.git
+cd news-reporter
 scripts\install-local.cmd      # npm install
 scripts\start-local.cmd        # build giao diện + chạy tại http://127.0.0.1:5178
 ```
@@ -26,7 +26,7 @@ API chỉ lắng nghe trên `127.0.0.1` (không mở ra mạng LAN). Dữ liệu
 
 | Đường dẫn | Nội dung |
 |---|---|
-| `config/settings.json`, `config/sources.json` | Cài đặt và nguồn tin (do giao diện ghi; có lịch sử trong `config/history/`) |
+| `config/profiles.json`, `config/profiles/<id>/` | Các cấu hình (profile) theo địa bàn: cài đặt, nguồn tin, lịch sử (do giao diện ghi) |
 | `data/runs/<runId>/` | `manifest.json`, `candidates.json` (sổ ứng viên), `articles.jsonl` |
 | `data/reviews/<runId>.json` | Quyết định biên tập (chọn/bỏ, tóm tắt, tính chất…) |
 | `exports/YYYY-MM-DD/` | PPTX/PDF và manifest nguồn gốc |
@@ -57,10 +57,10 @@ Bản demo GitHub Pages dùng cùng mã `src/domain` + `src/reports` trong trìn
 
 ## Nguồn dữ liệu ban đầu
 
-Danh sách báo, tuyến RSS/chuyên mục, từ khóa ngành và danh mục phường/xã lấy từ Skill gốc `hcm-news-reporter` (xem [docs/ASSET_INVENTORY.md](docs/ASSET_INVENTORY.md)). Tệp mẫu PPTX gốc của Sở **không** được đưa lên repository (`reference/` bị `.gitignore`).
+Danh sách báo, tuyến RSS/chuyên mục, từ khóa ngành và danh mục phường/xã lấy từ Skill gốc `hcm-news-reporter` (xem [docs/ASSET_INVENTORY.md](docs/ASSET_INVENTORY.md)). Mẫu PPTX gốc của Sở trong Skill được đăng kèm ứng dụng làm mẫu mặc định (quyết định của chủ dự án 15/11/2026); thư mục `reference/` vẫn không đưa lên repository.
 
 ## Giới hạn
 
 - Không phần mềm nào bảo đảm bắt được 100% bài đã đăng; ứng dụng bảo đảm **mọi link đã phát hiện** đều có trạng thái + lý do, và báo rõ khi chạm giới hạn quét.
-- Không vượt chặn/paywall/CAPTCHA. Dân trí đang chặn thu thập tự động (theo ghi chú Skill) → chế độ "chỉ nhập thủ công".
+- Không vượt chặn/paywall/CAPTCHA. Mỗi báo tối đa 50 bài/lượt (chỉnh ở Cài đặt › Hiệu năng); bài vượt giới hạn ghi FETCH_LIMIT trong sổ ứng viên.
 - Ảnh: chỉ dùng ảnh thật từ bài gốc, ghi nguồn; không bao giờ dùng ảnh AI.

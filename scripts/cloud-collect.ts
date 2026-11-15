@@ -26,7 +26,7 @@ const arg = (name: string, def: string) => {
   const i = process.argv.indexOf(name);
   return i > 0 ? process.argv[i + 1]! : def;
 };
-const SITE = arg('--site', 'https://bccuong.github.io/hcm-news-reporter/');
+const SITE = arg('--site', 'https://bccuong.github.io/news-reporter/');
 const OUT = arg('--out', 'web/public/live');
 const KEEP_DAYS = 14;
 const FREEZE_AFTER_H = 2;

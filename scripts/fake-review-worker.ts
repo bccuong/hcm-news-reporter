@@ -20,7 +20,7 @@ class MemKV implements KVLike {
 }
 const env = {
   REVIEWS: new MemKV(), ACCESS_CODE: 'HCM-TEST-CODE', EXPORT_TOKEN: 'test-export-token', ALLOWED_ORIGINS: 'https://bccuong.github.io',
-  GITHUB_TOKEN: 'fake', GITHUB_REPO: 'bccuong/hcm-news-reporter', COLLECT_WORKFLOW: 'pages.yml',
+  GITHUB_TOKEN: 'fake', GITHUB_REPO: 'bccuong/news-reporter', COLLECT_WORKFLOW: 'pages.yml',
 };
 
 const LIVE = path.resolve('dist/pages/live/hcm');
@@ -82,7 +82,7 @@ const fakeGitHub = async (url: string, init?: RequestInit): Promise<Response> =>
     const { inputs } = JSON.parse(String(init?.body));
     const auto = inputs.trigger === 'auto';
     const title = auto ? AUTO_TITLE : `Thu thập theo yêu cầu ${inputs.from} → ${inputs.to} (${inputs.requested_by})`;
-    const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'workflow_dispatch', display_title: title, html_url: 'https://github.com/bccuong/hcm-news-reporter/actions' };
+    const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'workflow_dispatch', display_title: title, html_url: 'https://github.com/bccuong/news-reporter/actions' };
     runs.unshift(run);
     setTimeout(() => {
       if (!auto) publishCustom(inputs.from, inputs.to, inputs.requested_by);
@@ -109,7 +109,7 @@ createServer(async (req, res) => {
     return res.end(Buffer.from(PNG));
   }
   if (req.url === '/__deploy') {
-    const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'push', display_title: 'Live data – collection & GitHub Pages deploy', html_url: 'https://github.com/bccuong/hcm-news-reporter/actions' };
+    const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'push', display_title: 'Live data – collection & GitHub Pages deploy', html_url: 'https://github.com/bccuong/news-reporter/actions' };
     runs.unshift(run);
     setTimeout(() => ((run.status = 'completed'), (run.conclusion = 'success')), 6000);
     res.writeHead(200);

@@ -45,8 +45,9 @@ describe('local API', () => {
     expect(sHn.collection.maxRetries).toBe(2);
     // a run uses the ACTIVE profile and records it
     const run = (await app.inject({ method: 'POST', url: '/api/runs', headers: auth, payload: { window: WINDOW } })).json();
-    await new Promise((r) => setTimeout(r, 1500));
     expect((await app.inject({ method: 'GET', url: `/api/runs/${run.runId}`, headers: H })).json().profileId).toBe('ha-noi');
+    // let the run finish (it must not keep running in the background while the next test starts)
+    for (let i = 0; i < 100 && (await app.inject({ method: 'GET', url: `/api/runs/${run.runId}`, headers: H })).json().active; i++) await new Promise((r) => setTimeout(r, 100));
 
     // clone TP.HCM, edit the clone: the original is untouched
     const clone = (await app.inject({ method: 'POST', url: '/api/profiles', headers: auth, payload: { name: 'TP.HCM – thử', cloneFrom: 'hcm' } })).json();
@@ -104,7 +105,7 @@ describe('local API', () => {
   it('end-to-end: run -> ledger -> review -> PPTX export, offline re-export (OFF-01)', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'hcm-s-'));
     const app = await boot(root);
-    await app.inject({
+    const put = await app.inject({
       method: 'PUT', url: '/api/sources', headers: auth,
       payload: {
         sources: [
@@ -113,6 +114,7 @@ describe('local API', () => {
         ],
       },
     });
+    expect(put.statusCode, put.body).toBe(200);
     const start = await app.inject({ method: 'POST', url: '/api/runs', headers: auth, payload: { window: WINDOW } });
     const { runId } = start.json();
     for (let i = 0; i < 600; i++) { // up to 30 s on a busy machine
