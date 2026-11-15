@@ -17,5 +17,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "web/src", "tests", "scripts", "vite.config.ts"]
+  "include": ["src", "web/src", "tests", "scripts", "cloud/review-worker/src", "vite.config.ts"]
 }

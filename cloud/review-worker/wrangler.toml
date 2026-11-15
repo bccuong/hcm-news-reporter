@@ -1,0 +1,13 @@
+name = "hcm-news-review"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://bccuong.github.io"
+
+# KV namespace id is filled in by `npx wrangler kv namespace create REVIEWS` (see cloud/README.md)
+[[kv_namespaces]]
+binding = "REVIEWS"
+id = "229cb5fc8b7a4474a199d2b025c71c35"
+
+# Secrets (never committed): npx wrangler secret put ACCESS_CODE / EXPORT_TOKEN

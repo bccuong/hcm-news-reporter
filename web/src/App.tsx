@@ -4,7 +4,7 @@ import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
-import { api, type ExportResult, type RelevanceQuality, type RunInfo } from './api';
+import { api, type ExportResult, type RelevanceQuality, type RunInfo, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
 
@@ -170,6 +170,26 @@ export function App() {
     }
   };
 
+  // shared review (GitHub Pages): reviewer session + the team's votes for the current period
+  const [reviewer, setReviewer] = useState(api.shared?.session() ?? null);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [votes, setVotes] = useState<Record<string, Vote[]>>({});
+  const reloadVotes = useCallback(() => {
+    if (!api.shared || !runId || !api.shared.session()) return setVotes({});
+    api.shared.votes(runId).then(setVotes).catch((e) => toast('err', (e as Error).message));
+  }, [runId, toast]);
+  useEffect(() => reloadVotes(), [reloadVotes, reviewer]);
+  /** in shared mode, labelling requires a reviewer session; votes refresh after saving */
+  const guardedPatch = async (articleId: string, p: Partial<ReviewDecision>) => {
+    const reviewKeys = ['relevanceLabel', 'primaryCategory', 'assessment', 'reviewNote'];
+    if (api.shared && !api.shared.session() && reviewKeys.some((k) => k in p)) {
+      setLoginOpen(true);
+      return;
+    }
+    await patch(articleId, p);
+    if (api.shared && reviewKeys.some((k) => k in p)) reloadVotes();
+  };
+
   const merge = async (secondaryId: string, targetId: string) => {
     const ps = mergePatches(secondaryId, targetId, reviews);
     if (!ps.length) return toast('err', 'Không thể gộp: hai bài đã cùng một tin hoặc gộp vào chính nó');
@@ -198,7 +218,8 @@ export function App() {
       )}
       {api.mode === 'live' && (
         <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
-          <b>DỮ LIỆU THẬT</b> – thu thập tự động mỗi giờ trên máy chủ GitHub{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}. Bản web <b>chỉ để xem</b>: tiêu đề, sapo ngắn, nguồn, độ phủ (không đăng toàn văn bài). Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.
+          <b>DỮ LIỆU THẬT</b> – thu thập tự động mỗi giờ trên máy chủ GitHub{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}. Hiển thị tiêu đề, sapo ngắn, nguồn, độ phủ (không đăng toàn văn bài).
+          {api.shared ? <> <b>Người duyệt:</b> đăng nhập rồi bấm ✓/✗, sửa lĩnh vực/tính chất, ghi góp ý – kết quả của cả nhóm dùng để cải thiện bộ thu thập.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
         </div>
       )}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
@@ -213,6 +234,15 @@ export function App() {
             {online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />} {online ? 'Có Internet' : 'Ngoại tuyến – xem/duyệt/xuất dữ liệu đã lưu'}
           </span>
           {runs[0] && <span className="hidden text-xs text-slate-500 md:inline">Lượt gần nhất: {formatVn(runs[0].createdAt)} ({runs[0].status})</span>}
+          {api.shared &&
+            (reviewer ? (
+              <span className="chip border-teal-300 bg-teal-50 text-teal-900" data-testid="reviewer-chip">
+                Người duyệt: <b>{reviewer.name}</b>
+                <button className="ml-1 underline" onClick={() => (api.shared!.logout(), setReviewer(null))}>thoát</button>
+              </span>
+            ) : (
+              <button className="btn-teal" onClick={() => setLoginOpen(true)}>Đăng nhập duyệt tin</button>
+            ))}
           <button className="btn-ghost" onClick={() => setSettingsOpen(true)}>
             <Cog className="h-4 w-4" /> Cài đặt
           </button>
@@ -324,8 +354,8 @@ export function App() {
                 </button>
               ))}
             </nav>
-            {tab === 'articles' && <ArticleList list={ready} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={patch} />}
-            {tab === 'review' && <ArticleList list={reviewQueue} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={patch} reviewMode />}
+            {tab === 'articles' && <ArticleList list={ready} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} votes={votes} />}
+            {tab === 'review' && <ArticleList list={reviewQueue} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} reviewMode votes={votes} />}
             {tab === 'ledger' && <Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} reviews={reviews} onPatch={patch} />}
             {tab === 'coverage' && <Coverage run={run} cands={cands} reviewsKey={JSON.stringify(Object.values(reviews).map((x) => [x.articleId, x.relevanceLabel, x.included, x.groupId]))} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
             {tab === 'export' && settings && <ExportPanel run={run} arts={artById} reviews={reviews} settings={settings} onPatch={patch} onInspect={setInspect} onMerge={merge} onSplit={split} />}
@@ -333,8 +363,19 @@ export function App() {
         )}
       </main>
       {inspect && artById.get(inspect) && settings && (
-        <Inspector a={artById.get(inspect)!} c={candByArticle.get(inspect)} r={reviews[inspect]} settings={settings} onClose={() => setInspect(null)} onPatch={(p) => patch(inspect, p)}
+        <Inspector a={artById.get(inspect)!} c={candByArticle.get(inspect)} r={reviews[inspect]} settings={settings} onClose={() => setInspect(null)} onPatch={(p) => guardedPatch(inspect, p)}
           arts={artById} reviews={reviews} onMerge={merge} onSplit={split} onOpen={setInspect} />
+      )}
+      {loginOpen && api.shared && (
+        <ReviewerLogin
+          onClose={() => setLoginOpen(false)}
+          onLogin={async (name, code) => {
+            await api.shared!.login(name, code);
+            setReviewer(api.shared!.session());
+            setLoginOpen(false);
+            toast('ok', `Xin chào ${name} – các đánh giá của bạn được lưu chung cho cả nhóm`);
+          }}
+        />
       )}
       <SettingsDrawer
         open={settingsOpen}
@@ -409,7 +450,7 @@ function Metric({ label, value, tone }: { label: string; value: number; tone?: '
   );
 }
 
-function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, reviewMode }: { list: Article[]; reviews: Record<string, ReviewDecision>; cands: Map<string, Candidate>; settings: Settings | null; onInspect: (id: string) => void; onPatch: (id: string, p: Partial<ReviewDecision>) => void; reviewMode?: boolean }) {
+function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, reviewMode, votes }: { list: Article[]; reviews: Record<string, ReviewDecision>; cands: Map<string, Candidate>; settings: Settings | null; onInspect: (id: string) => void; onPatch: (id: string, p: Partial<ReviewDecision>) => void; reviewMode?: boolean; votes?: Record<string, Vote[]> }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<string>('all');
   const shown = list.filter((a) => (!q || a.title.toLowerCase().includes(q.toLowerCase())) && (cat === 'all' || (reviews[a.id]?.primaryCategory ?? a.primaryCategory) === cat));
@@ -466,7 +507,7 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
               <div className="flex shrink-0 flex-col gap-1">
                 <button className="btn-ghost btn-xs" onClick={() => onInspect(a.id)}><FileText className="h-3.5 w-3.5" /> Xem chi tiết</button>
                 <a className="btn-ghost btn-xs" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Bài gốc</a>
-                <RelevanceButtons r={r} onPatch={(p) => onPatch(a.id, p)} title={a.title} />
+                <RelevanceButtons r={r} onPatch={(p) => onPatch(a.id, p)} title={a.title} votes={votes?.[a.id]} />
               </div>
             </article>
           );
@@ -476,12 +517,63 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
   );
 }
 
+function ReviewerLogin({ onClose, onLogin }: { onClose: () => void; onLogin: (name: string, code: string) => Promise<void> }) {
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Đăng nhập người duyệt">
+      <form
+        className="card w-full max-w-md space-y-3 p-5"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setErr(null);
+          try {
+            await onLogin(name, code.trim());
+          } catch (x) {
+            setErr((x as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <h2 className="text-lg font-bold text-navy-700">Đăng nhập duyệt tin</h2>
+        <p className="text-xs text-slate-600">
+          Đánh giá của bạn (liên quan / không, lĩnh vực, tính chất, ghi chú) được lưu chung cho nhóm và dùng để cải thiện bộ thu thập. Trong kho mã nguồn công khai, tên bạn được thay bằng mã ẩn danh; <b>ghi chú có thể được công khai</b>, đừng ghi thông tin cá nhân.
+        </p>
+        <label className="block">
+          <span className="label">Họ tên</span>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required maxLength={40} autoFocus />
+        </label>
+        <label className="block">
+          <span className="label">Mã truy cập (do quản trị gửi)</span>
+          <input className="input font-mono" value={code} onChange={(e) => setCode(e.target.value)} required placeholder="HCM-XXXX-XXXX" />
+        </label>
+        {err && <p className="text-sm text-red-700">{err}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-ghost" onClick={onClose}>Hủy</button>
+          <button className="btn-primary" disabled={busy || !name.trim() || !code.trim()}>{busy ? 'Đang kiểm tra…' : 'Đăng nhập'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 /** Editor feedback on the filter: explicit label; including an article in the report counts as "relevant". */
-function RelevanceButtons({ r, onPatch, title }: { r?: ReviewDecision; onPatch: (p: Partial<ReviewDecision>) => void; title: string }) {
+function RelevanceButtons({ r, onPatch, title, votes }: { r?: ReviewDecision; onPatch: (p: Partial<ReviewDecision>) => void; title: string; votes?: Vote[] }) {
   const l = r?.relevanceLabel ?? null;
   const implicit = !l && (r?.included || r?.groupId);
+  const yes = votes?.filter((v) => v.l === 'relevant') ?? [];
+  const no = votes?.filter((v) => v.l === 'irrelevant') ?? [];
   return (
     <div className="flex flex-col gap-0.5" data-testid="relevance-buttons">
+      {votes && votes.length > 0 && (
+        <span className="text-[10px] text-slate-600" title={votes.map((v) => `${v.r}: ${v.l === 'relevant' ? 'liên quan' : v.l === 'irrelevant' ? 'không' : '—'}${v.n ? ` (${v.n})` : ''}`).join('\n')}>
+          Nhóm duyệt: <b className="text-green-700">✓{yes.length}</b> <b className="text-red-700">✗{no.length}</b>
+        </span>
+      )}
       <div className="flex gap-1">
         <button
           className={`btn btn-xs ${l === 'relevant' ? 'border-green-600 bg-green-600 text-white' : 'btn-ghost'}`}
@@ -830,6 +922,13 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
               </div>
             </div>
             <button className="btn-primary" onClick={save}>Lưu biên tập</button>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <span className="label">Góp ý cho bộ lọc (vì sao bài này nên/không nên được thu thập, lĩnh vực đúng là gì…)</span>
+              <div className="mb-1 flex gap-1">
+                <RelevanceButtons r={r} onPatch={onPatch} title={a.title} />
+              </div>
+              <textarea className="input text-xs" rows={2} defaultValue={r?.reviewNote ?? ''} placeholder="Ví dụ: tin thể thao của Bộ Xây dựng, không phải tin ngành" onBlur={(e) => e.target.value !== (r?.reviewNote ?? '') && onPatch({ reviewNote: e.target.value.slice(0, 1000) })} aria-label="Ghi chú góp ý cho bộ lọc" />
+            </div>
             {r?.changes?.length ? (
               <details className="text-xs text-slate-600"><summary>Lịch sử chỉnh sửa ({r.changes.length})</summary>{r.changes.slice(-20).map((ch, i) => <div key={i}>{new Date(ch.at).toLocaleString('vi-VN')} · {ch.field}</div>)}</details>
             ) : null}

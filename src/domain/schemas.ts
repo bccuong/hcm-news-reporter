@@ -374,6 +374,8 @@ export interface ReviewDecision {
   groupId?: string | null;
   /** editor's relevance verdict (feeds precision/recall of the filter) */
   relevanceLabel?: 'relevant' | 'irrelevant' | null;
+  /** reviewer's note to the developers (why the filter/classification was wrong) */
+  reviewNote?: string;
   updatedAt: string;
   changes: Array<{ at: string; field: string; from: unknown; to: unknown }>;
 }

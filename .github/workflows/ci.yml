@@ -24,3 +24,4 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
+      - run: npm run test:ui:live # shared review: Pages live build + local stand-in of the review worker

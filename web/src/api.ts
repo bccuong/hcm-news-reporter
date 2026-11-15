@@ -45,6 +45,16 @@ export interface Api {
   uploadTemplate(name: string, base64: string): Promise<{ templateFile: string }>;
   subscribe(runId: string, cb: (e: { type: string; counts?: Record<string, number> }) => void): () => void;
   relevanceQuality(): Promise<RelevanceQuality>;
+  /** shared review (GitHub Pages + Cloudflare Worker); undefined when not configured */
+  shared?: SharedReview;
+}
+
+export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: string | null; a: string | null; n: string; t: string }
+export interface SharedReview {
+  session(): { name: string } | null;
+  login(name: string, code: string): Promise<void>;
+  logout(): void;
+  votes(runId: string): Promise<Record<string, Vote[]>>;
 }
 
 class ApiError extends Error {
@@ -295,9 +305,46 @@ class DemoApi implements Api {
     const changes = [...prev.changes];
     for (const [k, v] of Object.entries(patch)) changes.push({ at: now, field: k, from: (prev as any)[k] ?? null, to: v });
     const next = { ...prev, ...patch, articleId, updatedAt: now, changes };
+    // shared review: relevance / sector / assessment / note go to the team's store (Cloudflare Worker)
+    if (this.shared && ['relevanceLabel', 'primaryCategory', 'assessment', 'reviewNote'].some((k) => k in patch)) {
+      const a = (await this.load(id)).articles.find((x) => x.id === articleId);
+      await this.sharedPost({
+        reportDate: id.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3'), articleId, url: a?.originalUrl ?? '', title: a?.title ?? '', sourceId: a?.sourceId ?? '',
+        label: next.relevanceLabel ?? null, category: next.primaryCategory ?? null, assessment: next.assessment ?? null, note: next.reviewNote ?? '',
+      });
+    }
     all[articleId] = next;
     store.set(`review:${id}`, all);
     return next;
+  }
+
+  /* ---------------- shared review (Cloudflare Worker) ---------------- */
+  private readonly reviewApi = (import.meta.env.VITE_REVIEW_API as string | undefined) || '';
+  shared: SharedReview | undefined = this.reviewApi && this.mode === 'live' ? this.makeShared() : undefined;
+  private makeShared(): SharedReview {
+    return {
+      session: () => store.get<{ name: string; code: string }>('reviewer') ?? null,
+      login: async (name, code) => {
+        const r = await fetch(`${this.reviewApi}/login`, { method: 'POST', headers: { 'x-review-code': code } });
+        if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không đăng nhập được');
+        store.set('reviewer', { name: name.trim().slice(0, 40), code });
+      },
+      logout: () => store.set('reviewer', null),
+      votes: async (runId) => {
+        const s = store.get<{ name: string; code: string }>('reviewer');
+        if (!s) return {};
+        const date = runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+        const r = await fetch(`${this.reviewApi}/labels?date=${date}`, { headers: { 'x-review-code': s.code }, cache: 'no-cache' });
+        if (!r.ok) throw new ApiError('Không tải được kết quả duyệt chung');
+        return ((await r.json()) as { votes: Record<string, Vote[]> }).votes;
+      },
+    };
+  }
+  private async sharedPost(body: Record<string, unknown>) {
+    const s = store.get<{ name: string; code: string }>('reviewer');
+    if (!s) throw new ApiError('Hãy đăng nhập người duyệt (tên + mã truy cập) để lưu đánh giá cho cả nhóm');
+    const r = await fetch(`${this.reviewApi}/labels`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, reviewer: s.name }) });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được đánh giá (HTTP ${r.status})`);
   }
   async capabilities() {
     return { pdf: false, soffice: null, templateFile: null, templateFidelity: false };
@@ -336,7 +383,18 @@ class DemoApi implements Api {
     const data = [];
     for (const r of runs) {
       const b = await this.load(this.mode === 'demo' ? undefined : r.runId);
-      data.push({ manifest: { runId: r.runId, window: r.window }, candidates: b.candidates, articles: b.articles, reviews: await this.review(r.runId) });
+      let reviews = await this.review(r.runId);
+      // shared review: the TEAM's majority vote per article is the label (ties → no label)
+      if (this.shared?.session()) {
+        const votes = await this.shared.votes(r.runId).catch(() => ({} as Record<string, Vote[]>));
+        reviews = {};
+        for (const [aid, vs] of Object.entries(votes)) {
+          const yes = vs.filter((v) => v.l === 'relevant').length;
+          const no = vs.filter((v) => v.l === 'irrelevant').length;
+          if (yes !== no) reviews[aid] = { articleId: aid, included: false, order: 0, updatedAt: '', changes: [], relevanceLabel: yes > no ? 'relevant' : 'irrelevant' };
+        }
+      }
+      data.push({ manifest: { runId: r.runId, window: r.window }, candidates: b.candidates, articles: b.articles, reviews });
     }
     return computeRelevanceQuality(data);
   }

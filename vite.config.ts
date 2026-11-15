@@ -12,6 +12,8 @@ export default defineConfig(({ mode }) => ({
   define: {
     'import.meta.env.VITE_DEMO': JSON.stringify(mode === 'pages' ? '1' : ''),
     'import.meta.env.VITE_LIVE': JSON.stringify(mode === 'pages' && existsSync(path.resolve(__dirname, 'web/public/live/index.json')) ? '1' : ''),
+    // shared review store (Cloudflare Worker URL, set as a GitHub repository variable REVIEW_API_URL)
+    'import.meta.env.VITE_REVIEW_API': JSON.stringify(mode === 'pages' ? (process.env.REVIEW_API_URL ?? '') : ''),
   },
   build: {
     outDir: path.resolve(__dirname, mode === 'pages' ? 'dist/pages' : 'dist/web'),

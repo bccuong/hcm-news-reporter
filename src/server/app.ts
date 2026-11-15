@@ -282,6 +282,7 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
         proposal: z.string().max(600).optional(), primaryImageUrl: z.string().nullable().optional(), extractionMarkedComplete: z.boolean().optional(),
         timeVerifiedManually: z.boolean().optional(), groupId: z.string().nullable().optional(),
         relevanceLabel: z.enum(['relevant', 'irrelevant']).nullable().optional(),
+        reviewNote: z.string().max(1000).optional(),
       })
       .parse(req.body);
     return stores.patchReview(p.id, p.articleId, patch as never);

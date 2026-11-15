@@ -32,6 +32,8 @@ jobs:
       - name: Collect live data
         run: npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/hcm-news-reporter/" --out web/public/live
       - run: npm run build:pages
+        env:
+          REVIEW_API_URL: ${{ vars.REVIEW_API_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/pages
