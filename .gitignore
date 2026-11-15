@@ -29,3 +29,5 @@ Thumbs.db
 /templates/user/
 /web/public/demo/
 /dist/
+/test-results/
+/playwright-report/

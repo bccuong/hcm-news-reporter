@@ -128,10 +128,19 @@ export function App() {
 
   const patch = async (articleId: string, p: Partial<ReviewDecision>) => {
     if (!run) return;
+    // optimistic update: the control reacts immediately; reverted if the save fails
+    const prev = reviews[articleId];
+    setReviews((x) => ({ ...x, [articleId]: { ...(x[articleId] ?? { articleId, included: false, order: 0, updatedAt: '', changes: [] }), ...p } as ReviewDecision }));
     try {
       const r = await api.patchReview(run.runId, articleId, p);
       setReviews((x) => ({ ...x, [articleId]: r }));
     } catch (e) {
+      setReviews((x) => {
+        const n = { ...x };
+        if (prev) n[articleId] = prev;
+        else delete n[articleId];
+        return n;
+      });
       toast('err', `Không lưu được: ${(e as Error).message}`);
     }
   };
@@ -640,7 +649,11 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect }: { run
       </div>
       <div className="card space-y-3 p-3">
         <h3 className="font-semibold text-navy-700">Xuất báo cáo</h3>
-        <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">Mẫu: <b>BẢN DEMO</b> (chưa ghép mẫu PPTX gốc). Mỗi trang có nhãn demo.</p>
+        {settings.report.templateFile ? (
+          <p className="rounded bg-green-50 p-2 text-xs text-green-900">Mẫu: <b>mẫu PPTX gốc</b> ({settings.report.templateFile})</p>
+        ) : (
+          <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">Mẫu: <b>BẢN DEMO</b> – chưa tải mẫu PPTX gốc (Cài đặt › Báo cáo & mẫu).</p>
+        )}
         <div className="flex gap-4">
           {(['pptx', 'pdf'] as const).map((f) => (
             <label key={f} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={formats.includes(f)} onChange={(e) => setFormats(e.target.checked ? [...formats, f] : formats.filter((x) => x !== f))} /> .{f}</label>

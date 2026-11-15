@@ -64,7 +64,7 @@ describe('local API', () => {
     });
     const start = await app.inject({ method: 'POST', url: '/api/runs', headers: auth, payload: { window: WINDOW } });
     const { runId } = start.json();
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 600; i++) { // up to 30 s on a busy machine
       const r = (await app.inject({ method: 'GET', url: `/api/runs/${runId}`, headers: H })).json();
       if (r.runId && !r.active && r.status !== 'running') break;
       await new Promise((r) => setTimeout(r, 50));

@@ -1,4 +1,25 @@
-# ACCEPTANCE_REPORT — Evidence log (2026-11-15)
+# ACCEPTANCE_REPORT — Evidence log (2026-11-15, session 2 update)
+
+## Session 2 changes in status
+| ID | New status | Evidence |
+|---|---|---|
+| UI-01 | **PASS** | `tests/ui/app.spec.ts` (Playwright, real clicks): wizard, bad-URL block, RSS added, persists after reload |
+| UI-03 | **PASS** | UI toggle → reload → still off; collector test: disabled source never fetched |
+| UI-04 | **PASS** | UI adds NOT term, explanation + preview "Không khớp", persists after reload |
+| UI-05 | **PASS** | UI test: ward match, new place added in editor matches, persists |
+| UI-06 | **PASS** | UI test: custom from/to shows `[17:00 08/11/2026, 08:00 09/11/2026)`, invalid range blocked |
+| UI-07 | **PASS** | UI test: retries/per-host edited, warning shown, persists |
+| UI-08 | **PARTIAL→PASS (local)** | template upload API + original-template export + LibreOffice PDF; upload click-through not automated (file chooser) |
+| RPT-01 | **PASS (LibreOffice render)** | Real articles 15/11/2026 → PPTX from original template → PDF inspected page by page (docs/TEMPLATE_INTEGRATION.md). Not opened in MS PowerPoint. |
+| RPT-02 | **PASS** | `tests/template.test.ts` text-only path; failed photo → text layout in live export |
+| RPT-03 | **PASS** | template copy stored, original untouched; mismatching template refused (`TemplateMismatchError` → 422) |
+| E2E | **PASS** | UI test collects fixtures, ledger shows `OUTSIDE_DATE_WINDOW`/`FETCH_403`, reconciliation 11/11, selects article, exports PPTX |
+
+Defects found by these tests and fixed: SSE double-`done` crashed the server process; review checkbox lagged (now optimistic); template hyperlink XML corruption; JSZip folder removal deleted all images; stale footer date in layout; weak-topic articles marked ready (now `WEAK_TOPIC_EVIDENCE` review queue).
+
+---
+
+# Session 1 log
 
 `PASS` = automated test or reproducible command executed this session. `PARTIAL` = implemented & wired, evidence incomplete. `BLOCKED` = missing tool/asset.
 

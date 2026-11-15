@@ -1,4 +1,5 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { buildFromTemplate, imageSize, TemplateMismatchError, type TemplateImage } from '../reports/templatePptx.js';
 import { EventEmitter } from 'node:events';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -213,7 +214,10 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
   app.get('/api/runs/:id/events', (req, reply) => {
     const id = (req.params as { id: string }).id;
     reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    const send = (e: unknown) => reply.raw.write(`data: ${JSON.stringify(e)}\n\n`);
+    // never write after the stream ended (the run emits 'done' twice: collector + finally) – that crashed the process
+    const send = (e: unknown) => {
+      if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.write(`data: ${JSON.stringify(e)}\n\n`);
+    };
     const a = active.get(id);
     if (!a) {
       send({ type: 'done', runId: id });
@@ -222,7 +226,10 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     }
     const on = (e: { type: string }) => {
       send(e);
-      if (e.type === 'done') reply.raw.end();
+      if (e.type === 'done') {
+        a.events.off('event', on);
+        if (!reply.raw.writableEnded) reply.raw.end();
+      }
     };
     a.events.on('event', on);
     req.raw.on('close', () => a.events.off('event', on));
@@ -294,8 +301,11 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     // fetch REAL article images (never generated); failures -> text-only
     const http = makeHttp(settings, sources);
     const imageNotes: string[] = [];
+    const images = new Map<string, TemplateImage>();
+    const stories = asm.stories.map((s) => ({ ...s, imageKey: null as string | null }));
+    let tcFeatureKey: string | null = null;
     if (settings.editorial.photoPolicy !== 'link_only') {
-      for (const st of asm.stories) {
+      for (const st of stories) {
         if (!st.imageUrl || st.group === 'neutral') continue;
         const art = articles.find((a) => a.id === st.articleId);
         const cand = art?.imageCandidates.find((i) => i.url === st.imageUrl);
@@ -303,9 +313,24 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
           imageNotes.push(`${st.id}: ảnh chưa xác minh quyền – để trống theo chính sách`);
           continue;
         }
-        const r = await fetchImage(http, st.imageUrl);
-        if (r) st.image = { data: r, caption: cand?.caption, credit: cand?.credit ?? st.sources[0]?.name };
-        else imageNotes.push(`${st.id}: không tải được ảnh gốc – dùng bố cục chữ`);
+        const img = await fetchImage(http, st.imageUrl, settings.editorial.minImageWidth);
+        if (img) {
+          const credit = cand?.credit ? `${cand.credit}/${st.sources[0]?.name}` : st.sources[0]?.name;
+          images.set(st.imageUrl, { ...img, credit, sourceUrl: st.sources[0]?.url ?? st.imageUrl });
+          st.imageKey = st.imageUrl;
+          st.image = { data: `data:image/${img.ext};base64,${Buffer.from(img.bytes).toString('base64')}`, caption: cand?.caption, credit };
+        } else imageNotes.push(`${st.id}: không tải được ảnh gốc hợp lệ (jpeg/png, đủ kích thước) – dùng bố cục chữ`);
+        // TC feature photo: a SECOND real photo from the same positive article (never a stock/AI image)
+        if (st.group === 'positive' && !tcFeatureKey && art) {
+          const second = art.imageCandidates.find((i) => i.url !== st.imageUrl && i.origin === 'body' && i.rightsStatus !== 'not_usable');
+          if (second) {
+            const f = await fetchImage(http, second.url, settings.editorial.minImageWidth);
+            if (f) {
+              images.set(second.url, { ...f, credit: second.credit ? `${second.credit}/${st.sources[0]?.name}` : st.sources[0]?.name, sourceUrl: st.sources[0]?.url ?? second.url });
+              tcFeatureKey = second.url;
+            }
+          }
+        }
       }
     }
     const date = vnDate(new Date(m.window.to));
@@ -318,15 +343,31 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     const stamp = Date.now().toString(36);
     const dir = safeJoin(paths.exports, date);
     const [y, mo, d] = date.split('-');
-    const pptx = await buildReportPptx({
-      organization: settings.report.organization,
-      window: m.window,
-      reportDateLabel: `${d}/${mo}/${y}`,
-      stories: asm.stories,
-      storiesPerPage: settings.report.storiesPerPage,
-      contactEmail: settings.report.contactEmail,
-      isDemoTemplate: true,
-    });
+    let pptx: Uint8Array;
+    let templateUsed = 'DEMO (pptxgenjs) – chưa có mẫu PPTX gốc';
+    const tplFile = settings.report.templateFile ? safeJoin(paths.templates, settings.report.templateFile) : null;
+    if (tplFile && existsSync(tplFile)) {
+      const tplBytes = await fs.readFile(tplFile);
+      try {
+        const coverImageKey = stories.find((s) => s.group === 'needs_attention' && s.imageKey)?.imageKey ?? stories.find((s) => s.imageKey)?.imageKey ?? null;
+        const r = await buildFromTemplate(tplBytes, {
+          organization: settings.report.organization, reportDate: date, stories, images, coverImageKey, tcFeatureKey,
+          contactEmail: settings.report.contactEmail,
+        });
+        pptx = r.bytes;
+        imageNotes.push(...r.notes);
+        templateUsed = `${settings.report.templateFile} (sha256 ${createHash('sha256').update(tplBytes).digest('hex').slice(0, 16)})`;
+      } catch (e) {
+        if (!(e instanceof TemplateMismatchError)) throw e;
+        throw Object.assign(new Error(`BLOCKED – mẫu PPTX không khớp cấu trúc đã khảo sát: ${e.message}`), { statusCode: 422 });
+      }
+    } else {
+      imageNotes.push('Chưa có mẫu PPTX gốc (Cài đặt › Báo cáo & mẫu) – đã xuất bằng bố cục DEMO.');
+      pptx = await buildReportPptx({
+        organization: settings.report.organization, window: m.window, reportDateLabel: `${d}/${mo}/${y}`, stories,
+        storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, isDemoTemplate: true,
+      });
+    }
     const pptxName = `${base}_${stamp}.pptx`;
     await writeFileAtomic(path.join(dir, pptxName), pptx);
     const files = [pptxName];
@@ -344,8 +385,8 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
       }
     }
     const manifest = {
-      exportId: `${date}/${pptxName}`, runId: id, window: m.window, createdAt: new Date().toISOString(), template: 'DEMO (pptxgenjs) – not original template',
-      stories: asm.stories.map((s) => ({ id: s.id, articleId: s.articleId, group: s.group, title: s.title, sources: s.sources, image: s.imageUrl, imageEmbedded: !!s.image })),
+      exportId: `${date}/${pptxName}`, runId: id, window: m.window, createdAt: new Date().toISOString(), template: templateUsed,
+      stories: stories.map((s) => ({ id: s.id, articleId: s.articleId, group: s.group, title: s.title, sources: s.sources, image: s.imageUrl, imageEmbedded: !!s.imageKey })),
       warnings: [...asm.warnings, ...fit.map((f) => f.message), ...imageNotes], pdfStatus, files,
     };
     await writeJsonAtomic(path.join(dir, `${base}_${stamp}_manifest.json`), manifest);
@@ -381,18 +422,22 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
   return { app, stores, token };
 }
 
-async function fetchImage(http: HttpClient, url: string): Promise<string | null> {
-  // Uses the same SSRF-guarded transport; binary decoded via a second fetch to keep bytes intact.
+/** Download a REAL article photo (jpeg/png only), SSRF-checked, validated by magic bytes and dimensions. */
+async function fetchImage(http: HttpClient, url: string, minWidth: number): Promise<{ bytes: Uint8Array; ext: 'jpeg' | 'png'; width: number; height: number } | null> {
   const blocked = await http.assertPublic(url);
   if (blocked) return null;
   try {
-    const res = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'HCMNewsReporter/0.1' }, signal: AbortSignal.timeout(15000) });
+    const res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 HCMNewsReporter/0.1', Accept: 'image/jpeg,image/png;q=0.9' }, signal: AbortSignal.timeout(15000) });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      return loc ? fetchImage(http, new URL(loc, url).toString(), minWidth) : null;
+    }
     if (!res.ok) return null;
-    const type = res.headers.get('content-type') ?? '';
-    if (!/^image\/(jpeg|png|webp)/.test(type)) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
+    const buf = new Uint8Array(await res.arrayBuffer());
     if (buf.length < 8_000 || buf.length > 8_000_000) return null; // tracking pixel / oversized
-    return `data:${type.split(';')[0]};base64,${buf.toString('base64')}`;
+    const size = imageSize(buf);
+    if (!size || size.width < minWidth || size.width / size.height > 4 || size.height / size.width > 4) return null;
+    return { bytes: buf, ...size };
   } catch {
     return null;
   }

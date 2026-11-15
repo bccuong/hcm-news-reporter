@@ -432,9 +432,15 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
   };
   return (
     <div>
-      <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-        <b>Trạng thái mẫu:</b> bộ dựng hiện tại là <b>BẢN DEMO</b> (A4 dọc, đúng thứ tự trang Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị theo mẫu đã khảo sát), <b>chưa</b> ghép vào các shape của tệp mẫu PPTX gốc. Mọi trang có nhãn "BẢN DEMO". Kiểm định độ trung thực mẫu (RPT-01..03): <b>BLOCKED</b>.
-      </div>
+      {s.report.templateFile ? (
+        <div className="mb-4 rounded border border-green-300 bg-green-50 p-3 text-xs text-green-900">
+          <b>Đang dùng mẫu PPTX gốc:</b> báo cáo được dựng bằng cách nhân bản đúng các trang của mẫu (Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị), thay nội dung trong các khung sẵn có và giữ nguyên định dạng. Nếu tải mẫu khác cấu trúc, xuất báo cáo sẽ báo <b>BLOCKED</b> thay vì tạo tệp sai.
+        </div>
+      ) : (
+        <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <b>Chưa có mẫu PPTX gốc:</b> báo cáo sẽ dùng bố cục <b>DEMO</b> (mỗi trang có nhãn "BẢN DEMO"). Tải tệp mẫu của Sở ở bên dưới để xuất đúng mẫu.
+        </div>
+      )}
       <Section title="Mẫu PowerPoint">
         <p className="text-xs">Tệp mẫu đang chọn: <b>{s.report.templateFile || '(chưa có – dùng bố cục demo)'}</b></p>
         <label className="btn-ghost w-fit cursor-pointer">

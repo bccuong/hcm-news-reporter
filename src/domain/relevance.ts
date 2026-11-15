@@ -81,6 +81,14 @@ export function annotateArticle(a: Article, settings: Settings): Article & { _ve
   const verdict = judgeRelevance(a.title, body, a.sourceId, settings);
   const cat = classifyCategory(a.title, body, settings.categories);
   const asmt = suggestAssessment(a.title, body);
+  // Broad keywords ("dự án", "đất"…) match many unrelated stories: without sector evidence in the title or
+  // ≥3 sector keyword hits, a rule match is not enough to be "ready" – it goes to the review queue (not dropped).
+  const best = Math.max(0, ...Object.values(cat.scores).map((v) => v ?? 0));
+  if (verdict.status === 'relevant' && best < 3) {
+    verdict.status = 'review';
+    verdict.reasonCode = 'WEAK_TOPIC_EVIDENCE';
+    verdict.evidence.push(`Bằng chứng lĩnh vực yếu (điểm ${best} < 3) – cần biên tập viên xác nhận`);
+  }
   return {
     ...a,
     location: { status: verdict.location.status, evidence: verdict.location.evidence },

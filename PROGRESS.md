@@ -2,57 +2,51 @@
 
 ## Current status
 - Specification: v1.2
-- Current milestone: **M3 (coverage UI) / M4 (editorial) in progress; M5 template integration BLOCKED on adapter work**
-- Last verified milestone: **M0 DONE, M1 DONE (backend-tested; UI not browser-automated yet), M2 DONE on fixtures + live**
-- Repository: https://github.com/bccuong/hcm-news-reporter (branch `main`)
-- Last session: 2026-11-15
+- Milestones: **M0 DONE · M1 DONE · M2 DONE · M5 DONE locally (original template + LibreOffice PDF, visually inspected)** · M3/M4 in progress · M6 partial
+- Repository: https://github.com/bccuong/hcm-news-reporter (branch `main`) · Demo: https://bccuong.github.io/hcm-news-reporter/
+- Last session: 2026-11-15 (session 2)
 
-## Assets discovered
-| Asset | Status | Actual path / notes |
-|---|---|---|
-| Skill (SKILL.md, scripts, references) | FOUND | `reference/hcm-news-reporter-skill/` (git-ignored) |
-| `websites.txt` | FOUND | seeded from `src/domain/data/skill-websites.txt` |
-| Approved official PPTX template | FOUND | `reference/hcm-news-reporter-skill/assets/reference-report.pptx` – not yet wired into renderer |
-| Word digest | NOT SUPPLIED | later |
-See `docs/ASSET_INVENTORY.md`.
+## Assets
+See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.md`. Tools on this PC: Node 26, Git, gh, **LibreOffice** (installed session 2), Microsoft Edge (used by Playwright locally). Python not installed (not needed).
 
-## Completed work (evidence)
-- Domain: Zod schemas, VN time windows `[from,to)`, URL normalization + SSRF checks, Boolean rule engine w/ synonyms + explanations, location detection from Skill place list, category/assessment suggestions (`src/domain/*`).
-- Collector: SSRF-guarded HTTP client (per-host limits, retry/backoff, Retry-After, manual redirects), RSS/Atom, sitemap(+index), section+pagination BFS with limits, durable candidate ledger with 15 states + reason codes, full-content extraction (paragraph order, headings, lists, tables, figures+credit, JSON-LD cross-check, continuation), URL date hint triage, same-event clustering, cancel/resume (`src/collector/*`).
-- Storage: atomic JSON writes, JSONL articles, settings/sources history + rollback, backup/restore (`src/storage/*`).
-- API: Fastify on 127.0.0.1, Host/Origin guard, per-session token for mutations, all settings/sources/rules/runs/review/export endpoints (`src/server/app.ts`).
-- UI: dashboard (window presets, live source strip, metrics, ready list, review queue, ledger w/ CSV, coverage w/ retry/rescan/expand, Article Inspector with evidence + editorial overlay, export panel) and Settings drawer with 9 sections incl. source wizard, websites.txt import, visual AND/OR/NOT builder + preview, location editor, categories, time, quality/photos, report/template upload, performance, backup/history (`web/src/*`).
-- Report: demo PPTX (A4 portrait, cover/TT/TC/TL/Kiến nghị, hyperlinks, real images only, DEMO label) + fit warnings + export manifest.
-- GitHub Pages static demo on synthetic fixture data; CI runs typecheck + tests.
+## Session 2 – done (with evidence)
+- Original-template PPTX renderer `src/reports/templatePptx.ts` wired into export (falls back to labeled DEMO only when no template uploaded; mismatching template → BLOCKED/422).
+- Real-photo pipeline: jpeg/png only, magic-byte + dimension checks, cover-crop, TC feature photo = second photo of the same positive article.
+- PDF via LibreOffice; visual QA of a real 15/11/2026 report; 5 renderer defects found & fixed.
+- Precision: weak sector evidence → review queue (`WEAK_TOPIC_EVIDENCE`).
+- Playwright UI tests (6) clicking real controls + reload persistence; screenshots in `docs/screenshots/`.
+- Server crash fixed (SSE write-after-end), optimistic review updates, CI runs UI tests.
 
-## Commands executed and results (2026-11-15)
+## Commands executed and results (session 2)
 - `npx tsc -p tsconfig.json --noEmit` → 0 errors
-- `npx vitest run` → **33 passed / 33** (domain 22, collector 8, server 3)
-- `npx vite build` → OK (316 kB JS)
-- `npm run spike` → 5 live sources OK (see docs/ASSET_INVENTORY.md)
-- Live full run via `scripts/live-run.ps1` → 1227 candidates, reconciliation balanced, 41 ready_for_review (docs/SOURCE_SUPPORT.md)
+- `npx vitest run` → **38/38** (template tests run locally only – private template not in repo, skipped in CI)
+- `npx playwright test` → **6/6** (Edge locally)
+- `scripts/live-run.ps1` → 1221 candidates, 1221 accounted, 41 ready (before WEAK_TOPIC change)
+- `npx tsx scripts/qa-template.ts <template>` → PPTX + PDF ok, inspected
 
-## Acceptance gates (live state)
+## Acceptance gates
 | Gate | Status | Evidence |
 |---|---|---|
-| M0 | DONE | docs/ASSET_INVENTORY.md, `npm run spike` |
-| M1 | DONE (API-level) | tests/server.test.ts persistence/restart/rollback; UI build; Playwright UI tests NOT yet written |
-| M2 | DONE | tests/collector.test.ts + live run |
-| M3 | IN PROGRESS | coverage tab, retry/rescan/expand wired; adapter-degraded detection (DIS-08) missing |
-| M4 | IN PROGRESS | review overlay, image choice, number-consistency warning; manual merge/split of event groups missing |
-| M5 | BLOCKED | demo renderer only; original template not mapped; LibreOffice not installed |
-| M6 | NOT STARTED | |
+| M0 | DONE | docs/ASSET_INVENTORY.md |
+| M1 | DONE | server tests + Playwright UI-01/03/04/05/06/07 |
+| M2 | DONE | collector fixtures + live runs |
+| M3 | IN PROGRESS | coverage/retry UI done; DIS-08 (adapter degraded detection) missing |
+| M4 | IN PROGRESS | manual merge/split of same-event groups, multi-source stories missing |
+| M5 | DONE (local) | template PPTX + LibreOffice PDF visually inspected; MS PowerPoint not verified |
+| M6 | PARTIAL | CI typecheck+unit+UI+Pages; Windows launcher scripts; no packaged installer |
 
-## Known blockers / risks
-- Original PPTX template fidelity requires a shape-mapping adapter (pptx-automizer, or install Python and reuse Skill `build_report.py`).
-- No LibreOffice → no PDF, no rendered visual QA.
-- VnExpress needs higher fetch budget or RSS-first triage to avoid `retry_pending`.
-- UI not verified with automated browser tests (UI-01..09 click-through).
+## Known issues
+- VnExpress: 120 `retry_pending` at default 300 fetches (no URL date) – use "Mở rộng quét" or raise limit.
+- SGGP: ~16 `ARTICLE_BODY_MISSING` (special layouts) – adapter needed.
+- Default topic rule is still broad; borderline stories (e.g. sport events of the construction sector) reach "ready" – reviewer decides.
+- Long short-labels overflow cover/recommendation list boxes → warned, not auto-fixed.
+- Demo (GitHub Pages) still uses the DEMO renderer: the Department template is private and not published.
 
 ## Next single executable action
-Add Playwright UI tests for UI-01/03/04/05/06 (`npm i -D @playwright/test` then `tests/ui/*.spec.ts` against `npm start`), then start the template adapter spike: `npx tsx scripts/template-audit.ts reference/hcm-news-reporter-skill/assets/reference-report.pptx`.
+Implement multi-source stories (merge same-event cluster into one story with all source links, as in the template "Nguồn: Thanh Niên | VnExpress"): add `groupId` merge UI in Export tab + `assembleStories` grouping, then re-run `npx tsx scripts/qa-template.ts`.
 
 ## Session handoff log
 | Session date | Changes made | Tests actually run | Next action |
 |---|---|---|---|
-| 2026-11-15 | M0–M2 implemented, UI + API + demo Pages, live run | tsc, vitest 33/33, vite build, live spike + full run | Playwright UI tests; template adapter |
+| 2026-11-15 (1) | M0–M2, UI, API, demo Pages, live run | tsc, vitest 33/33, build, live | UI tests, template |
+| 2026-11-15 (2) | Original template renderer, LibreOffice PDF + visual QA, Playwright UI tests, server crash fix | tsc, vitest 38/38, playwright 6/6, live run + template export | Multi-source stories |
