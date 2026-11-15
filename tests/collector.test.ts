@@ -175,3 +175,43 @@ describe('collection run with candidate ledger (DIS-01..07, LED-01/02, UI-03)', 
     expect(s.sectionUrls).toContain('https://vnexpress.net/thoi-su');
   });
 });
+
+describe('hourly cloud runs continue the published period (no story drops out between hours)', () => {
+  it('carries extracted stories over (same ids) and spends the per-publisher limit on links not fetched yet', async () => {
+    const { seedFromPublished, toPublicArticle } = await import('../scripts/cloud-collect.js');
+    const src = [fixtureSources()[0]!];
+    // hour 1: limit 2 → one story extracted (the other link is a 403), the rest FETCH_LIMIT
+    const h1 = setup();
+    h1.settings.collection.maxArticlesPerSource = 2;
+    const m1 = await runCollection({ runId: 'run_live_x', window: WINDOW, trigger: 'auto', settings: h1.settings, sources: src, stores: h1.stores, http: h1.http });
+    const c1 = await h1.stores.getCandidates('run_live_x');
+    const a1 = await h1.stores.getArticles('run_live_x');
+    const keep = new Set(c1.filter((c) => c.articleId && c.state !== 'outside_window').map((c) => c.articleId));
+    const day = {
+      kind: 'hcm-live-day' as const, reportDate: '2026-11-09', provisional: true, generatedAt: m1.finishedAt!,
+      manifest: { ...m1, reconciliation: reconcile(c1) }, candidates: c1.map(({ history: _h, ...c }) => c), articles: a1.filter((a) => keep.has(a.id)).map(toPublicArticle),
+    };
+    const first = c1.find((c) => c.attempts > 0 && c.articleId)!;
+    expect(first.articleId).toBeTruthy();
+
+    // hour 2: fresh machine (empty store) seeded from the publication
+    const log: string[] = [];
+    const h2 = setup(log);
+    h2.settings = structuredClone(h1.settings); // the stored config (rule ids are per-process counters)
+    expect(await seedFromPublished(h2.stores, 'run_live_x', day, WINDOW, h2.settings)).toBe(day.articles.length);
+    await runCollection({ runId: 'run_live_x', window: WINDOW, trigger: 'auto', settings: h2.settings, sources: src, stores: h2.stores, http: h2.http });
+    const c2 = await h2.stores.getCandidates('run_live_x');
+    const a2 = await h2.stores.getArticles('run_live_x');
+    // the hour-1 story is still there with the same ids, and was not downloaded again
+    expect(c2.find((c) => c.id === first.id)!.articleId).toBe(first.articleId);
+    if (keep.has(first.articleId)) expect(a2.some((a) => a.id === first.articleId)).toBe(true);
+    expect(log.some((u) => u.includes(first.url))).toBe(false);
+    // the limit went to another link → coverage grows hour by hour
+    expect(c2.filter((c) => c.attempts > 0).length).toBe(c1.filter((c) => c.attempts > 0).length + 2);
+
+    // changed settings or window → fresh run (classification must follow the new rules)
+    const changed = { ...h2.settings, collection: { ...h2.settings.collection, maxArticlesPerSource: 3 } };
+    expect(await seedFromPublished(setup().stores, 'run_live_y', day, WINDOW, changed)).toBeNull();
+    expect(await seedFromPublished(setup().stores, 'run_live_y', day, { ...WINDOW, to: '2026-11-10T09:00:00+07:00' }, h2.settings)).toBeNull();
+  });
+});

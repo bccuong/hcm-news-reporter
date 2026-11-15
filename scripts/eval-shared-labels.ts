@@ -1,7 +1,7 @@
 /**
  * Analyse the team's review labels (labels/labels.json) against what the collector decided (published live/<date>.json):
  * precision/recall by majority vote, sector + assessment confusion, reviewer agreement and notes.
- * Usage: npx tsx scripts/eval-shared-labels.ts [--site https://bccuong.github.io/news-reporter/]
+ * Usage: npx tsx scripts/eval-shared-labels.ts [--site https://bccuong.github.io/news-reporter/] [--profile hcm]
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -11,15 +11,21 @@ import type { ReviewDecision } from '../src/domain/schemas.js';
 interface L { reportDate: string; articleId: string; title: string; sourceId: string; reviewer: string; label: 'relevant' | 'irrelevant' | null; category: string | null; assessment: string | null; note: string }
 const i = process.argv.indexOf('--site');
 const SITE = i > 0 ? process.argv[i + 1]! : 'https://bccuong.github.io/news-reporter/';
+const j = process.argv.indexOf('--profile');
+const PROFILE = j > 0 ? process.argv[j + 1]! : 'hcm';
 const labels = (JSON.parse(readFileSync('labels/labels.json', 'utf8')) as { labels: L[] }).labels;
 const byDate = new Map<string, L[]>();
 for (const l of labels) byDate.set(l.reportDate, [...(byDate.get(l.reportDate) ?? []), l]);
 
 async function day(date: string) {
-  const local = path.join('web/public/live', `${date}.json`);
-  if (existsSync(local)) return JSON.parse(readFileSync(local, 'utf8'));
-  const r = await fetch(new URL(`live/${date}.json`, SITE));
-  return r.ok ? r.json() : null;
+  // Data is per profile since session 12 (live/<profile>/<date>.json); the flat legacy path is the fallback.
+  for (const rel of [`${PROFILE}/${date}.json`, `${date}.json`]) {
+    const local = path.join('web/public/live', rel);
+    if (existsSync(local)) return JSON.parse(readFileSync(local, 'utf8'));
+    const r = await fetch(new URL(`live/${rel}`, SITE));
+    if (r.ok) return r.json();
+  }
+  return null;
 }
 const majority = <T,>(xs: T[]) => {
   const m = new Map<T, number>();
@@ -41,8 +47,20 @@ for (const [date, ls] of byDate) {
   }
   const arts = new Map<string, any>(d.articles.map((a: any) => [a.id, a]));
   const reviews: Record<string, ReviewDecision> = {};
+  // a label made before a re-collection may carry an older article id for the same URL → match by URL too
+  const byUrl = new Map<string, string>(d.articles.map((a: any) => [a.url, a.id]));
   const per = new Map<string, L[]>();
-  for (const l of ls) per.set(l.articleId, [...(per.get(l.articleId) ?? []), l]);
+  let unmatched = 0;
+  for (const l of ls) {
+    const aid = arts.has(l.articleId) ? l.articleId : ((l as L & { url?: string }).url && byUrl.get((l as L & { url?: string }).url!)) || l.articleId;
+    if (!arts.has(aid)) unmatched++;
+    // one vote per reviewer per story: their latest label wins (a changed mind is not a disagreement)
+    const prev = per.get(aid) ?? [];
+    const mine = prev.find((p) => p.reviewer === l.reviewer);
+    if (mine && String((mine as L & { at?: string }).at ?? '') > String((l as L & { at?: string }).at ?? '')) continue;
+    per.set(aid, [...prev.filter((p) => p !== mine), l]);
+  }
+  if (unmatched) console.log(`(${date}: ${unmatched} label(s) on stories no longer in the published period – not scored)`);
   for (const [aid, vs] of per) {
     const lab = majority(vs.map((v) => v.label));
     if (lab) reviews[aid] = { articleId: aid, included: false, order: 0, updatedAt: '', changes: [], relevanceLabel: lab };

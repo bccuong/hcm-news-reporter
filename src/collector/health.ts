@@ -17,6 +17,8 @@ export function measureHealth(sourceId: string, cands: Candidate[], arts: Articl
   const dateUnknown = myArts.filter((a) => a.dateConfidence === 'unknown').length;
   const containers = new Map<string, number>();
   for (const a of myArts) {
+    // undefined = not recorded (article carried over from data published before the field existed) – not evidence of drift
+    if (a.extractionContainer === undefined) continue;
     const k = a.extractionContainer ?? '(none)';
     containers.set(k, (containers.get(k) ?? 0) + 1);
   }
@@ -52,7 +54,9 @@ export function assessHealth(current: ReturnType<typeof measureHealth>, history:
       reasons.push(`Tỉ lệ bài lỗi/thiếu/không rõ giờ tăng từ ${pct(baseline.failRate)} (${baseline.runs} lượt trước) lên ${pct(current.failRate)}`);
     }
     if (baseline.mainContainer && baseline.mainContainer !== '(none)') {
-      const stillUsed = (current.containers[baseline.mainContainer] ?? 0) / Math.max(1, current.fetched - current.parseFailed);
+      // share among the articles whose container is known (= fetched − parse failures for a fresh run)
+      const known = Object.values(current.containers).reduce((s, n) => s + n, 0);
+      const stillUsed = (current.containers[baseline.mainContainer] ?? 0) / Math.max(1, known);
       if (current.mainContainer !== baseline.mainContainer && stillUsed < 0.5) {
         reasons.push(`Khung nội dung bài đổi từ "${baseline.mainContainer}" sang "${current.mainContainer ?? 'không xác định'}" – báo có thể đã đổi giao diện`);
       }

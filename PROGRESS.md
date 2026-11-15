@@ -4,10 +4,19 @@
 - Specification: v1.2
 - Milestones: **M0 DONE · M1 DONE · M2 DONE · M5 DONE (original template; PDF via Microsoft PowerPoint or LibreOffice, visually inspected)** · M3/M4 mostly done · M6 partial
 - Repository: https://github.com/bccuong/news-reporter (renamed from hcm-news-reporter on 15/11/2026; branch `main`, public) · Live site: https://bccuong.github.io/news-reporter/ (real data, hourly auto collection switchable on the web + on-demand "Thu thập")
-- Last session: 2026-11-15 (session 8) – last commit `6293e33` (shared team review), all tests green locally
+- Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 12 – profiles, templates, 50/source, Dân trí, rename to News Reporter)
+## ▶ RESUME HERE (session 13 – hourly web runs no longer drop stories; 2026-11-16)
+- Ran the recorded next step (evaluate team labels): `scripts/eval-shared-labels.ts` read the pre-profile path → fixed (`live/<profile>/<date>.json`, `--profile`, URL fallback for labels with an older article id, one vote per reviewer = latest).
+- **Defect found:** 10 of 17 team-labelled stories were missing from the published period. Cause: every hourly GitHub run starts with an empty store; with the 50/publisher limit (session 12) an article extracted at 21:07 could become `retry_pending FETCH_LIMIT` at 06:07, or be gone from the ledger once it left the RSS feed. Article ids could also change for the same URL → labels orphaned.
+- **Fix:** `seedFromPublished()` (scripts/cloud-collect.ts) loads the same period's published ledger + articles into the run store under the same run id when window and settings hash are unchanged → runCollection resumes: extracted stories stay (same ids), the limit is spent on links not fetched yet; manifest note "Tiếp nối lần đăng trước…". `extractionContainer` is now published; health ignores unknown containers.
+- Verified: typecheck, vitest 89/89, real 2-pass dry run (119 → 166 articles, 0 lost, adapters ok). Settings hash is stable across runs on real data (3d4dc3c5 at 00:15 and 06:11).
+- Label evaluation now: 17 labels, 1 reviewer, 6 scored stories, precision/recall 100% → too few to tune rules; 10 labels were on dropped stories (cannot be scored).
+- Note: the user changed the web config at 2026-11-15 23:30Z, so the first hourly run after deploy is a fresh run (hash differs); later runs of the same period continue.
+- **Next single action:** after the next two hourly runs, check the period's manifest notes contain "Tiếp nối lần đăng trước" and article count did not drop (`curl …/live/hcm/<date>.json`); then, after more team labelling, rerun `npx tsx scripts/eval-shared-labels.ts`.
+
+## (history) Session 12 – profiles, templates, 50/source, Dân trí, rename to News Reporter)
 - User asked (15/11/2026):
   - Dân trí on by default.
   - Max 50 articles per publisher, configurable.
@@ -156,4 +165,5 @@ After the editor has labelled 1–2 weeks of runs in the local app: `npx tsx scr
 | 2026-11-15 (4) | DIS-08 adapter health + UI, clustering rewrite (union-find, IDF, mutual-best) | tsc, vitest 47/47, playwright 7/7, live run, cluster eval | SGGP adapter |
 | 2026-11-15 (5) | Live GitHub Pages (hourly cloud collection), SGGP video articles | tsc, vitest 52/52, playwright 7/7, cloud run, live run | Relevance precision |
 | 2026-11-15 (6) | Relevance precision rules + labelled evaluation + UI settings | tsc, vitest 68/68, playwright 7/7, eval 15/11 + cross-check 16/11 | Editor feedback labels |
+| 2026-11-16 (13) | Hourly cloud carry-over (no dropped stories), label eval per profile, health container fix | tsc, vitest 89/89, real 2-pass dry run | Check notes after 2 hourly runs; more labels |
 | 2026-11-15 (7) | Editor relevance labels, filter-quality card + endpoint + script | tsc, vitest 71/71, playwright 8/8 | Use labels to tune rules |

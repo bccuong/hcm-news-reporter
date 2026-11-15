@@ -19,6 +19,7 @@ import { HttpClient } from '../src/collector/http.js';
 import { reconcile, runCollection } from '../src/collector/run.js';
 import { defaultSettings, defaultSources } from '../src/domain/defaults.js';
 import { DEFAULT_PROFILE_ID, SettingsSchema, SourceSchema, type Article, type Candidate, type ImageCandidate, type RunManifest, type Settings, type Source } from '../src/domain/schemas.js';
+import { hash32 } from '../src/domain/text.js';
 import { lastCompletedWindow, toVnIso, vnDate, windowForReportDate } from '../src/domain/timeWindow.js';
 import { makePaths, Stores } from '../src/storage/stores.js';
 
@@ -37,6 +38,8 @@ export interface PublicArticle {
   sections: { paragraphs: number; headings: number; tables: number; figures: number }; location: Article['location']; relevance: Article['relevance'];
   primaryCategory: Article['primaryCategory']; classificationEvidence: string[]; suggestedAssessment: Article['suggestedAssessment']; assessmentEvidence: string[];
   duplicateGroupId: string | null; dateEvidence: Article['dateEvidence'];
+  /** body container used by the extractor (adapter-drift detection when the article is carried into the next hourly run); absent in data published before 17/11/2026 */
+  extractionContainer?: string | null;
   /** photo LINKS only (the browser loads them from the publisher, like the local app); no copies are published */
   images: Array<Pick<ImageCandidate, 'url' | 'caption' | 'credit' | 'origin' | 'rightsStatus'>>;
 }
@@ -65,9 +68,46 @@ export function toPublicArticle(a: Article): PublicArticle {
     extractionWarnings: a.extractionWarnings, sections: { paragraphs: count('paragraph'), headings: count('heading'), tables: count('table'), figures: count('figure') },
     location: a.location, relevance: a.relevance, primaryCategory: a.primaryCategory, classificationEvidence: a.classificationEvidence,
     suggestedAssessment: a.suggestedAssessment, assessmentEvidence: a.assessmentEvidence, duplicateGroupId: a.duplicateGroupId, dateEvidence: a.dateEvidence,
+    extractionContainer: a.extractionContainer ?? null,
     images: a.imageCandidates.filter((i) => /^https:\/\//.test(i.url) && i.rightsStatus !== 'not_usable').slice(0, 3)
       .map((i) => ({ url: i.url, caption: i.caption ? cut(i.caption, 200) : undefined, credit: i.credit, origin: i.origin, rightsStatus: i.rightsStatus })),
   };
+}
+
+/** Published article → stored Article (same rule as web/src/api.ts fromPublic). Only the published photo links survive; bodyText is rebuilt like the extractor does. */
+export function fromPublicArticle(p: PublicArticle, runId: string, collectedAt: string): Article {
+  return {
+    id: p.id, runId, sourceId: p.sourceId, sourceName: p.sourceName, originType: 'website', originalUrl: p.url, canonicalUrl: p.url, title: p.title, sapo: p.sapo,
+    bodyText: (p.contentSections ?? []).filter((s) => s.type !== 'figure').map((s) => s.text).join('\n'), contentSections: p.contentSections ?? [], articleLinks: [],
+    author: p.author, publishedAt: p.publishedAt, modifiedAt: p.modifiedAt, collectedAt, dateConfidence: p.dateConfidence, dateEvidence: p.dateEvidence ?? [],
+    extractionAdapterVersion: 'carried-over', extractionContainer: p.extractionContainer, extractionCompleteness: p.extractionCompleteness, extractionWarnings: p.extractionWarnings ?? [],
+    continuation: { detected: false, urls: [] }, location: p.location, relevance: p.relevance, primaryCategory: p.primaryCategory, secondaryCategories: [],
+    classificationEvidence: p.classificationEvidence ?? [], suggestedAssessment: p.suggestedAssessment, assessmentEvidence: p.assessmentEvidence ?? [],
+    imageCandidates: (p.images ?? []).map((i) => ({ ...i, sourceArticleUrl: p.url })), duplicateGroupId: p.duplicateGroupId, warnings: [],
+  };
+}
+
+/**
+ * Hourly runs of the SAME period continue the previous publication instead of starting empty: its ledger and articles are
+ * loaded into the run store under the same run id, so runCollection resumes – extracted stories stay (with their ids, so
+ * team labels stay attached) and the per-publisher fetch limit is spent on links not fetched yet.
+ * Without this, a story extracted at 21:07 could fall back to "retry_pending (FETCH_LIMIT)" or leave the RSS feed by 06:07
+ * and disappear from the published period. Only when the window and settings are unchanged (otherwise: fresh run).
+ * Returns the number of carried-over articles, or null when not seeded.
+ */
+export async function seedFromPublished(stores: Stores, runId: string, day: PublicDay | undefined, window: { from: string; to: string }, settings: Settings): Promise<number | null> {
+  if (!day?.manifest || !Array.isArray(day.candidates)) return null;
+  if (day.manifest.window.from !== window.from || day.manifest.window.to !== window.to) return null;
+  if (day.manifest.settingsHash !== hash32(JSON.stringify(settings))) return null;
+  const arts = (day.articles ?? []).map((p) => fromPublicArticle(p, runId, day.generatedAt));
+  const have = new Set(arts.map((a) => a.id));
+  // extracted-but-unpublished (outside the window) keep their terminal state; their article was never published
+  const cands: Candidate[] = day.candidates.map((c) => ({ ...c, runId, history: [], articleId: c.articleId && have.has(c.articleId) ? c.articleId : null }));
+  const { reconciliation: _r, ...m } = day.manifest;
+  await stores.saveManifest({ ...m, runId, sources: [], notes: [], counts: {} });
+  await stores.saveCandidates(runId, cands);
+  if (arts.length) await stores.appendArticles(runId, arts);
+  return arts.length;
 }
 
 async function getJson<T>(url: string): Promise<T | null> {
@@ -175,6 +215,7 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
       for (const d of prevDays.values()) if (!d.custom) await stores.saveManifest({ ...d.manifest, runId: `run_hist_${d.reportDate.replace(/-/g, '')}` });
       const runId = `run_live_${job.key.replace(/[^0-9a-z]/gi, '')}`;
       const t0 = Date.now();
+      const carried = job.custom ? null : await seedFromPublished(stores, runId, prevDays.get(job.key), job.window, settings);
       const m = await runCollection({ runId, window: job.window, trigger: 'auto', settings, sources, stores, http, profileId: profile.id });
       const cands = await stores.getCandidates(runId);
       const arts = await stores.getArticles(runId);
@@ -182,6 +223,7 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
       m.notes.push(`Thu thập trên máy chủ GitHub Actions lúc ${toVnIso(now)} (${((Date.now() - t0) / 1000).toFixed(0)} giây); cấu hình "${profile.name}": ${origin}.`);
       if (job.custom) m.notes.push(`Thu thập theo yêu cầu${requestedBy ? ` của ${requestedBy}` : ''} trên web.`);
       if (job.provisional) m.notes.push('Kỳ đang diễn ra – tạm thời');
+      if (carried != null) m.notes.push(`Tiếp nối lần đăng trước của kỳ này: giữ ${carried} bài đã bóc tách, chỉ tải thêm link chưa tải.`);
       published.set(job.key, {
         kind: 'hcm-live-day', reportDate: job.reportDate, key: job.key, custom: job.custom, requestedBy: job.custom ? requestedBy : undefined, provisional: job.provisional, generatedAt: toVnIso(new Date()),
         manifest: { ...m, reconciliation: reconcile(cands) },
