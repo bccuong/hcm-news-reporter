@@ -335,6 +335,8 @@ export interface Article {
   dateConfidence: 'verified' | 'inferred' | 'unknown';
   dateEvidence: DateEvidence[];
   extractionAdapterVersion: string;
+  /** body container selector actually used (adapter-drift detection) */
+  extractionContainer?: string | null;
   extractionCompleteness: 'auto_checks_passed' | 'partial' | 'failed';
   extractionWarnings: string[];
   continuation: { detected: boolean; urls: string[] };
@@ -368,7 +370,22 @@ export interface ReviewDecision {
   changes: Array<{ at: string; field: string; from: unknown; to: unknown }>;
 }
 
+export interface AdapterHealth {
+  status: 'ok' | 'degraded' | 'unknown';
+  fetched: number;
+  parseFailed: number;
+  partial: number;
+  dateUnknown: number;
+  failRate: number;
+  mainContainer: string | null;
+  containerShare: number;
+  containers: Record<string, number>;
+  reasons: string[];
+  baseline: { runs: number; failRate: number | null; mainContainer: string | null };
+}
+
 export interface SourceRunStats {
+  adapter?: AdapterHealth;
   sourceId: string;
   sourceName: string;
   status: 'pending' | 'running' | 'ok' | 'partial' | 'failed' | 'skipped_disabled' | 'manual_only' | 'cancelled';

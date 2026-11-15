@@ -1,7 +1,7 @@
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Wifi, WifiOff, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
-import type { Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
+import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
 import { api, type ExportResult, type RunInfo } from './api';
@@ -246,6 +246,7 @@ export function App() {
             {run.sources.map((s) => (
               <span key={s.sourceId} className={`chip ${s.status === 'ok' ? 'border-green-300 bg-green-50 text-green-800' : s.status === 'partial' ? 'border-amber-300 bg-amber-50 text-amber-800' : s.status === 'failed' ? 'border-red-300 bg-red-50 text-red-800' : s.status === 'running' ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>
                 <b>{s.sourceName}</b> · {SRC_STATUS[s.status] ?? s.status} · {s.candidates} link{s.limitReached ? ' · chạm giới hạn' : ''}
+                {s.adapter?.status === 'degraded' && <span className="font-bold text-red-700"> · bóc tách suy giảm</span>}
               </span>
             ))}
             {run.active && <span className="chip border-blue-300 bg-blue-50 text-blue-800"><RefreshCw className="h-3 w-3 animate-spin" /> đang chạy</span>}
@@ -276,7 +277,7 @@ export function App() {
             {tab === 'articles' && <ArticleList list={ready} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={patch} />}
             {tab === 'review' && <ArticleList list={reviewQueue} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={patch} reviewMode />}
             {tab === 'ledger' && <Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} />}
-            {tab === 'coverage' && <Coverage run={run} cands={cands} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
+            {tab === 'coverage' && <Coverage run={run} cands={cands} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
             {tab === 'export' && settings && <ExportPanel run={run} arts={artById} reviews={reviews} settings={settings} onPatch={patch} onInspect={setInspect} onMerge={merge} onSplit={split} />}
           </>
         )}
@@ -476,7 +477,37 @@ function Ledger({ cands, sources, onInspect }: { cands: Candidate[]; sources: So
   );
 }
 
-function Coverage({ run, cands, onRetry }: { run: RunInfo; cands: Candidate[]; onRetry: (b: { mode: 'failed' | 'source' | 'expand'; sourceId?: string; extraLookbackHours?: number }) => void }) {
+function AdapterHealthCard({ h, disabled, onRescan, onOpenSettings }: { h: AdapterHealth; disabled: boolean; onRescan: () => void; onOpenSettings: () => void }) {
+  const pct = (x: number | null) => (x == null ? '—' : `${Math.round(x * 100)}%`);
+  const tone = h.status === 'degraded' ? 'border-red-300 bg-red-50 text-red-900' : h.status === 'ok' ? 'border-green-200 bg-green-50 text-green-900' : 'border-slate-200 bg-slate-50 text-slate-700';
+  return (
+    <div className={`mt-2 rounded border p-2 text-xs ${tone}`} data-testid="adapter-health">
+      <div className="flex flex-wrap items-center gap-2">
+        <b>Bộ bóc tách: {h.status === 'degraded' ? 'SUY GIẢM' : h.status === 'ok' ? 'ổn định' : 'chưa đủ mẫu'}</b>
+        <span>lỗi/thiếu/không rõ giờ {pct(h.failRate)} ({h.parseFailed} lỗi · {h.partial} thiếu · {h.dateUnknown} không rõ giờ / {h.fetched} bài tải)</span>
+        <span>· mốc {h.baseline.runs} lượt trước: {pct(h.baseline.failRate)}</span>
+        <span>· khung nội dung: <code>{h.mainContainer ?? '—'}</code>{h.baseline.mainContainer && h.baseline.mainContainer !== h.mainContainer ? <> (trước: <code>{h.baseline.mainContainer}</code>)</> : null}</span>
+      </div>
+      {h.reasons.length > 0 && <ul className="mt-1 list-disc pl-5">{h.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
+      {h.status === 'degraded' && (
+        <div className="mt-2">
+          <b>Cách khắc phục:</b> bài của nguồn này đã chuyển sang hàng <i>Cần kiểm tra</i> và không còn được tự gắn nhãn "đầy đủ".
+          <ol className="mt-1 list-decimal pl-5">
+            <li>Mở vài bài trong hàng Cần kiểm tra, đối chiếu với bài gốc.</li>
+            <li>Vào Cài đặt › Nguồn tin › <i>Thử thu thập</i> để xem khung nội dung mới; nếu cần, đặt "Mẫu URL bài" trong phần Nâng cao.</li>
+            <li>Bấm <i>Quét lại nguồn này</i>. Khi một lượt tiếp theo bình thường, nguồn trở lại trạng thái ổn định.</li>
+          </ol>
+          <div className="mt-1 flex gap-2">
+            <button className="btn-ghost btn-xs" onClick={onOpenSettings}>Mở cài đặt nguồn tin</button>
+            <button className="btn-ghost btn-xs" disabled={disabled} onClick={onRescan}>Quét lại nguồn này</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Coverage({ run, cands, onRetry, onOpenSettings }: { run: RunInfo; cands: Candidate[]; onRetry: (b: { mode: 'failed' | 'source' | 'expand'; sourceId?: string; extraLookbackHours?: number }) => void; onOpenSettings: () => void }) {
   const rec = run.reconciliation;
   return (
     <div className="space-y-3">
@@ -515,6 +546,7 @@ function Coverage({ run, cands, onRetry }: { run: RunInfo; cands: Candidate[]; o
               ))}
             </div>
             {(s as any).newSinceLast !== undefined && <p className="mt-1 text-xs text-slate-500">Lần quét gần nhất thêm mới: {(s as any).newSinceLast} link</p>}
+            {s.adapter && <AdapterHealthCard h={s.adapter} disabled={run.active || api.mode === 'demo'} onRescan={() => onRetry({ mode: 'source', sourceId: s.sourceId })} onOpenSettings={onOpenSettings} />}
             <table className="mt-2 w-full">
               <thead><tr><th className="th">Kênh</th><th className="th">URL</th><th className="th">Kết quả</th><th className="th">Link</th></tr></thead>
               <tbody>

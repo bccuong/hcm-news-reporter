@@ -183,6 +183,22 @@ export const EXPECTED = {
   } as Record<string, string>,
 };
 
+/** Simulated publisher redesign of source A's article pages (DIS-08 tests). */
+export function redesignedRoutes(mode: 'new_container' | 'broken'): Record<string, { status: number; body: string }> {
+  const out: Record<string, { status: number; body: string }> = {};
+  for (const [url, r] of Object.entries(siteARoutes())) {
+    if (!url.startsWith(`${A}/thoi-su/mau-thu`) || r.status !== 200) continue;
+    out[url] = {
+      status: 200,
+      body:
+        mode === 'new_container'
+          ? r.body.replace(/<div class="detail-content">([\s\S]*?)<\/div>\n<div class="related">/, '<article class="noi-dung-v2">$1</article>\n<div class="related">')
+          : r.body.replace(/<div class="detail-content">([\s\S]*?)<\/div>\n<div class="related">/, '<div class="khung-moi"><span>$1</span></div>\n<div class="related">').replace(/<\/?p>/g, ''),
+    };
+  }
+  return out;
+}
+
 export function fixtureTransport(extra: Record<string, { status: number; body: string; headers?: Record<string, string> }> = {}, log: string[] = []): Transport {
   const routes = { ...siteARoutes(), ...extra };
   return async (u) => {

@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { clusterArticles } from '../domain/cluster.js';
+import { assessHealth, measureHealth } from './health.js';
 import { annotateArticle } from '../domain/relevance.js';
 import type { Article, Candidate, CandidateState, DiscoveryEvidence, DiscoveryMethod, RunManifest, Settings, Source, SourceRunStats } from '../domain/schemas.js';
 import { hash32 } from '../domain/text.js';
@@ -370,6 +372,7 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
         dateConfidence: ex.dateConfidence,
         dateEvidence: ex.dateEvidence,
         extractionAdapterVersion: EXTRACTOR_VERSION,
+        extractionContainer: ex.containerSelector,
         extractionCompleteness: ex.completeness,
         extractionWarnings: ex.warnings,
         continuation: ex.continuation,
@@ -418,6 +421,29 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
     await checkpoint();
   }
 
+  // DIS-08: adapter health vs. previous healthy runs; degraded → no automatic "complete", review queue
+  const history = (await stores.listRuns()).filter((r) => r.runId !== ctx.runId && r.status === 'completed');
+  const degradedArticles: Article[] = [];
+  for (const stats of manifest.sources) {
+    if (!['ok', 'partial', 'failed'].includes(stats.status)) continue;
+    const prev = history.map((r) => r.sources.find((s) => s.sourceId === stats.sourceId)?.adapter).filter((h): h is NonNullable<typeof h> => !!h);
+    stats.adapter = assessHealth(measureHealth(stats.sourceId, ledger.all(), [...existingArticles.values()]), prev);
+    if (stats.adapter.status !== 'degraded') continue;
+    if (stats.status === 'ok') stats.status = 'partial';
+    const why = stats.adapter.reasons.join('; ');
+    for (const c of ledger.all().filter((x) => x.sourceId === stats.sourceId && x.articleId)) {
+      const a = existingArticles.get(c.articleId!);
+      if (a && a.extractionCompleteness === 'auto_checks_passed') {
+        a.extractionCompleteness = 'partial';
+        a.extractionWarnings = [...a.extractionWarnings.filter((w) => !w.startsWith('ADAPTER_DEGRADED')), `ADAPTER_DEGRADED: ${why}`];
+        degradedArticles.push(a);
+      }
+      if (c.state === 'ready_for_review' && !c.reasonCode) ledger.set(c, 'ready_for_review', 'ADAPTER_DEGRADED', `Bộ bóc tách nguồn này suy giảm – kiểm tra với bài gốc: ${why}`);
+    }
+    manifest.notes.push(`${stats.sourceName}: bộ bóc tách suy giảm – ${why}`);
+  }
+  if (degradedArticles.length) await stores.appendArticles(ctx.runId, degradedArticles);
+
   // Same-event clustering (near-duplicates) for reviewer – never auto-merged
   const arts = [...existingArticles.values()];
   const beforeGroups = new Map(arts.map((a) => [a.id, a.duplicateGroupId]));
@@ -432,31 +458,11 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
   }
   manifest.status = ctx.signal?.aborted ? 'cancelled' : 'completed';
   manifest.finishedAt = now();
-  const anyLimit = manifest.sources.some((s) => s.limitReached || s.status === 'failed' || s.status === 'partial');
+  const anyLimit = manifest.sources.some((s) => s.limitReached || s.status === 'failed' || s.status === 'partial' || s.adapter?.status === 'degraded');
   manifest.completeness = anyLimit || all.some((c) => c.state === 'retry_pending') ? 'incomplete' : 'complete_within_enumerated_scope';
   await checkpoint();
   emit({ type: 'done', counts: manifest.counts });
   return manifest;
 }
 
-/** Title-token Jaccard clustering to flag likely same-event stories for manual merge. */
-export function clusterArticles(list: Article[]): Map<string, string[]> {
-  const tok = (s: string) => new Set(s.toLowerCase().normalize('NFC').split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1));
-  const groups = new Map<string, string[]>();
-  const toks = list.map((a) => tok(a.title));
-  for (let i = 0; i < list.length; i++) {
-    for (let j = i + 1; j < list.length; j++) {
-      const A = toks[i]!;
-      const B = toks[j]!;
-      const inter = [...A].filter((x) => B.has(x)).length;
-      const jac = inter / (A.size + B.size - inter || 1);
-      if (jac >= 0.45) {
-        const g = list[i]!.duplicateGroupId ?? list[j]!.duplicateGroupId ?? `g_${list[i]!.id.slice(2, 10)}`;
-        list[i]!.duplicateGroupId = g;
-        list[j]!.duplicateGroupId = g;
-        groups.set(g, Array.from(new Set([...(groups.get(g) ?? []), list[i]!.id, list[j]!.id])));
-      }
-    }
-  }
-  return groups;
-}
+export { clusterArticles } from '../domain/cluster.js';

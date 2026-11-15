@@ -1,4 +1,12 @@
-# ACCEPTANCE_REPORT — Evidence log (2026-11-15, session 3 update)
+# ACCEPTANCE_REPORT — Evidence log (2026-11-15, session 4 update)
+
+## Session 4 changes in status
+| ID | New status | Evidence |
+|---|---|---|
+| DIS-08 | **PASS** | `tests/health.test.ts` (baseline → container change → broken markup → recovery; degraded runs never become baseline), Playwright DIS-08 (redesign → coverage tab "SUY GIẢM" + reasons + recovery, articles in review queue), screenshot `docs/screenshots/adapter-degraded.png`; live baseline for 5 real sources |
+| DIS-06 | PASS (improved) | `tests/cluster.test.ts` transitive 4-publisher event, no chaining of unrelated news; live eval 19 multi-publisher events |
+
+# Session 3 update
 
 ## Session 3 changes in status
 | ID | New status | Evidence |

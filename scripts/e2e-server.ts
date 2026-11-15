@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server/app.js';
-import { A, B, D, fixtureTransport, publicResolver } from '../tests/fixtures/siteA.js';
+import type { Transport } from '../src/collector/http.js';
+import { A, B, D, fixtureTransport, publicResolver, redesignedRoutes } from '../tests/fixtures/siteA.js';
 
 const root = mkdtempSync(path.join(tmpdir(), 'hcm-e2e-'));
 mkdirSync(path.join(root, 'config'), { recursive: true });
@@ -18,6 +19,15 @@ writeFileSync(
     ].map((s) => ({ enabled: true, priority: 10, fetchMode: 'direct', discoveryMethods: ['rss', 'sitemap', 'section'], searchUrls: [], verifiedRoutes: [], crawlLimits: { maxListingPages: 10, maxDepth: 2, maxArticleFetches: 50, followPagination: true }, maxConcurrency: 2, pauseMs: 0, articleUrlPattern: '', excludeUrlPattern: '', notes: '', origin: 'user', ...s })),
   }),
 );
-const { app } = await createApp({ root, seedWebsitesTxt: '', transport: fixtureTransport(), resolver: publicResolver, webDist: path.resolve('dist/web') });
+// TEST-ONLY switch (exists only in this e2e script, never in the real app): simulate a publisher redesign
+let redesign: 'none' | 'new_container' = 'none';
+const normal = fixtureTransport();
+const changed = fixtureTransport(redesignedRoutes('new_container'));
+const transport: Transport = (u, i) => (redesign === 'none' ? normal(u, i) : changed(u, i));
+const { app } = await createApp({ root, seedWebsitesTxt: '', transport, resolver: publicResolver, webDist: path.resolve('dist/web') });
+app.post('/__e2e/redesign', async (req) => {
+  redesign = (req.body as { mode?: 'none' | 'new_container' })?.mode ?? 'new_container';
+  return { redesign };
+});
 await app.listen({ host: '127.0.0.1', port: 5179 });
 console.log(`e2e server on http://127.0.0.1:5179 data=${root}`);

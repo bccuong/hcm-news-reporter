@@ -148,3 +148,25 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await expect(page.getByText(/^Nguồn: Báo mẫu thử A ·/)).toBeVisible();
   await expect(story).toContainText('Gợi ý cùng sự kiện');
 });
+
+test('DIS-08: publisher redesign → coverage tab shows degraded adapter, articles move to review queue', async ({ page, request }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  await expect(page.getByTestId('adapter-health').first()).toContainText('Bộ bóc tách: ổn định');
+  await request.post('/__e2e/redesign', { data: { mode: 'new_container' } });
+  await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
+  await page.getByLabel('Từ (gồm)').fill('2026-11-08T17:00');
+  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
+  await page.getByRole('button', { name: 'Thu thập' }).click();
+  await expect(page.getByText('bóc tách suy giảm')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  const card = page.getByTestId('adapter-health').first();
+  await expect(card).toContainText('Bộ bóc tách: SUY GIẢM');
+  await expect(card).toContainText('Khung nội dung bài đổi từ ".detail-content"');
+  await expect(card.getByRole('button', { name: 'Quét lại nguồn này' })).toBeVisible();
+  await page.screenshot({ path: 'docs/screenshots/adapter-degraded.png', fullPage: true });
+  // the publisher's articles are no longer "ready": they sit in the review queue with the reason
+  await page.getByRole('button', { name: /Cần kiểm tra/ }).click();
+  await expect(page.getByText(/Bộ bóc tách nguồn này suy giảm/).first()).toBeVisible();
+  await request.post('/__e2e/redesign', { data: { mode: 'none' } });
+});

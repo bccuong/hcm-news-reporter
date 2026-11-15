@@ -9,6 +9,12 @@
 ## Assets
 See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.md`. Tools on this PC: Node 26, Git, gh, **LibreOffice** (installed session 2), Microsoft Edge (used by Playwright locally). Python not installed (not needed).
 
+## Session 4 – done (with evidence)
+- **DIS-08 adapter-degraded detection** (`src/collector/health.ts`): per source and run – fetched, parse failures, partial, unknown dates, main body container; compared with ≤3 previous HEALTHY runs. Degraded (failure rate +25 pts & ≥30%, or main container changed, or ≥50% failing with no history) → articles lose automatic "complete" (`ADAPTER_DEGRADED` warning), ready items go to the review queue, run marked incomplete, coverage tab shows reasons + recovery steps (open source settings, rescan). Degraded runs never become the baseline.
+- **Same-event clustering rewritten** (`src/domain/cluster.ts`): union-find (no split clusters), title Jaccard + IDF-weighted title+sapo overlap with mutual-best guard (no chaining), time limits, generic titles ignored. Live 15/11 run: 19 multi-publisher events; the "6 quân nhân" event now 1 cluster of 4 publishers (was split in 2); the 24-article false mega-cluster from the first draft eliminated.
+- Live baseline recorded for 5 real sources (all "ok"; SGGP 24% failure baseline – known special layouts).
+- Commands: `npx tsc` 0 errors · `npx vitest run` **47/47** · `npx playwright test` **7/7** (incl. DIS-08 UI) · `npx tsx scripts/eval-clusters.ts` · `scripts/live-run.ps1` 1226/1226 accounted.
+
 ## Session 3 – done (with evidence)
 - **Multi-source stories (DIS-06):** `groupId` merge model in `src/reports/assemble.ts` (one level, chronological sources, one per publisher, photo fallback from merged article, unverified merged source excluded with warning); UI "Nguồn cùng sự kiện" panel in Article Inspector + Export tab (suggestions from title clustering, manual pick, split). Template renders `Nguồn: A | B` with a hyperlink per publisher.
 - **Microsoft PowerPoint verified:** exported PPTX opens via COM without repair; PowerPoint is now the preferred PDF backend (`auto`), LibreOffice fallback.
@@ -51,7 +57,7 @@ See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.
 - Demo (GitHub Pages) still uses the DEMO renderer: the Department template is private and not published.
 
 ## Next single executable action
-DIS-08 adapter-degraded detection: per source, compare this run's extraction success rate / container selector with the last 3 runs and mark the source "degraded" in the coverage tab (`src/collector/run.ts` + `web/src/App.tsx` Coverage). Also consider transitive same-event clusters (one event split into 2 clusters in the 15/11 run).
+SGGP extraction adapter: inspect the ~14 `ARTICLE_BODY_MISSING` pages (`GET /api/runs/<run>/candidates?sourceId=sggp-org-vn&state=parse_failed`), add their body container to `BODY_SELECTORS` in `src/collector/extract.ts` with a fixture test, then re-run `scripts/live-run.ps1`.
 
 ## Session handoff log
 | Session date | Changes made | Tests actually run | Next action |
@@ -59,3 +65,4 @@ DIS-08 adapter-degraded detection: per source, compare this run's extraction suc
 | 2026-11-15 (1) | M0–M2, UI, API, demo Pages, live run | tsc, vitest 33/33, build, live | UI tests, template |
 | 2026-11-15 (2) | Original template renderer, LibreOffice PDF + visual QA, Playwright UI tests, server crash fix | tsc, vitest 38/38, playwright 6/6, live run + template export | Multi-source stories |
 | 2026-11-15 (3) | Multi-source stories, PowerPoint verification + PDF backend, list-fit fix | tsc, vitest 42/42, playwright 6/6, PowerPoint render QA | DIS-08 degraded adapter |
+| 2026-11-15 (4) | DIS-08 adapter health + UI, clustering rewrite (union-find, IDF, mutual-best) | tsc, vitest 47/47, playwright 7/7, live run, cluster eval | SGGP adapter |
