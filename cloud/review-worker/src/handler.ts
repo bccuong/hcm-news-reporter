@@ -97,7 +97,8 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   // nightly export for the GitHub Action (bearer token, never sent to browsers)
   if (url.pathname === '/export' && req.method === 'GET') {
     const auth = req.headers.get('authorization') ?? '';
-    if (!safeEqual(auth, `Bearer ${env.EXPORT_TOKEN}`)) return json({ error: 'UNAUTHORIZED' }, 401, {});
+    // secrets set through a shell pipe may carry a trailing newline – compare trimmed values
+    if (!safeEqual(auth.trim(), `Bearer ${(env.EXPORT_TOKEN ?? '').trim()}`)) return json({ error: 'UNAUTHORIZED' }, 401, {});
     const since = url.searchParams.get('since') ?? '';
     const keys = await listAll(env.REVIEWS, since && DATE.test(since) ? `l:${since.slice(0, 7)}` : 'l:');
     const out: LabelRecord[] = [];
@@ -109,8 +110,8 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   }
 
   // reviewer endpoints: shared access code
-  const code = req.headers.get('x-review-code') ?? '';
-  if (!safeEqual(code, env.ACCESS_CODE)) return json({ error: 'Mã truy cập không đúng' }, 401, h);
+  const code = (req.headers.get('x-review-code') ?? '').trim();
+  if (!safeEqual(code, (env.ACCESS_CODE ?? '').trim())) return json({ error: 'Mã truy cập không đúng' }, 401, h);
 
   if (url.pathname === '/login' && req.method === 'POST') return json({ ok: true }, 200, h);
 

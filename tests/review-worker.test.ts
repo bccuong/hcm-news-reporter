@@ -56,6 +56,12 @@ describe('shared review worker', () => {
     expect(j.count).toBe(1);
     expect(j.labels[0]!.reviewerId).toBe('nguyen-van-duc');
   });
+  it('secrets stored with a trailing newline (shell pipe) still match', async () => {
+    const e = { ...env(), ACCESS_CODE: 'HCM-test-1234\r\n', EXPORT_TOKEN: 'export-secret\n' };
+    expect((await post(e, label())).status).toBe(200);
+    expect((await handle(new Request('https://w.example/export', { headers: { authorization: 'Bearer export-secret' } }), e)).status).toBe(200);
+    expect((await post(e, label(), 'HCM-test-12345')).status).toBe(401);
+  });
   it('reviewer ids are ascii slugs', () => {
     expect(reviewerId('  Lê Đình Ánh ')).toBe('le-dinh-anh');
   });
