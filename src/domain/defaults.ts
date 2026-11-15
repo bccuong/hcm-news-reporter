@@ -9,7 +9,7 @@ import { slugify } from './text.js';
  * These are editable starting values in the GUI, not hardcoded behavior.
  */
 
-const SKILL_ROUTES: Record<string, { name: string; base: string; routes: string[]; conc?: number; pause?: number }> = {
+const SKILL_ROUTES: Record<string, { name: string; base: string; routes: string[]; conc?: number; pause?: number; exclude?: string }> = {
   'thanhnien.vn': {
     name: 'Thanh Niên',
     base: 'https://thanhnien.vn',
@@ -41,6 +41,8 @@ const SKILL_ROUTES: Record<string, { name: string; base: string; routes: string[
     name: 'Sài Gòn Giải Phóng',
     base: 'https://www.sggp.org.vn',
     routes: ['/', '/xahoi/', '/thoisu/', '/rss/home.rss', '/rss/xahoi-38.rss'],
+    // daily print-edition pages ("Báo Sài Gòn Giải Phóng ngày 15/11/2026") are not articles
+    exclude: '/bao-sai-gon-giai-phong-ngay-\\d+',
   },
 };
 
@@ -62,6 +64,7 @@ export function sourceFromUrl(url: string, opts: Partial<Source> = {}): Source {
     sectionUrls: sections.length ? sections : [base + '/'],
     sitemapUrls: [],
     verifiedRoutes: known ? [...rss, ...sections] : [],
+    excludeUrlPattern: known?.exclude ?? '',
     maxConcurrency: known?.conc ?? 2,
     pauseMs: known?.pause ?? 200,
     notes: known ? 'Tuyến thu thập lấy từ Skill gốc (đã thử 15/11/2026 theo ghi chú Skill).' : 'Nguồn mới – cần dò cấu trúc và kiểm tra.',

@@ -293,6 +293,25 @@ export function extractArticle(html: string, pageUrl: string, quality: Settings[
     if (/[ÃÂ][\u0080-¿]|Ã¡|Ã©|á»/.test(bodyText)) warnings.push('MOJIBAKE: ký tự tiếng Việt có thể bị lỗi mã hóa');
   }
 
+  /* ---------------- video / podcast articles (main content is media, not text) ---------------- */
+  // e.g. SGGP: <div class="cms-body"><figure class="video">…</figure> + author only. Title, sapo and publish time are
+  // still real metadata; the story is kept as PARTIAL with an explicit reason instead of a parse failure.
+  const MEDIA_SEL =
+    'figure.video, video, audio, [class*="video-player"], [class*="podcast"], [data-video-src], iframe[src*="youtube"], iframe[src*="player"], ' +
+    '[class*="short-video"], [class*="shortvideo"], .video-controls'; // SGGP "short video" feed pages
+  const mediaInBody = container ? container.find(MEDIA_SEL).length : $(MEDIA_SEL).length;
+  const isMedia = mediaInBody > 0 || /video/i.test(meta($, 'og:type') ?? '');
+  if (isMedia && title) {
+    const textShort = paragraphs.length < quality.minParagraphs || bodyText.length < quality.minBodyChars;
+    if (!container || textShort) {
+      for (const code of ['ARTICLE_BODY_MISSING', 'SHORT_BODY', 'FEW_PARAGRAPHS']) {
+        const i = warnings.findIndex((w) => w.startsWith(code));
+        if (i >= 0) warnings.splice(i, 1);
+      }
+      warnings.push(`MEDIA_ARTICLE: bài video/podcast – nội dung chính nằm trong video${paragraphs.length ? `, chỉ có ${paragraphs.length} đoạn chữ` : ', không có văn bản'}; dùng tiêu đề/sapo và xem bài gốc`);
+    }
+  }
+
   /* ---------------- continuation / read-more ---------------- */
   const contUrls = new Set<string>();
   if (quality.flagPagination) {
@@ -306,7 +325,7 @@ export function extractArticle(html: string, pageUrl: string, quality: Settings[
   if (contUrls.size) warnings.push(`MULTIPAGE: bài có ${contUrls.size} trang tiếp theo chưa gộp`);
 
   const blocking = warnings.some((w) => /^(ARTICLE_BODY_MISSING|MISSING_TITLE)/.test(w));
-  const partial = warnings.some((w) => /^(SHORT_BODY|FEW_PARAGRAPHS|EXTRACTOR_DISAGREEMENT|MISSING_TABLE|MULTIPAGE|CONTINUATION_TEXT|MOJIBAKE)/.test(w));
+  const partial = warnings.some((w) => /^(SHORT_BODY|FEW_PARAGRAPHS|EXTRACTOR_DISAGREEMENT|MISSING_TABLE|MULTIPAGE|CONTINUATION_TEXT|MOJIBAKE|MEDIA_ARTICLE)/.test(w));
 
   return {
     canonicalUrl,

@@ -12,7 +12,8 @@ export function measureHealth(sourceId: string, cands: Candidate[], arts: Articl
   const parseFailed = mine.filter((c) => c.state === 'parse_failed').length;
   const ids = new Set(mine.map((c) => c.articleId).filter(Boolean));
   const myArts = arts.filter((a) => a.sourceId === sourceId && ids.has(a.id));
-  const partial = myArts.filter((a) => a.extractionCompleteness === 'partial').length;
+  // video/podcast stories are partial by nature, not an adapter fault
+  const partial = myArts.filter((a) => a.extractionCompleteness === 'partial' && !a.extractionWarnings.every((w) => /^(MEDIA_ARTICLE|ADAPTER_DEGRADED)/.test(w))).length;
   const dateUnknown = myArts.filter((a) => a.dateConfidence === 'unknown').length;
   const containers = new Map<string, number>();
   for (const a of myArts) {
