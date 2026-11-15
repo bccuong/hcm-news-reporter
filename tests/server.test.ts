@@ -113,6 +113,13 @@ describe('local API', () => {
     expect(dl.rawPayload.subarray(0, 2).toString()).toBe('PK');
     // path traversal refused
     expect((await app.inject({ method: 'GET', url: '/api/exports/..%2F..%2Fconfig%2Fsettings.json', headers: H })).statusCode).toBe(400);
+    // editor relevance labels → filter quality endpoint
+    const hanoi = arts.find((a: any) => a.originalUrl === U.hanoi);
+    await app.inject({ method: 'PATCH', url: `/api/runs/${runId}/reviews/${hanoi.id}`, headers: auth, payload: { relevanceLabel: 'relevant' } });
+    expect((await app.inject({ method: 'PATCH', url: `/api/runs/${runId}/reviews/${hanoi.id}`, headers: auth, payload: { relevanceLabel: 'maybe' } })).statusCode).toBe(400);
+    const q = (await app.inject({ method: 'GET', url: '/api/quality/relevance', headers: H })).json();
+    expect(q.total.labelled).toBeGreaterThanOrEqual(2); // flood (included) + hanoi (label)
+    expect(q.missed.map((m: any) => m.articleId)).toContain(hanoi.id);
     // review persisted for offline reopen
     expect((await app.inject({ method: 'GET', url: `/api/runs/${runId}/review`, headers: H })).json()[flood.id].changes.length).toBeGreaterThan(0);
     await app.close();

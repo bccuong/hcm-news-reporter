@@ -149,6 +149,31 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await expect(story).toContainText('Gợi ý cùng sự kiện');
 });
 
+test('Editor feedback: label ready / excluded stories → filter quality card (precision, missed stories)', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Bài sẵn sàng/ }).click();
+  // flood was selected for the report in the previous test → counts as relevant implicitly
+  await expect(page.getByText('đã chọn vào báo cáo = liên quan').first()).toBeVisible();
+  await page.getByRole('button', { name: /^Không liên quan: \[Mẫu thử\] Khánh thành nhà ga metro/ }).click();
+  await expect(page.getByRole('button', { name: /^Không liên quan: \[Mẫu thử\] Khánh thành nhà ga metro/ })).toHaveAttribute('aria-pressed', 'true');
+  // a story the filter excluded, rescued by the editor from the ledger
+  await page.getByRole('button', { name: /Sổ ứng viên/ }).click();
+  const row = page.locator('tr', { hasText: 'mau-thu-ha-noi-mo-rong-duong-vanh-dai' });
+  await row.getByRole('button', { name: 'Thực ra liên quan?' }).click();
+  await expect(row.getByRole('button', { name: /Liên quan \(bị loại nhầm\)/ })).toBeVisible();
+  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  const card = page.getByTestId('quality-card');
+  await expect(card).toContainText('Đã đánh giá: 3');
+  await expect(card).toContainText('Độ chính xác tab Sẵn sàng: 50%');
+  await expect(card).toContainText('Tin bị bộ lọc loại nhầm (1)');
+  await expect(card).toContainText('Hà Nội mở rộng đường vành đai');
+  await page.screenshot({ path: 'docs/screenshots/filter-quality.png', fullPage: false });
+  // labels persist (stored with the review)
+  await page.reload();
+  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  await expect(page.getByTestId('quality-card')).toContainText('Đã đánh giá: 3');
+});
+
 test('DIS-08: publisher redesign → coverage tab shows degraded adapter, articles move to review queue', async ({ page, request }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /Độ phủ/ }).click();

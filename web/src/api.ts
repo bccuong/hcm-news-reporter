@@ -1,6 +1,7 @@
 import { defaultSettings, defaultSources, parseWebsitesTxt } from '../../src/domain/defaults';
 import { evaluateRule, validateRule } from '../../src/domain/rules';
 import { judgeRelevance } from '../../src/domain/relevance';
+import { computeRelevanceQuality, type RelevanceQuality } from '../../src/domain/quality';
 import type { Article, Candidate, ReviewDecision, RuleNode, RunManifest, Settings, Source } from '../../src/domain/schemas';
 import { SettingsSchema, SourceSchema } from '../../src/domain/schemas';
 import { lastCompletedWindow, type ReportWindow } from '../../src/domain/timeWindow';
@@ -8,6 +9,7 @@ import skillWebsites from '../../src/domain/data/skill-websites.txt?raw';
 import { z } from 'zod';
 
 export type RunInfo = RunManifest & { active?: boolean; reconciliation?: { total: number; accounted: number; transient: number; balanced: boolean } };
+export type { RelevanceQuality };
 export interface PreviewResult { errors: string[]; results: Array<{ id: string; title: string; matched: boolean; lines: string[]; location?: string }> }
 export interface ExportResult { ok: boolean; dryRun?: boolean; blockers?: string[]; warnings?: string[]; files?: string[]; pdfStatus?: string; stories?: number }
 export interface HistoryEntry { id: string; at: string; kind: string; summary: string }
@@ -42,6 +44,7 @@ export interface Api {
   exportUrl(file: string): string;
   uploadTemplate(name: string, base64: string): Promise<{ templateFile: string }>;
   subscribe(runId: string, cb: (e: { type: string; counts?: Record<string, number> }) => void): () => void;
+  relevanceQuality(): Promise<RelevanceQuality>;
 }
 
 class ApiError extends Error {
@@ -98,6 +101,7 @@ class LocalApi implements Api {
   exportRun = (id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean) => this.req<ExportResult>('POST', `/api/runs/${id}/export`, { formats, dryRun });
   exportUrl = (file: string) => `/api/exports/${file}`;
   uploadTemplate = (name: string, base64: string) => this.req<{ templateFile: string }>('POST', '/api/templates', { name, base64 });
+  relevanceQuality = () => this.req<RelevanceQuality>('GET', '/api/quality/relevance');
   subscribe(runId: string, cb: (e: any) => void) {
     const es = new EventSource(`/api/runs/${runId}/events`);
     es.onmessage = (m) => {
@@ -325,6 +329,16 @@ class DemoApi implements Api {
   }
   async uploadTemplate(): Promise<never> {
     throw new ApiError('Bản demo không lưu được tệp mẫu PPTX – dùng bản local.');
+  }
+  /** labels live in this browser (localStorage); computed over every period listed */
+  async relevanceQuality() {
+    const runs = await this.listRuns();
+    const data = [];
+    for (const r of runs) {
+      const b = await this.load(this.mode === 'demo' ? undefined : r.runId);
+      data.push({ manifest: { runId: r.runId, window: r.window }, candidates: b.candidates, articles: b.articles, reviews: await this.review(r.runId) });
+    }
+    return computeRelevanceQuality(data);
   }
   subscribe() {
     return () => {};

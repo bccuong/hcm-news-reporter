@@ -4,7 +4,7 @@ import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
-import { api, type ExportResult, type RunInfo } from './api';
+import { api, type ExportResult, type RelevanceQuality, type RunInfo } from './api';
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
 
@@ -326,8 +326,8 @@ export function App() {
             </nav>
             {tab === 'articles' && <ArticleList list={ready} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={patch} />}
             {tab === 'review' && <ArticleList list={reviewQueue} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={patch} reviewMode />}
-            {tab === 'ledger' && <Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} />}
-            {tab === 'coverage' && <Coverage run={run} cands={cands} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
+            {tab === 'ledger' && <Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} reviews={reviews} onPatch={patch} />}
+            {tab === 'coverage' && <Coverage run={run} cands={cands} reviewsKey={JSON.stringify(Object.values(reviews).map((x) => [x.articleId, x.relevanceLabel, x.included, x.groupId]))} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
             {tab === 'export' && settings && <ExportPanel run={run} arts={artById} reviews={reviews} settings={settings} onPatch={patch} onInspect={setInspect} onMerge={merge} onSplit={split} />}
           </>
         )}
@@ -466,6 +466,7 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
               <div className="flex shrink-0 flex-col gap-1">
                 <button className="btn-ghost btn-xs" onClick={() => onInspect(a.id)}><FileText className="h-3.5 w-3.5" /> Xem chi tiết</button>
                 <a className="btn-ghost btn-xs" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Bài gốc</a>
+                <RelevanceButtons r={r} onPatch={(p) => onPatch(a.id, p)} title={a.title} />
               </div>
             </article>
           );
@@ -475,7 +476,74 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
   );
 }
 
-function Ledger({ cands, sources, onInspect }: { cands: Candidate[]; sources: Source[]; onInspect: (articleId: string) => void }) {
+/** Editor feedback on the filter: explicit label; including an article in the report counts as "relevant". */
+function RelevanceButtons({ r, onPatch, title }: { r?: ReviewDecision; onPatch: (p: Partial<ReviewDecision>) => void; title: string }) {
+  const l = r?.relevanceLabel ?? null;
+  const implicit = !l && (r?.included || r?.groupId);
+  return (
+    <div className="flex flex-col gap-0.5" data-testid="relevance-buttons">
+      <div className="flex gap-1">
+        <button
+          className={`btn btn-xs ${l === 'relevant' ? 'border-green-600 bg-green-600 text-white' : 'btn-ghost'}`}
+          aria-pressed={l === 'relevant'}
+          aria-label={`Liên quan: ${title}`}
+          title="Đánh giá cho bộ lọc: bài này đúng chủ đề ngành xây dựng TP.HCM"
+          onClick={() => onPatch({ relevanceLabel: l === 'relevant' ? null : 'relevant' })}
+        >
+          ✓ Liên quan
+        </button>
+        <button
+          className={`btn btn-xs ${l === 'irrelevant' ? 'border-red-600 bg-red-600 text-white' : 'btn-ghost'}`}
+          aria-pressed={l === 'irrelevant'}
+          aria-label={`Không liên quan: ${title}`}
+          title="Đánh giá cho bộ lọc: bài này không thuộc phạm vi điểm tin (đồng thời bỏ khỏi báo cáo)"
+          onClick={() => onPatch(l === 'irrelevant' ? { relevanceLabel: null } : { relevanceLabel: 'irrelevant', included: false })}
+        >
+          ✗ Không
+        </button>
+      </div>
+      {implicit && <span className="text-[10px] text-green-700">đã chọn vào báo cáo = liên quan</span>}
+    </div>
+  );
+}
+
+function QualityCard({ reviewsKey }: { reviewsKey: string }) {
+  const [q, setQ] = useState<RelevanceQuality | null>(null);
+  useEffect(() => {
+    api.relevanceQuality().then(setQ).catch(() => setQ(null));
+  }, [reviewsKey]);
+  if (!q) return null;
+  const pct = (x: number | null) => (x == null ? '—' : `${Math.round(x * 100)}%`);
+  const t = q.total;
+  return (
+    <div className="card p-3 text-sm" data-testid="quality-card">
+      <div className="flex flex-wrap items-baseline gap-4">
+        <h3 className="font-semibold text-navy-700">Chất lượng bộ lọc (theo đánh giá biên tập viên)</h3>
+        <span>Đã đánh giá: <b>{t.labelled}</b> bài · {q.runs.filter((r) => r.labelled).length}/{q.runs.length} lượt</span>
+        <span>Độ chính xác tab Sẵn sàng: <b>{pct(q.precisionReady)}</b> ({t.ready.R} đúng / {t.ready.R + t.ready.N})</span>
+        <span>Độ phủ (không bỏ sót): <b>{pct(q.recall)}</b></span>
+      </div>
+      <div className="mt-1 text-xs text-slate-600">
+        Sẵn sàng: {t.ready.R} liên quan · {t.ready.N} không · Cần kiểm tra: {t.review.R} liên quan · {t.review.N} không · Bị loại nhưng biên tập viên đánh dấu liên quan: <b className={t.excluded.R ? 'text-red-700' : ''}>{t.excluded.R}</b>
+      </div>
+      {t.labelled === 0 && <p className="mt-1 text-xs text-slate-500">Chưa có đánh giá. Bấm "✓ Liên quan / ✗ Không" ở các bài, hoặc "Thực ra liên quan?" trong Sổ ứng viên cho bài bị loại; bài được chọn vào báo cáo tự tính là liên quan.</p>}
+      {q.missed.length > 0 && (
+        <details className="mt-2 text-xs" open>
+          <summary className="cursor-pointer font-semibold text-red-800">Tin bị bộ lọc loại nhầm ({q.missed.length}) – dùng để chỉnh quy tắc</summary>
+          <ul className="mt-1 list-disc pl-5">{q.missed.map((m) => <li key={m.runId + m.articleId}><a className="text-blue-700 underline" href={m.url} target="_blank" rel="noreferrer">{m.title}</a> <span className="text-slate-500">({m.source} · lý do loại: {m.reasonCode})</span></li>)}</ul>
+        </details>
+      )}
+      {q.falseReady.length > 0 && (
+        <details className="mt-1 text-xs">
+          <summary className="cursor-pointer font-semibold text-amber-800">Tin lạc đề lọt vào tab Sẵn sàng ({q.falseReady.length})</summary>
+          <ul className="mt-1 list-disc pl-5">{q.falseReady.map((m) => <li key={m.runId + m.articleId}>{m.title} <span className="text-slate-500">({m.source})</span></li>)}</ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function Ledger({ cands, sources, onInspect, reviews, onPatch }: { cands: Candidate[]; sources: Source[]; onInspect: (articleId: string) => void; reviews: Record<string, ReviewDecision>; onPatch: (id: string, p: Partial<ReviewDecision>) => void }) {
   const [state, setState] = useState('all');
   const [src, setSrc] = useState('all');
   const [q, setQ] = useState('');
@@ -517,7 +585,19 @@ function Ledger({ cands, sources, onInspect }: { cands: Candidate[]; sources: So
                 <td className="td text-xs">{[...new Set(c.discoveredVia.map((d) => d.method))].join(' + ')}</td>
                 <td className="td text-xs"><b>{c.reasonCode ?? ''}</b> {c.reasonDetail ?? ''}</td>
                 <td className="td text-xs">{c.httpStatus ?? ''}</td>
-                <td className="td">{c.articleId && <button className="btn-ghost btn-xs" onClick={() => onInspect(c.articleId!)}>Xem</button>}</td>
+                <td className="td whitespace-nowrap">
+                  {c.articleId && <button className="btn-ghost btn-xs" onClick={() => onInspect(c.articleId!)}>Xem</button>}
+                  {c.articleId && c.state === 'irrelevant_with_evidence' && (
+                    <button
+                      className={`btn btn-xs ml-1 ${reviews[c.articleId]?.relevanceLabel === 'relevant' ? 'border-green-600 bg-green-600 text-white' : 'btn-ghost'}`}
+                      aria-pressed={reviews[c.articleId]?.relevanceLabel === 'relevant'}
+                      title="Bộ lọc đã loại bài này – đánh dấu nếu thực ra là tin cần đưa vào điểm tin (dùng để đo bỏ sót)"
+                      onClick={() => onPatch(c.articleId!, { relevanceLabel: reviews[c.articleId!]?.relevanceLabel === 'relevant' ? null : 'relevant' })}
+                    >
+                      {reviews[c.articleId]?.relevanceLabel === 'relevant' ? '✓ Liên quan (bị loại nhầm)' : 'Thực ra liên quan?'}
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -557,10 +637,11 @@ function AdapterHealthCard({ h, disabled, onRescan, onOpenSettings }: { h: Adapt
   );
 }
 
-function Coverage({ run, cands, onRetry, onOpenSettings }: { run: RunInfo; cands: Candidate[]; onRetry: (b: { mode: 'failed' | 'source' | 'expand'; sourceId?: string; extraLookbackHours?: number }) => void; onOpenSettings: () => void }) {
+function Coverage({ run, cands, onRetry, onOpenSettings, reviewsKey }: { run: RunInfo; cands: Candidate[]; onRetry: (b: { mode: 'failed' | 'source' | 'expand'; sourceId?: string; extraLookbackHours?: number }) => void; onOpenSettings: () => void; reviewsKey: string }) {
   const rec = run.reconciliation;
   return (
     <div className="space-y-3">
+      <QualityCard reviewsKey={reviewsKey} />
       <div className="card flex flex-wrap items-center gap-4 p-3 text-sm">
         <div>
           Đối soát sổ ứng viên: <b>{rec?.accounted ?? '?'} / {rec?.total ?? '?'}</b> link có trạng thái {rec?.balanced ? <CheckCircle2 className="inline h-4 w-4 text-green-600" /> : <AlertTriangle className="inline h-4 w-4 text-red-600" />}

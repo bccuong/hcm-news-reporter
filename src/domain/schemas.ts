@@ -372,6 +372,8 @@ export interface ReviewDecision {
   extractionMarkedComplete?: boolean;
   timeVerifiedManually?: boolean;
   groupId?: string | null;
+  /** editor's relevance verdict (feeds precision/recall of the filter) */
+  relevanceLabel?: 'relevant' | 'irrelevant' | null;
   updatedAt: string;
   changes: Array<{ at: string; field: string; from: unknown; to: unknown }>;
 }

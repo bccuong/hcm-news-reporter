@@ -11,6 +11,7 @@ import { HttpClient, type Resolver, type Transport } from '../collector/http.js'
 import { detectStructure, probeSource } from '../collector/probe.js';
 import { reconcile, runCollection } from '../collector/run.js';
 import { parseWebsitesTxt } from '../domain/defaults.js';
+import { computeRelevanceQuality } from '../domain/quality.js';
 import { judgeRelevance } from '../domain/relevance.js';
 import { evaluateRule, validateRule } from '../domain/rules.js';
 import { RuleNodeSchema, SourceSchema, type Settings, type Source } from '../domain/schemas.js';
@@ -263,6 +264,14 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     return (await stores.getCandidates(id)).filter((c) => (!q.state || c.state === q.state) && (!q.sourceId || c.sourceId === q.sourceId) && (!q.reason || c.reasonCode === q.reason));
   });
   app.get('/api/runs/:id/articles', async (req) => stores.getArticles((req.params as { id: string }).id));
+  /** Filter quality measured on editor labels across stored runs (most recent first, up to ?limit=30). */
+  app.get('/api/quality/relevance', async (req) => {
+    const limit = Math.min(200, Number((req.query as { limit?: string }).limit ?? 30) || 30);
+    const runs = (await stores.listRuns()).filter((r) => r.status === 'completed').slice(0, limit);
+    const data = [];
+    for (const m of runs) data.push({ manifest: m, candidates: await stores.getCandidates(m.runId), articles: await stores.getArticles(m.runId), reviews: await stores.getReview(m.runId) });
+    return computeRelevanceQuality(data);
+  });
   app.get('/api/runs/:id/review', async (req) => stores.getReview((req.params as { id: string }).id));
   app.patch('/api/runs/:id/reviews/:articleId', async (req) => {
     const p = req.params as { id: string; articleId: string };
@@ -272,6 +281,7 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
         shortLabel: z.string().max(80).optional(), primaryCategory: z.string().nullable().optional(), assessment: z.enum(['needs_attention', 'positive', 'neutral']).nullable().optional(),
         proposal: z.string().max(600).optional(), primaryImageUrl: z.string().nullable().optional(), extractionMarkedComplete: z.boolean().optional(),
         timeVerifiedManually: z.boolean().optional(), groupId: z.string().nullable().optional(),
+        relevanceLabel: z.enum(['relevant', 'irrelevant']).nullable().optional(),
       })
       .parse(req.body);
     return stores.patchReview(p.id, p.articleId, patch as never);

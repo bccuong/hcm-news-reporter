@@ -9,6 +9,11 @@
 ## Assets
 See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.md`. Tools on this PC: Node 26, Git, gh, **LibreOffice** (installed session 2), Microsoft Edge (used by Playwright locally). Python not installed (not needed).
 
+## Session 7 – done (with evidence)
+- **Editor feedback loop for the filter** (`src/domain/quality.ts`): per-article `relevanceLabel` (✓ Liên quan / ✗ Không on ready & review cards; "Thực ra liên quan?" on excluded ledger rows); articles put into a report count as relevant implicitly. `GET /api/quality/relevance` + "Chất lượng bộ lọc" card on the coverage tab: precision of the Ready tab, recall incl. stories rescued from "excluded", list of wrongly excluded stories with the rule that excluded them, false-ready list. `scripts/eval-editor-labels.ts` aggregates labels across stored runs.
+- Note: the 15 labels currently in local data come from Claude's QA selections (included=true), not editor decisions. On the public site labels stay in the viewer's browser only.
+- Commands: tsc 0 · vitest **71/71** · playwright **8/8**.
+
 ## Session 6 – done (with evidence)
 - **Relevance precision** measured on the labelled live sample (`tests/fixtures/relevance-labels-2026-11-15.json`, 64 in-window articles, labels by Claude per Skill criteria – editor to review) with `scripts/eval-relevance.ts`:
   ready precision **0.56 → 0.80**, review queue **37 → 6**, relevant excluded **0** (recall 1.00).
@@ -82,3 +87,4 @@ Editor feedback loop: add "Đúng / Không liên quan" buttons in the review lis
 | 2026-11-15 (4) | DIS-08 adapter health + UI, clustering rewrite (union-find, IDF, mutual-best) | tsc, vitest 47/47, playwright 7/7, live run, cluster eval | SGGP adapter |
 | 2026-11-15 (5) | Live GitHub Pages (hourly cloud collection), SGGP video articles | tsc, vitest 52/52, playwright 7/7, cloud run, live run | Relevance precision |
 | 2026-11-15 (6) | Relevance precision rules + labelled evaluation + UI settings | tsc, vitest 68/68, playwright 7/7, eval 15/11 + cross-check 16/11 | Editor feedback labels |
+| 2026-11-15 (7) | Editor relevance labels, filter-quality card + endpoint + script | tsc, vitest 71/71, playwright 8/8 | Use labels to tune rules |
