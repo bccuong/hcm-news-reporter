@@ -62,6 +62,43 @@ describe('shared review worker', () => {
     expect((await handle(new Request('https://w.example/export', { headers: { authorization: 'Bearer export-secret' } }), e)).status).toBe(200);
     expect((await post(e, label(), 'HCM-test-12345')).status).toBe(401);
   });
+  describe('on-demand collection (dispatch GitHub workflow)', () => {
+    const calls: Array<{ url: string; body?: string }> = [];
+    const fakeGitHub = (busy = false) => async (url: string, init?: RequestInit) => {
+      calls.push({ url, body: init?.body as string | undefined });
+      if (url.includes('/runs?status=')) return new Response(JSON.stringify({ total_count: busy && url.includes('in_progress') ? 1 : 0 }), { status: 200 });
+      if (url.endsWith('/dispatches')) return new Response(null, { status: 204 });
+      if (url.includes('/runs?per_page')) return new Response(JSON.stringify({ workflow_runs: [{ id: 7, status: 'in_progress', conclusion: null, created_at: 'c', updated_at: 'u', event: 'workflow_dispatch', display_title: 'Thu thập theo yêu cầu', html_url: 'https://github.com/x' }] }), { status: 200 });
+      return new Response('{}', { status: 404 });
+    };
+    const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/hcm-news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
+    const req = (body: unknown, code = 'HCM-test-1234') =>
+      new Request('https://w.example/collect', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const W = { from: '2026-11-14T17:00+07:00', to: '2026-11-15T08:00+07:00', reviewer: 'A' };
+
+    it('dispatches the workflow with the requested window', async () => {
+      calls.length = 0;
+      const r = await handle(req(W), genv(), fakeGitHub());
+      expect(r.status).toBe(202);
+      const d = calls.find((c) => c.url.endsWith('/actions/workflows/pages.yml/dispatches'))!;
+      expect(JSON.parse(d.body!)).toEqual({ ref: 'main', inputs: { from: W.from, to: W.to, requested_by: 'A' } });
+    });
+    it('refuses while another collection runs, bad windows, wrong code, missing token', async () => {
+      expect((await handle(req(W), genv(), fakeGitHub(true))).status).toBe(409);
+      expect((await handle(req({ ...W, to: W.from }), genv(), fakeGitHub())).status).toBe(400);
+      expect((await handle(req({ ...W, from: '2026-11-01T00:00+07:00' }), genv(), fakeGitHub())).status).toBe(400); // > 72 h
+      expect((await handle(req({ ...W, from: '2026-11-14 17:00' }), genv(), fakeGitHub())).status).toBe(400);
+      expect((await handle(req({ ...W, from: '2099-01-01T00:00+07:00', to: '2099-01-01T05:00+07:00' }), genv(), fakeGitHub())).status).toBe(400);
+      expect((await handle(req(W, 'wrong'), genv(), fakeGitHub())).status).toBe(401);
+      expect((await handle(req(W), env(), fakeGitHub())).status).toBe(503);
+    });
+    it('reports recent workflow runs for the progress display', async () => {
+      const r = await handle(new Request('https://w.example/collect/status', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), genv(), fakeGitHub());
+      const j = (await r.json()) as { enabled: boolean; runs: Array<{ id: number; status: string }> };
+      expect(j.enabled).toBe(true);
+      expect(j.runs[0]).toMatchObject({ id: 7, status: 'in_progress' });
+    });
+  });
   it('reviewer ids are ascii slugs', () => {
     expect(reviewerId('  Lê Đình Ánh ')).toBe('le-dinh-anh');
   });

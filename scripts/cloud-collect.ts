@@ -40,11 +40,18 @@ export interface PublicArticle {
 }
 export interface PublicDay {
   kind: 'hcm-live-day'; reportDate: string; provisional: boolean; generatedAt: string;
+  /** file stem: "2026-11-16" for daily periods, "custom-202611141700-202611150800" for on-demand windows */
+  key?: string; custom?: boolean; requestedBy?: string;
   manifest: RunManifest & { reconciliation: ReturnType<typeof reconcile> }; candidates: Array<Omit<Candidate, 'history'>>; articles: PublicArticle[];
 }
 export interface PublicIndex {
-  kind: 'hcm-live-index'; generatedAt: string; schedule: string; days: Array<{ reportDate: string; window: { from: string; to: string }; provisional: boolean; generatedAt: string; counts: Record<string, number>; completeness: RunManifest['completeness'] }>;
+  kind: 'hcm-live-index'; generatedAt: string; schedule: string;
+  days: Array<{ reportDate: string; key?: string; file?: string; custom?: boolean; requestedBy?: string; window: { from: string; to: string }; provisional: boolean; generatedAt: string; counts: Record<string, number>; completeness: RunManifest['completeness'] }>;
 }
+const KEEP_CUSTOM = 10;
+const keyOf = (d: { key?: string; reportDate: string }) => d.key ?? d.reportDate;
+const stamp = (iso: string) => iso.slice(0, 16).replace(/[-:T]/g, '');
+const VN_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?\+07:00$/;
 
 const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, s.lastIndexOf(' ', n - 1) > n / 2 ? s.lastIndexOf(' ', n - 1) : n - 1)}…`);
 
@@ -87,20 +94,31 @@ async function main() {
   const prevIndex = await getJson<PublicIndex>(new URL('live/index.json', SITE).toString());
   const prevDays = new Map<string, PublicDay>();
   for (const d of prevIndex?.days ?? []) {
-    const day = await getJson<PublicDay>(new URL(`live/${d.reportDate}.json`, SITE).toString());
-    if (day) prevDays.set(d.reportDate, day);
+    const day = await getJson<PublicDay>(new URL(`live/${d.file ?? `${d.reportDate}.json`}`, SITE).toString());
+    if (day) prevDays.set(keyOf(d), { ...day, key: keyOf(d), custom: d.custom, requestedBy: d.requestedBy });
   }
-  console.log(`config: ${origin}; previously published days: ${prevDays.size}`);
+  console.log(`config: ${origin}; previously published periods: ${prevDays.size}`);
 
-  // windows to collect now
-  const last = lastCompletedWindow(now, startClock, endClock);
-  const todays = windowForReportDate(vnDate(now), startClock, endClock);
-  const tomorrow = windowForReportDate(vnDate(new Date(now.getTime() + 86400_000)), startClock, endClock);
-  const inProgress = [todays, tomorrow].find((w) => new Date(w.from) <= now && now < new Date(w.to));
-  const jobs: Array<{ reportDate: string; window: { from: string; to: string }; provisional: boolean }> = [];
-  if (inProgress) jobs.push({ reportDate: vnDate(new Date(inProgress.to)), window: inProgress, provisional: true });
-  const lastFrozen = prevDays.get(last.reportDate) && !prevDays.get(last.reportDate)!.provisional && now.getTime() - new Date(last.to).getTime() > FREEZE_AFTER_H * 3600_000;
-  if (!lastFrozen) jobs.push({ reportDate: last.reportDate, window: { from: last.from, to: last.to }, provisional: false });
+  // windows to collect now: an on-demand window (--from/--to from the web "Thu thập" button) OR the hourly periods
+  const reqFrom = arg('--from', '');
+  const reqTo = arg('--to', '');
+  const requestedBy = arg('--requested-by', '').slice(0, 40);
+  const jobs: Array<{ key: string; reportDate: string; window: { from: string; to: string }; provisional: boolean; custom?: boolean }> = [];
+  if (reqFrom || reqTo) {
+    if (!VN_ISO.test(reqFrom) || !VN_ISO.test(reqTo) || !(Date.parse(reqTo) > Date.parse(reqFrom)) || Date.parse(reqTo) - Date.parse(reqFrom) > 72 * 3600_000) {
+      throw new Error(`invalid on-demand window: ${reqFrom} → ${reqTo}`);
+    }
+    const window = { from: toVnIso(new Date(reqFrom)), to: toVnIso(new Date(reqTo)) };
+    jobs.push({ key: `custom-${stamp(window.from)}-${stamp(window.to)}`, reportDate: vnDate(new Date(window.to)), window, provisional: Date.parse(reqTo) > now.getTime(), custom: true });
+  } else {
+    const last = lastCompletedWindow(now, startClock, endClock);
+    const todays = windowForReportDate(vnDate(now), startClock, endClock);
+    const tomorrow = windowForReportDate(vnDate(new Date(now.getTime() + 86400_000)), startClock, endClock);
+    const inProgress = [todays, tomorrow].find((w) => new Date(w.from) <= now && now < new Date(w.to));
+    if (inProgress) jobs.push({ key: vnDate(new Date(inProgress.to)), reportDate: vnDate(new Date(inProgress.to)), window: inProgress, provisional: true });
+    const lastFrozen = prevDays.get(last.reportDate) && !prevDays.get(last.reportDate)!.provisional && now.getTime() - new Date(last.to).getTime() > FREEZE_AFTER_H * 3600_000;
+    if (!lastFrozen) jobs.push({ key: last.reportDate, reportDate: last.reportDate, window: { from: last.from, to: last.to }, provisional: false });
+  }
 
   const http = new HttpClient({
     maxConcurrent: settings.collection.maxConcurrentRequests, perHost: settings.collection.maxRequestsPerHost, timeoutMs: settings.collection.timeoutMs,
@@ -112,29 +130,37 @@ async function main() {
   for (const job of jobs) {
     const stores = new Stores(makePaths(mkdtempSync(path.join(tmpdir(), 'hcm-cloud-'))), '');
     // seed history with previously published manifests (adapter-health baseline)
-    for (const d of prevDays.values()) await stores.saveManifest({ ...d.manifest, runId: `run_hist_${d.reportDate.replace(/-/g, '')}` });
-    const runId = `run_live_${job.reportDate.replace(/-/g, '')}`;
+    for (const d of prevDays.values()) if (!d.custom) await stores.saveManifest({ ...d.manifest, runId: `run_hist_${d.reportDate.replace(/-/g, '')}` });
+    const runId = `run_live_${job.key.replace(/[^0-9a-z]/gi, '')}`;
     const t0 = Date.now();
     const m = await runCollection({ runId, window: job.window, trigger: 'auto', settings, sources, stores, http });
     const cands = await stores.getCandidates(runId);
     const arts = await stores.getArticles(runId);
     const keep = new Set(cands.filter((c) => c.articleId && !['outside_window'].includes(c.state)).map((c) => c.articleId));
     m.notes.push(`Thu thập trên máy chủ GitHub Actions lúc ${toVnIso(now)} (${((Date.now() - t0) / 1000).toFixed(0)} giây); cấu hình: ${origin}.`);
-    published.set(job.reportDate, {
-      kind: 'hcm-live-day', reportDate: job.reportDate, provisional: job.provisional, generatedAt: toVnIso(new Date()),
+    if (job.custom) m.notes.push(`Thu thập theo yêu cầu${requestedBy ? ` của ${requestedBy}` : ''} trên web.`);
+    if (job.provisional) m.notes.push('Kỳ đang diễn ra – tạm thời');
+    published.set(job.key, {
+      kind: 'hcm-live-day', reportDate: job.reportDate, key: job.key, custom: job.custom, requestedBy: job.custom ? requestedBy : undefined, provisional: job.provisional, generatedAt: toVnIso(new Date()),
       manifest: { ...m, reconciliation: reconcile(cands) },
       candidates: cands.map(({ history: _h, ...c }) => c),
       articles: arts.filter((a) => keep.has(a.id)).map(toPublicArticle),
     });
-    console.log(`${job.reportDate}${job.provisional ? ' (đang diễn ra)' : ''}: ${cands.length} link, counts=${JSON.stringify(m.counts)}, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+    console.log(`${job.key}${job.provisional ? ' (đang diễn ra)' : ''}: ${cands.length} link, counts=${JSON.stringify(m.counts)}, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
     for (const s of m.sources) console.log(`  ${s.sourceName.padEnd(20)} ${s.status.padEnd(16)} ${s.candidates} link  adapter=${s.adapter?.status ?? '-'} ${s.error ?? ''}`);
   }
 
-  const days = [...published.values()].sort((a, b) => b.reportDate.localeCompare(a.reportDate)).slice(0, KEEP_DAYS);
-  for (const d of days) writeFileSync(path.join(OUT, `${d.reportDate}.json`), JSON.stringify(d));
+  const all = [...published.values()];
+  const daily = all.filter((d) => !d.custom).sort((a, b) => b.reportDate.localeCompare(a.reportDate)).slice(0, KEEP_DAYS);
+  const customs = all.filter((d) => d.custom).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)).slice(0, KEEP_CUSTOM);
+  const days = [...customs, ...daily].sort((a, b) => b.manifest.window.to.localeCompare(a.manifest.window.to) || (a.custom ? -1 : 1));
+  for (const d of days) writeFileSync(path.join(OUT, `${keyOf(d)}.json`), JSON.stringify(d));
   const index: PublicIndex = {
-    kind: 'hcm-live-index', generatedAt: toVnIso(new Date()), schedule: 'Mỗi giờ (GitHub Actions, giờ chạy có thể trễ vài phút)',
-    days: days.map((d) => ({ reportDate: d.reportDate, window: d.manifest.window, provisional: d.provisional, generatedAt: d.generatedAt, counts: d.manifest.counts, completeness: d.manifest.completeness })),
+    kind: 'hcm-live-index', generatedAt: toVnIso(new Date()), schedule: 'Mỗi giờ + theo yêu cầu (nút "Thu thập" trên web)',
+    days: days.map((d) => ({
+      reportDate: d.reportDate, key: keyOf(d), file: `${keyOf(d)}.json`, custom: d.custom, requestedBy: d.requestedBy, window: d.manifest.window,
+      provisional: d.provisional, generatedAt: d.generatedAt, counts: d.manifest.counts, completeness: d.manifest.completeness,
+    })),
   };
   writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(index));
   console.log(`published ${days.length} day(s) to ${OUT}`);

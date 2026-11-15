@@ -136,12 +136,29 @@ export function App() {
 
   const collect = async () => {
     if (!windowIso || windowErr) return;
+    if (api.mode === 'live' && api.shared && !api.shared.session()) {
+      setLoginOpen(true);
+      return;
+    }
+    // reuse a period that is already published for exactly this window (no need to collect again)
+    if (api.mode === 'live') {
+      const same = runs.find((x) => Date.parse(x.window.from) === Date.parse(windowIso.from) && Date.parse(x.window.to) === Date.parse(windowIso.to) && !x.notes.some((n) => /đang diễn ra/.test(n)));
+      if (same && !confirm('Khung giờ này đã có dữ liệu trên web. Vẫn thu thập lại?')) {
+        setRunId(same.runId);
+        return;
+      }
+    }
     try {
       if (preset === 'custom' && settings) {
         const s2 = await api.saveSettings({ ...settings, reportWindow: { ...settings.reportWindow, customFrom: windowIso.from, customTo: windowIso.to } }, 'Lưu khung giờ tùy chỉnh');
         setSettings(s2);
       }
       const r = await api.startRun(windowIso, 'manual');
+      if (r.remote) {
+        setRemote({ from: windowIso.from, to: windowIso.to, at: Date.now(), status: 'đã gửi yêu cầu', url: null });
+        toast('info', `Đã gửi yêu cầu thu thập ${formatVn(windowIso.from)} → ${formatVn(windowIso.to)} lên máy chủ GitHub (thường 5–10 phút)`);
+        return;
+      }
       if (r.runId) {
         setRunId(r.runId);
         toast('info', `Bắt đầu thu thập ${formatVn(windowIso.from)} → ${formatVn(windowIso.to)}`);
@@ -171,6 +188,44 @@ export function App() {
       return false;
     }
   };
+
+  // on-demand collection on GitHub Actions (web): follow the dispatched workflow run, then open the new period
+  const [remote, setRemote] = useState<{ from: string; to: string; at: number; status: string; url: string | null } | null>(null);
+  useEffect(() => {
+    if (!remote || !api.shared) return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const st = await api.shared!.collectStatus();
+        const run = st.runs.find((x) => x.event === 'workflow_dispatch' && Date.parse(x.createdAt) >= remote.at - 90_000);
+        if (!run) return setRemote((r) => (r ? { ...r, status: 'đang chờ GitHub nhận yêu cầu' } : r));
+        if (run.status !== 'completed') {
+          return setRemote((r) => (r ? { ...r, status: run.status === 'queued' ? 'đang xếp hàng' : 'đang thu thập', url: run.url } : r));
+        }
+        if (run.conclusion !== 'success') {
+          toast('err', `Lượt thu thập không thành công (${run.conclusion}). Xem chi tiết: ${run.url}`);
+          return setRemote(null);
+        }
+        api.refresh?.();
+        const rs = await api.listRuns();
+        setRuns(rs);
+        const hit = rs.find((x) => Date.parse(x.window.from) === Date.parse(remote.from) && Date.parse(x.window.to) === Date.parse(remote.to));
+        if (!hit) return setRemote((r) => (r ? { ...r, status: 'đang cập nhật trang' } : r)); // Pages CDN can lag ~1 min
+        setRunId(hit.runId);
+        setRemote(null);
+        toast('ok', `Đã thu thập xong ${formatVn(remote.from)} → ${formatVn(remote.to)}`);
+      } catch (e) {
+        setRemote((r) => (r ? { ...r, status: `lỗi kiểm tra tiến độ: ${(e as Error).message}` } : r));
+      }
+    };
+    const t = setInterval(() => !stop && tick(), 20_000);
+    tick();
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remote?.at]);
 
   // shared review (GitHub Pages): reviewer session + the team's votes for the current period
   const [reviewer, setReviewer] = useState(api.shared?.session() ?? null);
@@ -236,7 +291,7 @@ export function App() {
       {api.mode === 'live' && (
         <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
           <b>DỮ LIỆU THẬT</b> – thu thập tự động mỗi giờ trên máy chủ GitHub{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}. Hiển thị tiêu đề, sapo ngắn, nguồn, độ phủ (không đăng toàn văn bài).
-          {api.shared ? <> <b>Người duyệt:</b> đăng nhập rồi bấm ✓/✗, sửa lĩnh vực/tính chất, ghi góp ý – kết quả của cả nhóm dùng để cải thiện bộ thu thập.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
+          {api.shared ? <> Đăng nhập để <b>chọn khung giờ và bấm Thu thập</b> (chạy trên máy chủ GitHub, 5–10 phút) và duyệt tin: ✓/✗, sửa lĩnh vực/tính chất, góp ý.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
         </div>
       )}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
@@ -267,8 +322,8 @@ export function App() {
       </header>
 
       <main className="mx-auto max-w-[1500px] space-y-4 px-4 py-4">
-        {/* reporting window */}
-        {api.mode === 'live' ? (
+        {/* reporting window – same controls as the local app; on the web "Thu thập" runs on GitHub Actions */}
+        {api.mode === 'live' && !api.shared ? (
           <section className="card flex flex-wrap items-end gap-3 p-3" data-testid="live-periods">
             <label>
               <span className="label">Kỳ báo cáo (dữ liệu thu thập tự động)</span>
@@ -318,7 +373,12 @@ export function App() {
               <Square className="h-4 w-4" /> Dừng
             </button>
           ) : (
-            <button className="btn-primary" disabled={!!windowErr || api.mode !== 'local' || !online} onClick={collect} title={api.mode !== 'local' ? 'Bản web chỉ để xem – dữ liệu tự thu thập mỗi giờ; tự thu thập bằng bản local' : ''}>
+            <button
+              className="btn-primary"
+              disabled={!!windowErr || !online || api.mode === 'demo' || (api.mode === 'live' && (!api.shared || !!remote))}
+              onClick={collect}
+              title={api.mode === 'live' ? 'Thu thập trên máy chủ GitHub (5–10 phút), tối đa 72 giờ mỗi lần; cần đăng nhập người duyệt' : api.mode === 'demo' ? 'Bản demo không thu thập báo thật' : ''}
+            >
               <Play className="h-4 w-4" /> Thu thập
             </button>
           )}
@@ -328,13 +388,23 @@ export function App() {
               <select className="input w-64" value={runId ?? ''} onChange={(e) => setRunId(e.target.value)}>
                 {runs.map((r) => (
                   <option key={r.runId} value={r.runId}>
-                    {formatVn(r.window.from)} → {formatVn(r.window.to)} · {r.status}
+                    {formatVn(r.window.from)} → {formatVn(r.window.to)} · {api.mode === 'live' ? (r.notes.find((x) => /theo yêu cầu|đang diễn ra/.test(x)) ?? 'tự động') : r.status}
                   </option>
                 ))}
               </select>
             </label>
           )}
         </section>
+        )}
+
+        {remote && (
+          <section className="card flex flex-wrap items-center gap-3 border-blue-300 bg-blue-50 p-3 text-sm text-blue-900" data-testid="remote-collect">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span>
+              Đang thu thập trên máy chủ GitHub: <b>{formatVn(remote.from)} → {formatVn(remote.to)}</b> · {remote.status} · gửi lúc {new Date(remote.at).toLocaleTimeString('vi-VN')} (thường 5–10 phút; trang tự mở kết quả khi xong)
+            </span>
+            {remote.url && <a className="underline" href={remote.url} target="_blank" rel="noreferrer">xem chi tiết trên GitHub</a>}
+          </section>
         )}
 
         {/* source strip */}

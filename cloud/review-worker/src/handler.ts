@@ -20,7 +20,15 @@ export interface Env {
   ACCESS_CODE: string;
   EXPORT_TOKEN: string;
   ALLOWED_ORIGINS: string; // comma separated
+  /** fine-grained PAT (this repo only, Actions: read & write) – lets reviewers start an on-demand collection */
+  GITHUB_TOKEN?: string;
+  GITHUB_REPO?: string; // e.g. bccuong/hcm-news-reporter
+  COLLECT_WORKFLOW?: string; // e.g. pages.yml
 }
+
+type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
+const VN_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?\+07:00$/;
+export const MAX_WINDOW_HOURS = 72;
 
 export const CATEGORIES = ['LAND', 'BUILD', 'INFRA', 'TRAFFIC', 'REALESTATE', 'FLOOD', 'INVEST', 'POLICY'] as const;
 export const ASSESSMENTS = ['needs_attention', 'positive', 'neutral'] as const;
@@ -88,7 +96,64 @@ async function listAll(kv: KVLike, prefix: string) {
   return keys;
 }
 
-export async function handle(req: Request, env: Env): Promise<Response> {
+async function gh(env: Env, f: Fetch, path: string, init: RequestInit = {}) {
+  return f(`https://api.github.com/repos/${env.GITHUB_REPO}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${(env.GITHUB_TOKEN ?? '').trim()}`,
+      accept: 'application/vnd.github+json',
+      'x-github-api-version': '2022-11-28',
+      'user-agent': 'hcm-news-review-worker',
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+    },
+  });
+}
+interface RunInfo { id: number; status: string; conclusion: string | null; created_at: string; updated_at: string; event: string; display_title: string; html_url: string }
+
+/** On-demand collection for a custom window: dispatch the collection workflow (one at a time). */
+async function collect(req: Request, env: Env, f: Fetch, h: Record<string, string>) {
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ error: 'Chưa cấu hình thu thập theo yêu cầu (GITHUB_TOKEN)' }, 503, h);
+  let b: { from?: string; to?: string; reviewer?: string };
+  try {
+    b = (await req.json()) as typeof b;
+  } catch {
+    return json({ error: 'INVALID_JSON' }, 400, h);
+  }
+  const from = String(b.from ?? '');
+  const to = String(b.to ?? '');
+  if (!VN_ISO.test(from) || !VN_ISO.test(to)) return json({ error: 'Ngày giờ phải theo dạng 2026-11-15T17:00+07:00' }, 400, h);
+  const a = Date.parse(from);
+  const z = Date.parse(to);
+  if (!(z > a)) return json({ error: 'Thời điểm kết thúc phải sau thời điểm bắt đầu' }, 400, h);
+  if (z - a > MAX_WINDOW_HOURS * 3600_000) return json({ error: `Khung giờ tối đa ${MAX_WINDOW_HOURS} giờ cho mỗi lần thu thập trên web` }, 400, h);
+  if (a > Date.now()) return json({ error: 'Thời điểm bắt đầu ở tương lai' }, 400, h);
+  const reviewer = String(b.reviewer ?? '').trim().slice(0, 40) || 'web';
+  // one collection at a time (the workflow also serialises runs)
+  for (const st of ['in_progress', 'queued']) {
+    const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?status=${st}&per_page=1`);
+    if (r.ok && ((await r.json()) as { total_count: number }).total_count > 0) {
+      return json({ error: 'Đang có một lượt thu thập chạy – vui lòng chờ lượt đó xong', busy: true }, 409, h);
+    }
+  }
+  const d = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/dispatches`, {
+    method: 'POST',
+    body: JSON.stringify({ ref: 'main', inputs: { from, to, requested_by: reviewer } }),
+  });
+  if (d.status !== 204) return json({ error: `GitHub từ chối yêu cầu (HTTP ${d.status})` }, 502, h);
+  return json({ ok: true, from, to, requestedAt: new Date().toISOString() }, 202, h);
+}
+
+async function collectStatus(env: Env, f: Fetch, h: Record<string, string>) {
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ enabled: false, runs: [] }, 200, h);
+  const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?per_page=6`);
+  if (!r.ok) return json({ error: `GitHub HTTP ${r.status}` }, 502, h);
+  const runs = ((await r.json()) as { workflow_runs: RunInfo[] }).workflow_runs.map((x) => ({
+    id: x.id, status: x.status, conclusion: x.conclusion, createdAt: x.created_at, updatedAt: x.updated_at, event: x.event, title: x.display_title, url: x.html_url,
+  }));
+  return json({ enabled: true, runs }, 200, h);
+}
+
+export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fetch(i, init)): Promise<Response> {
   const h = cors(req, env);
   const url = new URL(req.url);
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
@@ -113,7 +178,9 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const code = (req.headers.get('x-review-code') ?? '').trim();
   if (!safeEqual(code, (env.ACCESS_CODE ?? '').trim())) return json({ error: 'Mã truy cập không đúng' }, 401, h);
 
-  if (url.pathname === '/login' && req.method === 'POST') return json({ ok: true }, 200, h);
+  if (url.pathname === '/login' && req.method === 'POST') return json({ ok: true, collectEnabled: !!env.GITHUB_TOKEN }, 200, h);
+  if (url.pathname === '/collect' && req.method === 'POST') return collect(req, env, f, h);
+  if (url.pathname === '/collect/status' && req.method === 'GET') return collectStatus(env, f, h);
 
   if (url.pathname === '/labels' && req.method === 'GET') {
     const date = url.searchParams.get('date') ?? '';

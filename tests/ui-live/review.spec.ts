@@ -46,3 +46,29 @@ test('shared review: login gate, votes from two reviewers, team quality, export'
   expect(ex.count).toBe(3);
   expect(new Set(ex.labels.map((l: { reviewerId: string }) => l.reviewerId))).toEqual(new Set(['nguoi-duyet-a', 'nguoi-duyet-b']));
 });
+
+test('web "Thu thập" like the local app: choose from/to → server collection → progress → new period opens', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('');
+  // same window controls as the local app
+  await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
+  await page.getByLabel('Từ (gồm)').fill('2026-11-08T18:00');
+  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T07:00');
+  await expect(page.getByText('[18:00 08/11/2026, 07:00 09/11/2026)')).toBeVisible();
+  // collecting requires a reviewer session
+  await page.getByRole('button', { name: 'Thu thập' }).click();
+  await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
+  await page.getByLabel('Họ tên').fill('Người duyệt C');
+  await page.getByLabel('Mã truy cập (do quản trị gửi)').fill('HCM-TEST-CODE');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(page.getByTestId('reviewer-chip')).toBeVisible();
+  await page.getByRole('button', { name: 'Thu thập' }).click();
+  await expect(page.getByTestId('remote-collect')).toContainText('Đang thu thập trên máy chủ GitHub');
+  await expect(page.getByRole('button', { name: 'Thu thập' })).toBeDisabled(); // one collection at a time
+  await page.screenshot({ path: 'docs/screenshots/web-collect-progress.png' });
+  // the page polls the workflow and opens the new period when it is published
+  await expect(page.getByText(/Đã thu thập xong 18:00 08\/11\/2026 → 07:00 09\/11\/2026/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('remote-collect')).toHaveCount(0);
+  const selected = page.locator('select').filter({ hasText: 'theo yêu cầu' });
+  await expect(selected).toContainText('18:00 08/11/2026 → 07:00 09/11/2026 · Thu thập theo yêu cầu (Người duyệt C)');
+});

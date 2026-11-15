@@ -31,7 +31,8 @@ export interface Api {
   backup(): Promise<unknown>;
   restore(b: unknown): Promise<void>;
   listRuns(): Promise<RunInfo[]>;
-  startRun(window: ReportWindow, trigger: 'manual' | 'auto'): Promise<{ runId?: string; skipped?: string }>;
+  /** local: starts a run; live: asks the server (GitHub Actions) to collect → { remote: true } */
+  startRun(window: ReportWindow, trigger: 'manual' | 'auto'): Promise<{ runId?: string; skipped?: string; remote?: boolean }>;
   getRun(id: string): Promise<RunInfo>;
   cancel(id: string): Promise<void>;
   retry(id: string, body: { mode: 'failed' | 'source' | 'expand' | 'candidates'; sourceId?: string; candidateIds?: string[]; extraLookbackHours?: number }): Promise<{ runId: string }>;
@@ -50,11 +51,14 @@ export interface Api {
 }
 
 export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: string | null; a: string | null; n: string; t: string }
+export interface CollectRun { id: number; status: string; conclusion: string | null; createdAt: string; updatedAt: string; event: string; title: string; url: string }
 export interface SharedReview {
   session(): { name: string } | null;
   login(name: string, code: string): Promise<void>;
   logout(): void;
   votes(runId: string): Promise<Record<string, Vote[]>>;
+  /** recent runs of the GitHub collection workflow (progress of an on-demand collection) */
+  collectStatus(): Promise<{ enabled: boolean; runs: CollectRun[] }>;
 }
 
 class ApiError extends Error {
@@ -176,6 +180,11 @@ class DemoApi implements Api {
     return this.index;
   }
   private latestId = '';
+  /** runId → published file + report date (daily periods and on-demand "custom" windows) */
+  private runMeta = new Map<string, { file: string; reportDate: string }>();
+  private reportDateOf(runId: string) {
+    return this.runMeta.get(runId)?.reportDate ?? runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+  }
   private load(id?: string): Promise<DemoBundle> {
     if (this.mode === 'demo') {
       if (!this.bundles.has('demo')) this.bundles.set('demo', fetch(`${import.meta.env.BASE_URL}demo/run.json`).then((r) => r.json() as Promise<DemoBundle>));
@@ -183,10 +192,10 @@ class DemoApi implements Api {
     }
     const runId = id || this.latestId;
     if (!this.bundles.has(runId)) {
-      const date = runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+      const file = this.runMeta.get(runId)?.file ?? `${runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')}.json`;
       this.bundles.set(
         runId,
-        fetch(`${import.meta.env.BASE_URL}live/${date}.json`, { cache: 'no-cache' })
+        fetch(`${import.meta.env.BASE_URL}live/${file}`, { cache: 'no-cache' })
           .then((r) => r.json())
           .then((d: any) => ({ manifest: d.manifest, candidates: d.candidates.map((c: Candidate) => ({ ...c, history: [] })), articles: d.articles.map((a: any) => fromPublic(a, runId, d.generatedAt)) })),
       );
@@ -270,15 +279,29 @@ class DemoApi implements Api {
     if (this.mode === 'demo') return [{ ...(await this.load()).manifest, active: false }];
     const i = await this.liveIndex();
     const days: any[] = i?.days ?? [];
-    const runs = days.map((d) => ({
-      runId: `run_live_${d.reportDate.replace(/-/g, '')}`, createdAt: d.generatedAt, finishedAt: d.generatedAt, window: d.window, trigger: 'auto' as const,
-      status: 'completed' as const, sources: [], counts: d.counts, completeness: d.completeness, settingsHash: '', notes: d.provisional ? ['Kỳ đang diễn ra – tạm thời'] : [], active: false,
-    }));
+    const runs = days.map((d) => {
+      const key: string = d.key ?? d.reportDate;
+      const runId = `run_live_${key.replace(/[^0-9a-z]/gi, '')}`;
+      this.runMeta.set(runId, { file: d.file ?? `${d.reportDate}.json`, reportDate: d.reportDate });
+      const notes = [...(d.provisional ? ['Kỳ đang diễn ra – tạm thời'] : []), ...(d.custom ? [`Thu thập theo yêu cầu${d.requestedBy ? ` (${d.requestedBy})` : ''}`] : [])];
+      return {
+        runId, createdAt: d.generatedAt, finishedAt: d.generatedAt, window: d.window, trigger: (d.custom ? 'manual' : 'auto') as 'manual' | 'auto',
+        status: 'completed' as const, sources: [], counts: d.counts, completeness: d.completeness, settingsHash: '', notes, active: false,
+      };
+    });
     this.latestId = runs[0]?.runId ?? '';
     return runs;
   }
-  async startRun(): Promise<never> {
-    throw new ApiError(NO_NET);
+  async startRun(window: ReportWindow): Promise<{ remote: true }> {
+    const s = store.get<{ name: string; code: string }>('reviewer');
+    if (!this.shared || !s) throw new ApiError(NO_NET);
+    const r = await fetch(`${this.reviewApi}/collect`, {
+      method: 'POST',
+      headers: { 'x-review-code': s.code, 'content-type': 'application/json' },
+      body: JSON.stringify({ from: window.from.slice(0, 16) + '+07:00', to: window.to.slice(0, 16) + '+07:00', reviewer: s.name }),
+    });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không gửi được yêu cầu thu thập (HTTP ${r.status})`);
+    return { remote: true };
   }
   async getRun(id: string) {
     const b = await this.load(id);
@@ -309,7 +332,7 @@ class DemoApi implements Api {
     if (this.shared && ['relevanceLabel', 'primaryCategory', 'assessment', 'reviewNote'].some((k) => k in patch)) {
       const a = (await this.load(id)).articles.find((x) => x.id === articleId);
       await this.sharedPost({
-        reportDate: id.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3'), articleId, url: a?.originalUrl ?? '', title: a?.title ?? '', sourceId: a?.sourceId ?? '',
+        reportDate: this.reportDateOf(id), articleId, url: a?.originalUrl ?? '', title: a?.title ?? '', sourceId: a?.sourceId ?? '',
         label: next.relevanceLabel ?? null, category: next.primaryCategory ?? null, assessment: next.assessment ?? null, note: next.reviewNote ?? '',
       });
     }
@@ -333,10 +356,17 @@ class DemoApi implements Api {
       votes: async (runId) => {
         const s = store.get<{ name: string; code: string }>('reviewer');
         if (!s) return {};
-        const date = runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+        const date = this.reportDateOf(runId);
         const r = await fetch(`${this.reviewApi}/labels?date=${date}`, { headers: { 'x-review-code': s.code }, cache: 'no-cache' });
         if (!r.ok) throw new ApiError('Không tải được kết quả duyệt chung');
         return ((await r.json()) as { votes: Record<string, Vote[]> }).votes;
+      },
+      collectStatus: async () => {
+        const s = store.get<{ name: string; code: string }>('reviewer');
+        if (!s) return { enabled: false, runs: [] };
+        const r = await fetch(`${this.reviewApi}/collect/status`, { headers: { 'x-review-code': s.code }, cache: 'no-cache' });
+        if (!r.ok) throw new ApiError('Không xem được tiến độ thu thập');
+        return (await r.json()) as { enabled: boolean; runs: CollectRun[] };
       },
     };
   }
