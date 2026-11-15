@@ -1,9 +1,9 @@
 name: Live data – hourly collection & GitHub Pages deploy
-run-name: ${{ inputs.from && format('Thu thập theo yêu cầu {0} → {1} ({2})', inputs.from, inputs.to, inputs.requested_by) || inputs.trigger == 'auto' && 'Thu thập tự động hằng giờ' || 'Live data – collection & GitHub Pages deploy' }}
+run-name: ${{ inputs.from && format('Thu thập theo yêu cầu {0} → {1} ({2}) [{3}]', inputs.from, inputs.to, inputs.requested_by, inputs.profile) || inputs.trigger == 'auto' && 'Thu thập tự động hằng giờ' || 'Live data – collection & GitHub Pages deploy' }}
 
 # The hourly automatic run is NOT a GitHub `schedule:` (often late or skipped). The Cloudflare review worker's cron
-# trigger dispatches this workflow with trigger=auto every hour at :07 – only while "Tự động thu thập mỗi giờ" is
-# switched on in the web app (KV cfg:auto) and no other collection is running.
+# trigger dispatches this workflow with trigger=auto every hour at :07 when at least one profile has "Tự động thu thập
+# mỗi giờ" switched on (KV cfg:profiles) and no other collection is running; that run collects every such profile.
 on:
   push:
     branches: [main]
@@ -26,6 +26,10 @@ on:
         description: 'Người yêu cầu'
         required: false
         default: ''
+      profile:
+        description: 'Mã cấu hình (profile) cho lượt theo yêu cầu, ví dụ hcm'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -39,7 +43,7 @@ concurrency:
 jobs:
   collect-and-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 55 # the hourly run collects every profile switched on
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,17 +51,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Real collection from the configured publishers (redacted public dataset: no full text, no photos).
+      # Real collection from the configured publishers, one dataset per profile (live/<profile>/).
       # If this step fails, the job stops and the previously deployed site stays online unchanged.
       - name: Collect live data
         env: # inputs passed through env (never interpolated into the shell command)
           REQ_FROM: ${{ inputs.from }}
           REQ_TO: ${{ inputs.to }}
           REQ_BY: ${{ inputs.requested_by }}
+          REQ_PROFILE: ${{ inputs.profile }}
           REVIEW_API_URL: ${{ vars.REVIEW_API_URL }} # shared configuration edited on the web (Cài đặt)
         run: |
           if [ -n "$REQ_FROM" ]; then
-            npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/hcm-news-reporter/" --out web/public/live --from "$REQ_FROM" --to "$REQ_TO" --requested-by "$REQ_BY"
+            npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/hcm-news-reporter/" --out web/public/live --from "$REQ_FROM" --to "$REQ_TO" --requested-by "$REQ_BY" --profile "${REQ_PROFILE:-hcm}"
           else
             npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/hcm-news-reporter/" --out web/public/live
           fi

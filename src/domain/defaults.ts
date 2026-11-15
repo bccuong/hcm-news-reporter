@@ -201,6 +201,30 @@ export function defaultSettings(): Settings {
   });
 }
 
+/**
+ * Starting configuration for a NEW region profile (Hà Nội, Đà Nẵng, …): the same sector keywords, categories, rules
+ * and quality checks as the default, but the location filter knows only the region itself (users add wards,
+ * landmarks and neighbouring areas in Cài đặt › Địa điểm) and TP.HCM becomes an "other province".
+ */
+export function settingsForNewRegion(regionName: string, aliases: string[] = []): Settings {
+  const s = defaultSettings();
+  const region = regionName.trim();
+  const others = [...new Set([...places.other_provinces, 'TP.HCM', 'TP Hồ Chí Minh', 'Thành phố Hồ Chí Minh'])].filter(
+    (p) => ![region, ...aliases].some((x) => x.toLowerCase() === p.toLowerCase()),
+  );
+  return SettingsSchema.parse({
+    ...s,
+    location: {
+      ...s.location,
+      regionName: region,
+      areas: [{ id: 'region', name: region, kind: 'city', aliases, requirePrefix: false }],
+      otherProvinces: others,
+    },
+    rules: { ...s.rules, presets: s.rules.presets.map((p) => ({ ...p, name: `Ngành xây dựng ${region}` })) },
+    report: { ...s.report, organization: '', subtitle: `Điểm tin báo chí ngành xây dựng ${region}`, filenamePattern: `Diem_tin_${slugify(region)}_{date}_{from}-{to}` },
+  });
+}
+
 export function defaultSources(websitesTxt: string): Source[] {
   return parseWebsitesTxt(websitesTxt).sources.map((s) => ({ ...s, origin: 'skill' as const }));
 }

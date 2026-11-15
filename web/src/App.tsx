@@ -4,7 +4,7 @@ import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
-import { api, type CollectRun, type ExportResult, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
+import { api, type CollectRun, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
 
@@ -29,6 +29,17 @@ export function App() {
   const [preset, setPreset] = useState<'last_completed' | 'today' | 'yesterday' | 'custom'>('last_completed');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  // profiles (cấu hình theo địa bàn): switching reloads everything for the chosen profile
+  const [profiles, setProfiles] = useState<ProfilesState | null>(null);
+  const activeProfile = profiles?.profiles.find((p) => p.id === profiles.activeId);
+  const switchProfile = async (id: string) => {
+    try {
+      await api.activateProfile(id);
+      window.location.reload();
+    } catch (e) {
+      toast('err', (e as Error).message);
+    }
+  };
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -59,7 +70,8 @@ export function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [s, src, rs] = await Promise.all([api.getSettings(), api.getSources(), api.listRuns()]);
+        const [s, src, rs, pf] = await Promise.all([api.getSettings(), api.getSources(), api.listRuns(), api.profiles()]);
+        setProfiles(pf);
         setSettings(s);
         setSources(src);
         setRuns(rs);
@@ -250,9 +262,9 @@ export function App() {
     if (!api.shared) return;
     if (!api.shared.session()) return setLoginOpen(true);
     try {
-      const auto = await api.shared.setAuto(enabled);
-      setServer((s) => (s ? { ...s, auto } : s));
-      toast('ok', enabled ? 'Đã BẬT tự động thu thập mỗi giờ' : 'Đã TẮT tự động thu thập – chỉ thu thập khi có người bấm Thu thập');
+      const prof = await api.shared.setAuto(enabled);
+      setServer((s) => (s ? { ...s, profiles: s.profiles.map((x) => (x.id === prof.id ? prof : x)) } : s));
+      toast('ok', enabled ? `Đã BẬT tự động thu thập mỗi giờ cho cấu hình "${activeProfile?.name ?? ''}"` : `Đã TẮT tự động thu thập cho cấu hình "${activeProfile?.name ?? ''}" – chỉ thu thập khi có người bấm Thu thập`);
     } catch (e) {
       toast('err', (e as Error).message);
     }
@@ -321,7 +333,7 @@ export function App() {
       )}
       {api.mode === 'live' && (
         <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
-          <b>DỮ LIỆU THẬT</b> – {server?.auto.enabled === false ? 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)' : 'thu thập tự động mỗi giờ trên máy chủ GitHub'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}.
+          <b>DỮ LIỆU THẬT</b> – {server?.profiles.find((x) => x.id === profiles?.activeId)?.autoCollect === false ? 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)' : 'thu thập tự động mỗi giờ trên máy chủ GitHub'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}.
           {api.shared ? <> Đăng nhập để <b>chọn khung giờ và bấm Thu thập</b> (chạy trên máy chủ GitHub, 5–10 phút) và duyệt tin: ✓/✗, sửa lĩnh vực/tính chất, góp ý.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
         </div>
       )}
@@ -329,9 +341,19 @@ export function App() {
         <div className="mx-auto flex max-w-[1500px] items-center gap-3 px-4 py-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-navy-700 text-sm font-bold text-white">ĐT</div>
           <div>
-            <h1 className="text-base font-bold leading-tight text-navy-700">HCM News Reporter</h1>
-            <p className="text-xs text-slate-500">Điểm tin báo chí ngành xây dựng TP.HCM</p>
+            <h1 className="text-base font-bold leading-tight text-navy-700">News Reporter</h1>
+            <p className="text-xs text-slate-500" data-testid="app-subtitle">{settings?.report.subtitle ?? ''}</p>
           </div>
+          {profiles && (
+            <label className="ml-2 flex items-center gap-1 text-xs text-slate-600" title="Cấu hình theo địa bàn – tạo mới/sao chép ở Cài đặt › Cấu hình (profile)">
+              Cấu hình
+              <select className="input py-1 text-sm font-semibold" aria-label="Cấu hình (profile)" value={profiles.activeId} onChange={(e) => switchProfile(e.target.value)}>
+                {profiles.profiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <span className="flex-1" />
           <span className={`chip ${online ? 'border-green-300 bg-green-50 text-green-800' : 'border-slate-300 bg-slate-100'}`}>
             {online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />} {online ? 'Có Internet' : 'Ngoại tuyến – xem/duyệt/xuất dữ liệu đã lưu'}
@@ -436,7 +458,7 @@ export function App() {
         </section>
         )}
 
-        {api.shared && server && <ServerStrip server={server} remote={!!remote} onToggle={toggleAuto} />}
+        {api.shared && server && <ServerStrip server={server} profileId={profiles?.activeId ?? 'hcm'} remote={!!remote} onToggle={toggleAuto} />}
 
         {remote && (
           <section className="card flex flex-wrap items-center gap-3 border-blue-300 bg-blue-50 p-3 text-sm text-blue-900" data-testid="remote-collect">
@@ -1072,11 +1094,18 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
   const [res, setRes] = useState<ExportResult | null>(null);
   const [formats, setFormats] = useState<Array<'pptx' | 'pdf'>>(settings.report.outputFormats);
   const [busy, setBusy] = useState(false);
+  // report template: Department template from the Skill (default), 4 original designs, or the uploaded one
+  const [tpls, setTpls] = useState<TemplateOption[]>([]);
+  const [tplId, setTplId] = useState(settings.report.templateId);
+  useEffect(() => {
+    api.templates().then((r) => (setTpls(r.templates), setTplId((cur) => (r.templates.some((x) => x.id === cur) ? cur : r.defaultId)))).catch(() => setTpls([]));
+  }, []);
+  const tpl = tpls.find((x) => x.id === tplId);
   const sel = Object.values(reviews).filter((r) => r.included && !r.groupId).sort((a, b) => a.order - b.order);
   const go = async (dryRun: boolean) => {
     setBusy(true);
     try {
-      const r = await api.exportRun(run.runId, formats, dryRun);
+      const r = await api.exportRun(run.runId, formats, dryRun, tplId);
       setRes(r);
       if (r.ok) toast('ok', `Đã xuất ${r.files?.length ?? 0} tệp`);
     } catch (e) {
@@ -1134,11 +1163,17 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
       </div>
       <div className="card space-y-3 p-3">
         <h3 className="font-semibold text-navy-700">Xuất báo cáo</h3>
-        {settings.report.templateFile ? (
-          <p className="rounded bg-green-50 p-2 text-xs text-green-900">Mẫu: <b>mẫu PPTX gốc</b> ({settings.report.templateFile})</p>
-        ) : (
-          <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">Mẫu: <b>BẢN DEMO</b> – chưa tải mẫu PPTX gốc (Cài đặt › Báo cáo & mẫu).</p>
-        )}
+        <label className="block">
+          <span className="label">Mẫu báo cáo</span>
+          <select className="input" aria-label="Mẫu báo cáo" value={tplId} onChange={(e) => setTplId(e.target.value)}>
+            {tpls.map((x) => (
+              <option key={x.id} value={x.id} disabled={x.available === false}>
+                {x.name} · {x.orientation === 'landscape' ? '16:9' : 'A4 dọc'}{x.available === false ? ' (thiếu tệp)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        {tpl && <p className="rounded bg-slate-50 p-2 text-xs text-slate-700" data-testid="template-info">{tpl.description}</p>}
         <div className="flex gap-4">
           {(['pptx', 'pdf'] as const).map((f) => (
             <label key={f} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={formats.includes(f)} onChange={(e) => setFormats(e.target.checked ? [...formats, f] : formats.filter((x) => x !== f))} /> .{f}</label>
@@ -1166,21 +1201,24 @@ const RUN_KIND: Record<string, string> = { auto: 'lượt tự động hằng gi
 const LAST_AUTO: Record<string, string> = { dispatched: 'đã chạy', off: 'bỏ qua vì đang tắt', busy: 'bỏ qua vì máy chủ bận', error: 'lỗi', not_configured: 'chưa cấu hình' };
 
 /** web: hourly automatic switch + what the collection server is doing now */
-function ServerStrip({ server, remote, onToggle }: { server: ServerStatus; remote: boolean; onToggle: (on: boolean) => void }) {
+function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerStatus; profileId: string; remote: boolean; onToggle: (on: boolean) => void }) {
+  const prof = server.profiles.find((p) => p.id === profileId);
+  const enabled = !!prof?.autoCollect;
   const next = new Date();
   next.setUTCMinutes(7, 0, 0);
   if (next.getTime() <= Date.now()) next.setTime(next.getTime() + 3600_000);
   const run = server.running[0];
-  const who = run?.kind === 'request' ? /\(([^)]*)\)\s*$/.exec(run.title)?.[1] : undefined;
+  const who = run?.kind === 'request' ? /\(([^)]*)\)(?:\s*\[[^\]]*\])?\s*$/.exec(run.title)?.[1] : undefined;
   return (
     <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm" data-testid="server-status">
       <label className="inline-flex cursor-pointer items-center gap-2 font-medium">
-        <input type="checkbox" className="h-4 w-4" checked={server.auto.enabled} disabled={!server.collectEnabled} onChange={(e) => onToggle(e.target.checked)} />
+        <input type="checkbox" className="h-4 w-4" checked={enabled} disabled={!server.collectEnabled} onChange={(e) => onToggle(e.target.checked)} />
         Tự động thu thập mỗi giờ
       </label>
+      {prof && <span className="chip border-slate-300 bg-slate-50 text-xs">cấu hình: <b>{prof.name}</b></span>}
       <span className="text-xs text-slate-500" data-testid="auto-info">
-        {server.auto.enabled ? <>Bật – chạy phút :07 mỗi giờ, lượt kế tiếp khoảng <b>{hhmm(next.toISOString())}</b> (bỏ qua nếu máy chủ đang bận)</> : <>Tắt – chỉ thu thập khi có người bấm <b>Thu thập</b></>}
-        {server.auto.by && <> · {server.auto.by} đổi lúc {hhmm(server.auto.at)} {new Date(server.auto.at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</>}
+        {enabled ? <>Bật – chạy phút :07 mỗi giờ, lượt kế tiếp khoảng <b>{hhmm(next.toISOString())}</b> (bỏ qua nếu máy chủ đang bận)</> : <>Tắt – chỉ thu thập khi có người bấm <b>Thu thập</b></>}
+        {prof?.autoBy && prof.autoAt && <> · {prof.autoBy} đổi lúc {hhmm(prof.autoAt)} {new Date(prof.autoAt).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</>}
         {server.lastAuto && <> · lần hẹn giờ gần nhất {hhmm(server.lastAuto.at)}: {LAST_AUTO[server.lastAuto.result] ?? server.lastAuto.result}</>}
       </span>
       <span className="flex-1" />

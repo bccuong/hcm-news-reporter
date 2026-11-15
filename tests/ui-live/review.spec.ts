@@ -175,11 +175,59 @@ test('web = local: photos, full article text, shared settings used by the server
   const media = Object.keys(zip.files).filter((f) => f.startsWith('ppt/media/'));
   const slidesXml = (await Promise.all(Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f)).map((f) => zip.file(f)!.async('string')))).join('');
   expect(slidesXml).toContain('Mưa lớn tối 8.11');
-  expect(media.length).toBeGreaterThan(0); // photo embedded
-  if (existsSync(TEMPLATE)) {
-    expect(file.suggestedFilename()).not.toContain('DEMO');
-    expect(slidesXml).not.toContain('BẢN DEMO');
-  } else expect(file.suggestedFilename()).toContain('DEMO');
+  // default template = the Department's template from the Skill (published with the site), with the real photo
+  await expect(page.getByLabel('Mẫu báo cáo')).toHaveValue('skill-so-xay-dung');
+  expect(file.suggestedFilename()).not.toContain('DEMO');
+  expect(slidesXml).not.toContain('BẢN DEMO');
+  const hasPhoto = async (z: JSZip) => {
+    for (const f of Object.keys(z.files).filter((x) => x.startsWith('ppt/media/') && !z.files[x]!.dir)) if ((await z.file(f)!.async('uint8array')).length === png.length) return true;
+    return false;
+  };
+  expect(media.length).toBeGreaterThan(0);
+  expect(await hasPhoto(zip)).toBe(true);
   await page.screenshot({ path: 'docs/screenshots/web-export-template.png' });
+
+  // another template, chosen at export: one of the app's original designs
+  await page.getByLabel('Mẫu báo cáo').selectOption('ban-tin');
+  await expect(page.getByTestId('template-info')).toContainText('16:9');
+  await page.evaluate(() => delete (window as unknown as { __dl?: unknown }).__dl);
+  await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __dl?: unknown }).__dl), { timeout: 30_000 }).toBe(true);
+  const out2 = await page.evaluate(() => (window as unknown as { __dl: { name: string; b64: string } }).__dl);
+  expect(out2.name).toContain('ban-tin');
+  const zip2 = await JSZip.loadAsync(Buffer.from(out2.b64, 'base64'));
+  expect(await hasPhoto(zip2)).toBe(true);
   await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+test('web profiles: create Đà Nẵng (stored by the worker), own settings + hourly switch, switch back to TP.HCM', async ({ page, request }) => {
+  page.on('dialog', (d) => d.accept());
+  await page.goto('');
+  await login(page, 'Người duyệt F', 'HCM-TEST-CODE');
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  await dlg.getByRole('button', { name: 'Cấu hình (profile)', exact: true }).click();
+  await dlg.getByLabel('Tên cấu hình').fill('Đà Nẵng');
+  await dlg.getByLabel('Tên địa bàn').fill('Đà Nẵng');
+  await dlg.getByRole('button', { name: 'Tạo cấu hình' }).click();
+  await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('da-nang');
+  const cfg = (await (await request.get('http://127.0.0.1:5181/config?profile=da-nang')).json()).config;
+  expect(cfg.settings.location.regionName).toBe('Đà Nẵng');
+  expect(cfg.by).toBe('Người duyệt F');
+  // no data yet for the new profile; its hourly switch is off (TP.HCM's stays on)
+  const strip = page.getByTestId('server-status');
+  await expect(strip).toContainText('cấu hình: Đà Nẵng');
+  await expect(strip.getByLabel('Tự động thu thập mỗi giờ')).not.toBeChecked();
+  await strip.getByLabel('Tự động thu thập mỗi giờ').click();
+  await expect(strip.getByLabel('Tự động thu thập mỗi giờ')).toBeChecked();
+  const st = (await (await request.get('http://127.0.0.1:5181/status')).json()) as { profiles: Array<{ id: string; autoCollect: boolean }> };
+  expect(st.profiles.map((p) => [p.id, p.autoCollect])).toEqual([['hcm', true], ['da-nang', true]]);
+  // the cron now collects both profiles in one run
+  expect((await (await request.get('http://127.0.0.1:5181/__cron')).json()).profiles).toEqual(['hcm', 'da-nang']);
+  await page.screenshot({ path: 'docs/screenshots/web-profile-da-nang.png' });
+  await strip.getByLabel('Tự động thu thập mỗi giờ').click();
+  await expect(strip.getByLabel('Tự động thu thập mỗi giờ')).not.toBeChecked();
+  // back to TP.HCM: its published data is shown again
+  await page.getByLabel('Cấu hình (profile)').selectOption('hcm');
+  await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('hcm');
+  await expect(page.locator('article').filter({ hasText: 'Mưa lớn tối 8.11 khiến' }).first()).toBeVisible();
 });

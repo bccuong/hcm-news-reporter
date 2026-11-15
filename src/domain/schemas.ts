@@ -173,6 +173,8 @@ export const SettingsSchema = z.object({
     .default({}),
   location: z
     .object({
+      /** the profile's target area as shown to users ("TP.HCM", "Hà Nội", …); location status code "hcm" = inside it */
+      regionName: z.string().min(1).max(60).default('TP.HCM'),
       areas: z.array(LocationAreaSchema).default([]),
       otherProvinces: z.array(z.string()).default([]),
       requireHcmEvidence: z.boolean().default(true),
@@ -209,6 +211,10 @@ export const SettingsSchema = z.object({
   report: z
     .object({
       organization: z.string().default('SỞ XÂY DỰNG THÀNH PHỐ HỒ CHÍ MINH – VĂN PHÒNG SỞ'),
+      /** subtitle under the app name, e.g. "Điểm tin báo chí ngành xây dựng TP.HCM" */
+      subtitle: z.string().max(120).default('Điểm tin báo chí ngành xây dựng TP.HCM'),
+      /** default report template (built-in id, see src/reports/templates.ts); the export dialog can pick another */
+      templateId: z.string().default('skill-so-xay-dung'),
       templateFile: z.string().default(''),
       outputFormats: z.array(z.enum(['pptx', 'pdf'])).default(['pptx']),
       filenamePattern: z.string().default('HCM_Diem_tin_{date}_{from}-{to}'),
@@ -228,6 +234,35 @@ export const SettingsSchema = z.object({
     .default({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
+
+/* ------------------------- Profiles (cấu hình theo địa bàn) ------------------------- */
+/**
+ * A profile = one complete collector configuration (settings + sources) for one target area, e.g. TP.HCM (default),
+ * Hà Nội, Đà Nẵng. Profiles are created blank (from the defaults, for a new region) or cloned from an existing one.
+ */
+export const DEFAULT_PROFILE_ID = 'hcm';
+export const ProfileIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'Mã cấu hình: chữ thường không dấu, số, gạch nối');
+export const ProfileMetaSchema = z.object({
+  id: ProfileIdSchema,
+  name: z.string().trim().min(1).max(60),
+  description: z.string().max(300).default(''),
+  /** web: hourly automatic collection for this profile (the default TP.HCM profile is on) */
+  autoCollect: z.boolean().default(false),
+  clonedFrom: z.string().nullable().default(null),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ProfileMeta = z.infer<typeof ProfileMetaSchema>;
+export const NewProfileSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  description: z.string().max(300).default(''),
+  /** clone this profile's settings + sources; otherwise start from the defaults for a new region */
+  cloneFrom: ProfileIdSchema.nullable().default(null),
+  /** new (blank) profile: target area name and its other spellings, e.g. "Hà Nội", ["TP Hà Nội", "Thủ đô"] */
+  regionName: z.string().trim().max(60).default(''),
+  regionAliases: z.array(z.string().trim().min(1)).default([]),
+});
+export type NewProfile = z.infer<typeof NewProfileSchema>;
 
 /* ------------------------- Collection records ------------------------- */
 
@@ -421,4 +456,6 @@ export interface RunManifest {
   completeness: 'complete_within_enumerated_scope' | 'incomplete' | 'unknown';
   settingsHash: string;
   notes: string[];
+  /** profile (cấu hình) this run was collected with; absent on runs made before profiles existed = TP.HCM */
+  profileId?: string;
 }

@@ -121,28 +121,46 @@ async function busy(env: Env, f: Fetch): Promise<boolean> {
   return false;
 }
 
-/* ---------- hourly automatic collection (Cloudflare cron → workflow_dispatch), switchable from the web ---------- */
-export interface AutoCfg { enabled: boolean; by: string; at: string }
-export interface AutoLast { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string }
-const AUTO_KEY = 'cfg:auto';
+/* ---------- profiles (cấu hình theo địa bàn): each has its own configuration, data and hourly switch ---------- */
+export interface ProfileMeta {
+  id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string;
+  /** who switched the hourly collection on/off, and when */
+  autoBy?: string; autoAt?: string;
+}
+export const DEFAULT_PROFILE = 'hcm';
+const PROFILES_KEY = 'cfg:profiles';
+const PROFILE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const MAX_PROFILES = 20;
+
+export async function getProfiles(env: Env): Promise<ProfileMeta[]> {
+  const v = await env.REVIEWS.get(PROFILES_KEY);
+  if (v) return JSON.parse(v) as ProfileMeta[];
+  // before profiles existed: one TP.HCM configuration and one global hourly switch (cfg:auto)
+  const legacy = await env.REVIEWS.get('cfg:auto');
+  const a = legacy ? (JSON.parse(legacy) as { enabled: boolean; by: string; at: string }) : null;
+  return [{
+    id: DEFAULT_PROFILE, name: 'TP.HCM', description: 'Cấu hình mặc định: ngành xây dựng TP.HCM (từ Skill)', autoCollect: a?.enabled ?? true,
+    clonedFrom: null, createdAt: '', updatedAt: '', autoBy: a?.by, autoAt: a?.at,
+  }];
+}
+const saveProfiles = (env: Env, list: ProfileMeta[]) => env.REVIEWS.put(PROFILES_KEY, JSON.stringify(list));
+
+/* ---------- hourly automatic collection (Cloudflare cron → workflow_dispatch), switchable per profile on the web ---------- */
+export interface AutoLast { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string; profiles?: string[] }
 const AUTO_LAST_KEY = 'cfg:autoLast';
 export const AUTO_TITLE = 'Thu thập tự động hằng giờ';
 
-export async function getAuto(env: Env): Promise<AutoCfg> {
-  const v = await env.REVIEWS.get(AUTO_KEY);
-  return v ? (JSON.parse(v) as AutoCfg) : { enabled: true, by: '', at: '' };
-}
-
-/** called by the Worker's cron trigger every hour */
+/** called by the Worker's cron trigger every hour: ONE workflow run collects every profile switched on */
 export async function scheduledCollect(env: Env, f: Fetch = (i, init) => fetch(i, init)): Promise<AutoLast> {
   const at = new Date().toISOString();
+  const on = (await getProfiles(env)).filter((p) => p.autoCollect).map((p) => p.id);
   let last: AutoLast;
   if (!ghReady(env)) last = { at, result: 'not_configured' };
-  else if (!(await getAuto(env)).enabled) last = { at, result: 'off' };
-  else if (await busy(env, f)) last = { at, result: 'busy' };
+  else if (!on.length) last = { at, result: 'off' };
+  else if (await busy(env, f)) last = { at, result: 'busy', profiles: on };
   else {
     const d = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { trigger: 'auto' } }) });
-    last = d.status === 204 ? { at, result: 'dispatched' } : { at, result: 'error', detail: `HTTP ${d.status}` };
+    last = d.status === 204 ? { at, result: 'dispatched', profiles: on } : { at, result: 'error', detail: `HTTP ${d.status}` };
   }
   await env.REVIEWS.put(AUTO_LAST_KEY, JSON.stringify(last));
   return last;
@@ -158,69 +176,120 @@ const mapRun = (x: RunInfo) => ({
   id: x.id, status: x.status, conclusion: x.conclusion, createdAt: x.created_at, updatedAt: x.updated_at, event: x.event, kind: runKind(x), title: x.display_title, url: x.html_url,
 });
 
-/** public server status: automatic mode + what the collection server is doing right now */
+/** public server status: per-profile hourly switch + what the collection server is doing right now */
 async function serverStatus(env: Env, f: Fetch, h: Record<string, string>) {
-  const auto = await getAuto(env);
+  const profiles = await getProfiles(env);
   const lv = await env.REVIEWS.get(AUTO_LAST_KEY);
   const lastAuto = lv ? (JSON.parse(lv) as AutoLast) : null;
-  if (!ghReady(env)) return json({ collectEnabled: false, auto, lastAuto, running: [] }, 200, h);
+  if (!ghReady(env)) return json({ collectEnabled: false, profiles, lastAuto, running: [] }, 200, h);
   const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?per_page=6`);
   const runs = r.ok ? ((await r.json()) as { workflow_runs: RunInfo[] }).workflow_runs.map(mapRun) : [];
-  return json({ collectEnabled: true, auto, lastAuto, running: runs.filter((x) => x.status !== 'completed') }, r.ok ? 200 : 502, h);
+  return json({ collectEnabled: true, profiles, lastAuto, running: runs.filter((x) => x.status !== 'completed') }, r.ok ? 200 : 502, h);
 }
 
-/* ---------- shared collector configuration (settings + sources) edited on the web, used by the server collector ---------- */
+/* ---------- shared collector configuration (settings + sources) per profile, edited on the web, used by the server ---------- */
 export interface SharedConfig { settings: Record<string, unknown>; sources: unknown[]; by: string; at: string; summary: string }
-const CONFIG_KEY = 'cfg:config';
-const HIST_PREFIX = 'cfg:hist:';
+const configKey = (pid: string) => `cfg:config:${pid}`;
+const histPrefix = (pid: string) => `cfg:hist:${pid}:`;
 const KEEP_HISTORY = 30;
 const MAX_CONFIG_BYTES = 1_000_000;
 
-async function saveConfig(env: Env, next: SharedConfig) {
-  const prev = await env.REVIEWS.get(CONFIG_KEY);
+async function readConfig(env: Env, pid: string): Promise<string | null> {
+  // TP.HCM: configuration saved before profiles existed
+  return (await env.REVIEWS.get(configKey(pid))) ?? (pid === DEFAULT_PROFILE ? await env.REVIEWS.get('cfg:config') : null);
+}
+async function saveConfig(env: Env, pid: string, next: SharedConfig) {
+  const prev = await readConfig(env, pid);
   if (prev) {
     const p = JSON.parse(prev) as SharedConfig;
     // history key sorts by time; metadata lets the web list versions without reading values
-    await env.REVIEWS.put(`${HIST_PREFIX}${p.at}`, prev, { metadata: { by: p.by, at: p.at, summary: p.summary.slice(0, 200) } });
-    const old = (await listAll(env.REVIEWS, HIST_PREFIX)).map((k) => k.name).sort();
+    await env.REVIEWS.put(`${histPrefix(pid)}${p.at}`, prev, { metadata: { by: p.by, at: p.at, summary: p.summary.slice(0, 200) } });
+    const old = (await listAll(env.REVIEWS, histPrefix(pid))).map((k) => k.name).sort();
     for (const k of old.slice(0, Math.max(0, old.length - KEEP_HISTORY))) await env.REVIEWS.delete(k);
   }
-  await env.REVIEWS.put(CONFIG_KEY, JSON.stringify(next));
+  await env.REVIEWS.put(configKey(pid), JSON.stringify(next));
+}
+function parseConfigBody(b: { settings?: unknown; sources?: unknown; summary?: unknown; reviewer?: unknown }): SharedConfig | null {
+  if (!b.settings || typeof b.settings !== 'object' || Array.isArray(b.settings) || !Array.isArray(b.sources)) return null;
+  return {
+    settings: b.settings as Record<string, unknown>, sources: b.sources, by: String(b.reviewer ?? '').trim().slice(0, 40) || 'web',
+    at: new Date().toISOString(), summary: String(b.summary ?? '').slice(0, 300) || 'Cập nhật cấu hình',
+  };
+}
+function profileSlug(name: string, taken: string[]): string {
+  const base = reviewerId(name) === 'an-danh' ? 'cau-hinh' : reviewerId(name).slice(0, 36);
+  let id = base;
+  for (let k = 2; taken.includes(id); k++) id = `${base}-${k}`;
+  return id;
 }
 
-async function configRoutes(req: Request, url: URL, env: Env, h: Record<string, string>): Promise<Response | null> {
+/** reviewer-only routes (access code already checked) */
+async function profileRoutes(req: Request, url: URL, env: Env, h: Record<string, string>): Promise<Response | null> {
+  const body = async <T>() => (await req.json().catch(() => null)) as T | null;
+  const pidOf = (v: unknown) => (typeof v === 'string' && PROFILE_ID.test(v) ? v : DEFAULT_PROFILE);
+
   if (url.pathname === '/config' && req.method === 'POST') {
     if (Number(req.headers.get('content-length') ?? 0) > MAX_CONFIG_BYTES) return json({ error: 'Cấu hình quá lớn' }, 413, h);
-    let b: { settings?: unknown; sources?: unknown; summary?: unknown; reviewer?: unknown };
-    try {
-      b = (await req.json()) as typeof b;
-    } catch {
-      return json({ error: 'INVALID_JSON' }, 400, h);
-    }
-    if (!b.settings || typeof b.settings !== 'object' || Array.isArray(b.settings) || !Array.isArray(b.sources)) return json({ error: 'Cấu hình không hợp lệ (cần settings + sources)' }, 400, h);
-    const cfg: SharedConfig = {
-      settings: b.settings as Record<string, unknown>, sources: b.sources, by: String(b.reviewer ?? '').trim().slice(0, 40) || 'web',
-      at: new Date().toISOString(), summary: String(b.summary ?? '').slice(0, 300) || 'Cập nhật cấu hình',
-    };
-    await saveConfig(env, cfg);
+    const b = await body<{ profile?: string; settings?: unknown; sources?: unknown; summary?: unknown; reviewer?: unknown }>();
+    if (!b) return json({ error: 'INVALID_JSON' }, 400, h);
+    const pid = pidOf(b.profile);
+    if (!(await getProfiles(env)).some((p) => p.id === pid)) return json({ error: `Không có cấu hình "${pid}"` }, 404, h);
+    const cfg = parseConfigBody(b);
+    if (!cfg) return json({ error: 'Cấu hình không hợp lệ (cần settings + sources)' }, 400, h);
+    await saveConfig(env, pid, cfg);
     return json({ ok: true, by: cfg.by, at: cfg.at }, 200, h);
   }
   if (url.pathname === '/config/history' && req.method === 'GET') {
-    const keys = await listAll(env.REVIEWS, HIST_PREFIX);
-    const items = keys.map((k) => ({ id: k.name.slice(HIST_PREFIX.length), ...(k.metadata as { by: string; at: string; summary: string }) })).sort((a, b) => b.id.localeCompare(a.id));
+    const pid = pidOf(url.searchParams.get('profile'));
+    const keys = await listAll(env.REVIEWS, histPrefix(pid));
+    const items = keys.map((k) => ({ id: k.name.slice(histPrefix(pid).length), ...(k.metadata as { by: string; at: string; summary: string }) })).sort((a, b) => b.id.localeCompare(a.id));
     return json({ items }, 200, h);
   }
   if (url.pathname === '/config/rollback' && req.method === 'POST') {
-    const b = (await req.json().catch(() => ({}))) as { id?: string; reviewer?: string };
-    const v = b.id ? await env.REVIEWS.get(`${HIST_PREFIX}${b.id}`) : null;
+    const b = (await body<{ id?: string; reviewer?: string; profile?: string }>()) ?? {};
+    const pid = pidOf(b.profile);
+    const v = b.id ? await env.REVIEWS.get(`${histPrefix(pid)}${b.id}`) : null;
     if (!v) return json({ error: 'Không tìm thấy phiên bản' }, 404, h);
     const old = JSON.parse(v) as SharedConfig;
-    await saveConfig(env, { ...old, by: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', at: new Date().toISOString(), summary: `Khôi phục phiên bản ${b.id}` });
+    await saveConfig(env, pid, { ...old, by: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', at: new Date().toISOString(), summary: `Khôi phục phiên bản ${b.id}` });
     return json({ ok: true }, 200, h);
+  }
+  // create: the browser builds the configuration (new region from the defaults, or a clone) and sends it
+  if (url.pathname === '/profiles' && req.method === 'POST') {
+    if (Number(req.headers.get('content-length') ?? 0) > MAX_CONFIG_BYTES) return json({ error: 'Cấu hình quá lớn' }, 413, h);
+    const b = await body<{ name?: string; description?: string; clonedFrom?: string; settings?: unknown; sources?: unknown; reviewer?: string }>();
+    const name = String(b?.name ?? '').trim().slice(0, 60);
+    if (!b || !name) return json({ error: 'Cần tên cấu hình' }, 400, h);
+    const cfg = parseConfigBody({ ...b, summary: `Tạo cấu hình "${name}"` });
+    if (!cfg) return json({ error: 'Cấu hình không hợp lệ (cần settings + sources)' }, 400, h);
+    const list = await getProfiles(env);
+    if (list.length >= MAX_PROFILES) return json({ error: `Tối đa ${MAX_PROFILES} cấu hình` }, 400, h);
+    const now = new Date().toISOString();
+    const meta: ProfileMeta = {
+      id: profileSlug(name, list.map((p) => p.id)), name, description: String(b.description ?? '').slice(0, 300), autoCollect: false,
+      clonedFrom: b.clonedFrom && PROFILE_ID.test(b.clonedFrom) ? b.clonedFrom : null, createdAt: now, updatedAt: now,
+    };
+    await saveConfig(env, meta.id, cfg);
+    await saveProfiles(env, [...list, meta]);
+    return json(meta, 200, h);
+  }
+  const m = /^\/profiles\/([a-z0-9-]{1,40})$/.exec(url.pathname);
+  if (m && (req.method === 'PATCH' || req.method === 'DELETE')) {
+    const list = await getProfiles(env);
+    const i = list.findIndex((p) => p.id === m[1]);
+    if (i < 0) return json({ error: 'Không tìm thấy cấu hình' }, 404, h);
+    if (req.method === 'DELETE') {
+      if (list.length <= 1) return json({ error: 'Phải còn ít nhất một cấu hình' }, 400, h);
+      await saveProfiles(env, list.filter((p) => p.id !== m[1]));
+      return json({ ok: true }, 200, h); // configuration + history stay in KV (recoverable by an administrator)
+    }
+    const b = (await body<{ name?: string; description?: string }>()) ?? {};
+    list[i] = { ...list[i]!, ...(b.name?.trim() ? { name: b.name.trim().slice(0, 60) } : {}), ...(b.description !== undefined ? { description: String(b.description).slice(0, 300) } : {}), updatedAt: new Date().toISOString() };
+    await saveProfiles(env, list);
+    return json(list[i], 200, h);
   }
   return null;
 }
-
 /** Article photo for the report (browser export): https only, real jpeg/png/webp, ≤ 8 MB. */
 async function imageProxy(url: URL, f: Fetch, h: Record<string, string>) {
   const target = url.searchParams.get('url') ?? '';
@@ -242,7 +311,7 @@ async function imageProxy(url: URL, f: Fetch, h: Record<string, string>) {
 /** On-demand collection for a custom window: dispatch the collection workflow (one at a time). */
 async function collect(req: Request, env: Env, f: Fetch, h: Record<string, string>) {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ error: 'Chưa cấu hình thu thập theo yêu cầu (GITHUB_TOKEN)' }, 503, h);
-  let b: { from?: string; to?: string; reviewer?: string };
+  let b: { from?: string; to?: string; reviewer?: string; profile?: string };
   try {
     b = (await req.json()) as typeof b;
   } catch {
@@ -257,14 +326,16 @@ async function collect(req: Request, env: Env, f: Fetch, h: Record<string, strin
   if (z - a > MAX_WINDOW_HOURS * 3600_000) return json({ error: `Khung giờ tối đa ${MAX_WINDOW_HOURS} giờ cho mỗi lần thu thập trên web` }, 400, h);
   if (a > Date.now()) return json({ error: 'Thời điểm bắt đầu ở tương lai' }, 400, h);
   const reviewer = String(b.reviewer ?? '').trim().slice(0, 40) || 'web';
+  const profile = String(b.profile ?? DEFAULT_PROFILE);
+  if (!(await getProfiles(env)).some((p) => p.id === profile)) return json({ error: `Không có cấu hình "${profile}"`}, 400, h);
   // one collection at a time (the workflow also serialises runs)
   if (await busy(env, f)) return json({ error: 'Máy chủ đang chạy một lượt thu thập khác (xem dòng trạng thái máy chủ) – vui lòng chờ lượt đó xong', busy: true }, 409, h);
   const d = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/dispatches`, {
     method: 'POST',
-    body: JSON.stringify({ ref: 'main', inputs: { from, to, requested_by: reviewer } }),
+    body: JSON.stringify({ ref: 'main', inputs: { from, to, requested_by: reviewer, profile } }),
   });
   if (d.status !== 204) return json({ error: `GitHub từ chối yêu cầu (HTTP ${d.status})` }, 502, h);
-  return json({ ok: true, from, to, requestedAt: new Date().toISOString() }, 202, h);
+  return json({ ok: true, from, to, profile, requestedAt: new Date().toISOString() }, 202, h);
 }
 
 async function collectStatus(env: Env, f: Fetch, h: Record<string, string>) {
@@ -281,9 +352,11 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
   if (url.pathname === '/health') return json({ ok: true }, 200, h);
   if (url.pathname === '/status' && req.method === 'GET') return serverStatus(env, f, h);
-  // shared collector configuration: public read (the GitHub collector and every browser use it; contains no secrets)
+  // profiles + their collector configuration: public read (the GitHub collector and every browser use them; no secrets)
+  if (url.pathname === '/profiles' && req.method === 'GET') return json({ profiles: await getProfiles(env) }, 200, h);
   if (url.pathname === '/config' && req.method === 'GET') {
-    const v = await env.REVIEWS.get(CONFIG_KEY);
+    const pid = url.searchParams.get('profile') ?? DEFAULT_PROFILE;
+    const v = PROFILE_ID.test(pid) ? await readConfig(env, pid) : null;
     return json({ config: v ? JSON.parse(v) : null }, 200, h);
   }
 
@@ -310,19 +383,23 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
   if (url.pathname === '/collect' && req.method === 'POST') return collect(req, env, f, h);
   if (url.pathname === '/collect/status' && req.method === 'GET') return collectStatus(env, f, h);
   if (url.pathname === '/img' && req.method === 'GET') return imageProxy(url, f, h);
-  const cr = await configRoutes(req, url, env, h);
-  if (cr) return cr;
+  const pr = await profileRoutes(req, url, env, h);
+  if (pr) return pr;
+  // hourly automatic collection on/off for ONE profile
   if (url.pathname === '/auto' && req.method === 'POST') {
-    let b: { enabled?: unknown; reviewer?: unknown };
+    let b: { enabled?: unknown; reviewer?: unknown; profile?: unknown };
     try {
       b = (await req.json()) as typeof b;
     } catch {
       return json({ error: 'INVALID_JSON' }, 400, h);
     }
     if (typeof b.enabled !== 'boolean') return json({ error: 'enabled phải là true/false' }, 400, h);
-    const cfg: AutoCfg = { enabled: b.enabled, by: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', at: new Date().toISOString() };
-    await env.REVIEWS.put(AUTO_KEY, JSON.stringify(cfg));
-    return json({ ok: true, auto: cfg }, 200, h);
+    const list = await getProfiles(env);
+    const i = list.findIndex((p) => p.id === String(b.profile ?? DEFAULT_PROFILE));
+    if (i < 0) return json({ error: 'Không tìm thấy cấu hình' }, 404, h);
+    list[i] = { ...list[i]!, autoCollect: b.enabled, autoBy: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', autoAt: new Date().toISOString() };
+    await saveProfiles(env, list);
+    return json({ ok: true, profile: list[i] }, 200, h);
   }
 
   if (url.pathname === '/labels' && req.method === 'GET') {

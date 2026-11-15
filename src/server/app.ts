@@ -14,11 +14,13 @@ import { parseWebsitesTxt } from '../domain/defaults.js';
 import { computeRelevanceQuality } from '../domain/quality.js';
 import { judgeRelevance } from '../domain/relevance.js';
 import { evaluateRule, validateRule } from '../domain/rules.js';
-import { RuleNodeSchema, SourceSchema, type Settings, type Source } from '../domain/schemas.js';
+import { DEFAULT_PROFILE_ID, RuleNodeSchema, SourceSchema, type Settings, type Source } from '../domain/schemas.js';
 import { lastCompletedWindow, validateWindow, vnDate, type ReportWindow } from '../domain/timeWindow.js';
 import { checkPublicUrl } from '../domain/url.js';
 import { assembleStories } from '../reports/assemble.js';
 import { buildReportPptx, checkFit } from '../reports/pptx.js';
+import { buildStyledPptx } from '../reports/styles.js';
+import { templateById, TEMPLATES, UPLOAD_TEMPLATE_ID } from '../reports/templates.js';
 import { fileURLToPath } from 'node:url';
 import { safeJoin, serialized, writeFileAtomic, writeJsonAtomic } from '../storage/files.js';
 import { makePaths, Stores } from '../storage/stores.js';
@@ -91,7 +93,36 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     return { token };
   });
 
-  /* ---------- settings ---------- */
+  /** built-in .pptx templates: the app's web/public/templates (dev) or the built copy next to the SPA */
+  const templateDirs = [...(o.webDist ? [path.join(o.webDist, 'templates')] : []), path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'public', 'templates')];
+  const templatesFile = (name: string) => templateDirs.map((d2) => path.join(d2, name)).find((f) => existsSync(f)) ?? null;
+
+  /* ---------- profiles (cấu hình theo địa bàn) ---------- */
+  /** a deleted profile falls back to the active one (old runs stay readable/exportable) */
+  const profileOrActive = async (id?: string) => {
+    const idx = await stores.getProfiles();
+    return id && idx.profiles.some((p) => p.id === id) ? id : idx.activeId;
+  };
+  app.get('/api/profiles', async () => stores.getProfiles());
+  app.post('/api/profiles', async (req) => {
+    const meta = await stores.createProfile(req.body);
+    if ((req.body as { activate?: boolean }).activate) await stores.setActiveProfile(meta.id);
+    return meta;
+  });
+  app.patch('/api/profiles/:id', async (req) => {
+    const b = z.object({ name: z.string().trim().min(1).max(60).optional(), description: z.string().max(300).optional(), autoCollect: z.boolean().optional() }).parse(req.body);
+    return stores.updateProfile((req.params as { id: string }).id, b);
+  });
+  app.post('/api/profiles/:id/activate', async (req) => {
+    await stores.setActiveProfile((req.params as { id: string }).id);
+    return stores.getProfiles();
+  });
+  app.delete('/api/profiles/:id', async (req) => {
+    await stores.deleteProfile((req.params as { id: string }).id);
+    return stores.getProfiles();
+  });
+
+  /* ---------- settings (active profile) ---------- */
   app.get('/api/settings', async () => stores.getSettings());
   app.put('/api/settings', async (req) => {
     const body = req.body as { settings: unknown; summary?: string };
@@ -170,17 +201,19 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     return lastCompletedWindow(new Date(), s.reportWindow.startClock, s.reportWindow.endClock);
   });
 
-  const startRun = async (window: ReportWindow, trigger: 'manual' | 'auto' | 'retry', extra: { runId?: string; onlySourceIds?: string[]; retryCandidateIds?: string[]; extraLookbackHours?: number } = {}) => {
+  const startRun = async (window: ReportWindow, trigger: 'manual' | 'auto' | 'retry', extra: { runId?: string; onlySourceIds?: string[]; retryCandidateIds?: string[]; extraLookbackHours?: number; profileId?: string } = {}) => {
     const err = validateWindow(window);
     if (err) throw Object.assign(new Error(err), { statusCode: 400 });
     const runId = extra.runId ?? `run_${vnDate(new Date(window.to)).replace(/-/g, '')}_${Date.now().toString(36)}`;
     if (active.has(runId)) throw Object.assign(new Error('Lượt chạy đang hoạt động'), { statusCode: 409 });
-    const settings = await stores.getSettings();
-    const sources = await stores.getSources();
+    // a run always uses ONE profile's configuration: the active one for new runs, the run's own for retries
+    const profileId = await profileOrActive(extra.profileId);
+    const settings = await stores.getSettings(profileId);
+    const sources = await stores.getSources(profileId);
     const ctl = new AbortController();
     const events = new EventEmitter();
     events.setMaxListeners(50);
-    const done = runCollection({ runId, window, trigger, settings, sources, stores, http: makeHttp(settings, sources), signal: ctl.signal, events, ...extra })
+    const done = runCollection({ runId, window, trigger, settings, sources, stores, http: makeHttp(settings, sources), signal: ctl.signal, events, ...extra, profileId })
       .catch(async (e) => {
         const m = await stores.getManifest(runId);
         if (m) await stores.saveManifest({ ...m, status: 'failed', notes: [...m.notes, String((e as Error).message)] });
@@ -204,7 +237,8 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
       const s = await stores.getSettings();
       if (!s.startup.autoCollectLastCompletedWindow) return { skipped: 'AUTO_DISABLED' };
       const runs = await stores.listRuns();
-      if (s.startup.oncePerWindow && runs.some((r) => r.window.from === b.window.from && r.window.to === b.window.to)) return { skipped: 'ALREADY_COLLECTED' };
+      const pidNow = await stores.activeProfileId();
+      if (s.startup.oncePerWindow && runs.some((r) => (r.profileId ?? DEFAULT_PROFILE_ID) === pidNow && r.window.from === b.window.from && r.window.to === b.window.to)) return { skipped: 'ALREADY_COLLECTED' };
     }
     return startRun(b.window, b.trigger);
   });
@@ -252,11 +286,11 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     const cands = await stores.getCandidates(id);
     if (b.mode === 'failed') {
       const ids = cands.filter((c) => ['fetch_failed', 'retry_pending', 'parse_failed'].includes(c.state)).map((c) => c.id);
-      return startRun(m.window, 'retry', { runId: id, retryCandidateIds: ids, onlySourceIds: [...new Set(cands.filter((c) => ids.includes(c.id)).map((c) => c.sourceId))] });
+      return startRun(m.window, 'retry', { profileId: m.profileId ?? DEFAULT_PROFILE_ID, runId: id, retryCandidateIds: ids, onlySourceIds: [...new Set(cands.filter((c) => ids.includes(c.id)).map((c) => c.sourceId))] });
     }
-    if (b.mode === 'candidates') return startRun(m.window, 'retry', { runId: id, retryCandidateIds: b.candidateIds ?? [] , onlySourceIds: [...new Set(cands.filter((c) => b.candidateIds?.includes(c.id)).map((c) => c.sourceId))] });
-    if (b.mode === 'source') return startRun(m.window, 'retry', { runId: id, onlySourceIds: b.sourceId ? [b.sourceId] : undefined });
-    return startRun(m.window, 'retry', { runId: id, onlySourceIds: b.sourceId ? [b.sourceId] : undefined, extraLookbackHours: b.extraLookbackHours ?? 12 });
+    if (b.mode === 'candidates') return startRun(m.window, 'retry', { profileId: m.profileId ?? DEFAULT_PROFILE_ID, runId: id, retryCandidateIds: b.candidateIds ?? [] , onlySourceIds: [...new Set(cands.filter((c) => b.candidateIds?.includes(c.id)).map((c) => c.sourceId))] });
+    if (b.mode === 'source') return startRun(m.window, 'retry', { profileId: m.profileId ?? DEFAULT_PROFILE_ID, runId: id, onlySourceIds: b.sourceId ? [b.sourceId] : undefined });
+    return startRun(m.window, 'retry', { profileId: m.profileId ?? DEFAULT_PROFILE_ID, runId: id, onlySourceIds: b.sourceId ? [b.sourceId] : undefined, extraLookbackHours: b.extraLookbackHours ?? 12 });
   });
   app.get('/api/runs/:id/candidates', async (req) => {
     const id = (req.params as { id: string }).id;
@@ -324,15 +358,28 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     const s = await stores.getSettings();
     const soffice = findSoffice(s);
     const powerpoint = findPowerPoint(s);
-    return { pdf: !!(soffice || powerpoint), soffice, powerpoint, templateFile: s.report.templateFile || null, templateFidelity: !!s.report.templateFile };
+    return { pdf: !!(soffice || powerpoint), soffice, powerpoint, templateFile: s.report.templateFile || null, templateFidelity: !!s.report.templateFile, templateId: s.report.templateId };
+  });
+  /** built-in templates (Department template from the Skill + 4 original designs) and the uploaded one, if any */
+  app.get('/api/templates', async () => {
+    const s = await stores.getSettings();
+    return {
+      defaultId: s.report.templateId,
+      templates: [
+        ...TEMPLATES.map((t) => ({ ...t, available: t.kind !== 'original-pptx' || !!templatesFile(t.file!) })),
+        ...(s.report.templateFile ? [{ id: UPLOAD_TEMPLATE_ID, name: `Mẫu đã tải lên (${s.report.templateFile.replace(/^\d+_/, '')})`, kind: 'upload', orientation: 'portrait', description: 'Tệp .pptx cùng cấu trúc mẫu Sở, tải lên ở Cài đặt › Báo cáo & mẫu.', available: true }] : []),
+      ],
+    };
   });
   app.post('/api/runs/:id/export', async (req) => {
     const id = (req.params as { id: string }).id;
-    const b = z.object({ formats: z.array(z.enum(['pptx', 'pdf'])).min(1), dryRun: z.boolean().default(false) }).parse(req.body);
+    const b = z.object({ formats: z.array(z.enum(['pptx', 'pdf'])).min(1), dryRun: z.boolean().default(false), templateId: z.string().max(60).optional() }).parse(req.body);
     const m = await stores.getManifest(id);
     if (!m) throw Object.assign(new Error('RUN_NOT_FOUND'), { statusCode: 404 });
-    const settings = await stores.getSettings();
-    const sources = await stores.getSources();
+    // report settings (organization, template…) of the profile the run was collected with
+    const runProfile = await profileOrActive(m.profileId ?? DEFAULT_PROFILE_ID);
+    const settings = await stores.getSettings(runProfile);
+    const sources = await stores.getSources(runProfile);
     const articles = await stores.getArticles(id);
     const reviews = await stores.getReview(id);
     const asm = assembleStories(articles, reviews, settings);
@@ -387,31 +434,45 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     const dir = safeJoin(paths.exports, date);
     const [y, mo, d] = date.split('-');
     let pptx: Uint8Array;
-    let templateUsed = 'DEMO (pptxgenjs) – chưa có mẫu PPTX gốc';
-    const tplFile = settings.report.templateFile ? safeJoin(paths.templates, settings.report.templateFile) : null;
-    if (tplFile && existsSync(tplFile)) {
-      const tplBytes = await fs.readFile(tplFile);
+    // template chosen in the export panel (default: Cài đặt › Báo cáo & mẫu), see src/reports/templates.ts
+    const wanted = b.templateId ?? (settings.report.templateFile && !settings.report.templateId ? UPLOAD_TEMPLATE_ID : settings.report.templateId);
+    const tpl = wanted === UPLOAD_TEMPLATE_ID ? null : templateById(wanted);
+    let templateUsed = '';
+    const fillTemplate = async (tplBytes: Uint8Array, label: string) => {
       try {
         const coverImageKey = stories.find((s) => s.group === 'needs_attention' && s.imageKey)?.imageKey ?? stories.find((s) => s.imageKey)?.imageKey ?? null;
         const r = await buildFromTemplate(tplBytes, {
           organization: settings.report.organization, reportDate: date, stories, images, coverImageKey, tcFeatureKey,
           contactEmail: settings.report.contactEmail,
         });
-        pptx = r.bytes;
         imageNotes.push(...r.notes);
-        templateUsed = `${settings.report.templateFile} (sha256 ${createHash('sha256').update(tplBytes).digest('hex').slice(0, 16)})`;
+        templateUsed = `${label} (sha256 ${createHash('sha256').update(tplBytes).digest('hex').slice(0, 16)})`;
+        return r.bytes;
       } catch (e) {
         if (!(e instanceof TemplateMismatchError)) throw e;
         throw Object.assign(new Error(`BLOCKED – mẫu PPTX không khớp cấu trúc đã khảo sát: ${e.message}`), { statusCode: 422 });
       }
+    };
+    if (!tpl) {
+      const up = settings.report.templateFile ? safeJoin(paths.templates, settings.report.templateFile) : null;
+      if (!up || !existsSync(up)) throw Object.assign(new Error('Chưa tải mẫu PPTX lên (Cài đặt › Báo cáo & mẫu)'), { statusCode: 400 });
+      pptx = await fillTemplate(await fs.readFile(up), settings.report.templateFile);
+    } else if (tpl.kind === 'original-pptx' && templatesFile(tpl.file!)) {
+      pptx = await fillTemplate(await fs.readFile(templatesFile(tpl.file!)!), tpl.name);
+    } else if (tpl.kind === 'style') {
+      pptx = await buildStyledPptx(tpl.style!, {
+        organization: settings.report.organization, window: m.window, reportDateLabel: `${d}/${mo}/${y}`, stories,
+        storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, regionName: settings.location.regionName,
+      });
+      templateUsed = `${tpl.name} (mẫu gốc của ứng dụng)`;
     } else {
-      imageNotes.push('Chưa có mẫu PPTX gốc (Cài đặt › Báo cáo & mẫu) – đã xuất bằng bố cục DEMO.');
+      imageNotes.push(`Không tìm thấy tệp mẫu "${tpl.name}" – đã xuất bằng bố cục DEMO.`);
+      templateUsed = 'DEMO (pptxgenjs)';
       pptx = await buildReportPptx({
         organization: settings.report.organization, window: m.window, reportDateLabel: `${d}/${mo}/${y}`, stories,
         storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, isDemoTemplate: true,
       });
-    }
-    const pptxName = `${base}_${stamp}.pptx`;
+    }    const pptxName = `${base}_${stamp}.pptx`;
     await writeFileAtomic(path.join(dir, pptxName), pptx);
     const files = [pptxName];
     let pdfStatus = 'not_requested';

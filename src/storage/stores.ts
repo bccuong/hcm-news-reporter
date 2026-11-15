@@ -1,8 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { defaultSettings, defaultSources } from '../domain/defaults.js';
-import { SettingsSchema, SourceSchema, type Article, type Candidate, type ReviewDecision, type RunManifest, type Settings, type Source } from '../domain/schemas.js';
+import { defaultSettings, defaultSources, settingsForNewRegion } from '../domain/defaults.js';
+import { DEFAULT_PROFILE_ID, NewProfileSchema, ProfileIdSchema, ProfileMetaSchema, SettingsSchema, SourceSchema, type ProfileMeta, type Article, type Candidate, type ReviewDecision, type RunManifest, type Settings, type Source } from '../domain/schemas.js';
+import { slugify } from '../domain/text.js';
 import { appendJsonl, readJson, readJsonl, safeJoin, serialized, writeJsonAtomic } from './files.js';
 
 export interface DataPaths {
@@ -26,6 +27,8 @@ export function makePaths(root: string): DataPaths {
 }
 
 const SourcesFile = z.object({ schemaVersion: z.literal(3), sources: z.array(SourceSchema) });
+const ProfilesFile = z.object({ schemaVersion: z.literal(1), activeId: ProfileIdSchema, profiles: z.array(ProfileMetaSchema).min(1) });
+type ProfilesIndex = z.infer<typeof ProfilesFile>;
 
 export interface HistoryEntry {
   id: string;
@@ -34,86 +37,205 @@ export interface HistoryEntry {
   summary: string;
 }
 
+/**
+ * Configuration is stored per PROFILE (cấu hình theo địa bàn): config/profiles/<id>/{settings,sources}.json + history/.
+ * config/profiles.json lists the profiles and the active one. Every settings/sources call without a profile id works on
+ * the ACTIVE profile, so the collector, rules and report code need no profile awareness.
+ * Installs from before profiles: config/settings.json + sources.json + history/ are COPIED into the default "TP.HCM"
+ * profile on first use (originals left in place).
+ */
 export class Stores {
   constructor(readonly p: DataPaths, private readonly seedWebsitesTxt: string) {}
 
-  private get settingsFile() {
-    return path.join(this.p.config, 'settings.json');
+  private get profilesFile() {
+    return path.join(this.p.config, 'profiles.json');
   }
-  private get sourcesFile() {
-    return path.join(this.p.config, 'sources.json');
+  private profileDir(id: string) {
+    ProfileIdSchema.parse(id);
+    return safeJoin(path.join(this.p.config, 'profiles'), id);
   }
-  private get historyDir() {
-    return path.join(this.p.config, 'history');
+  private settingsFile(id: string) {
+    return path.join(this.profileDir(id), 'settings.json');
+  }
+  private sourcesFile(id: string) {
+    return path.join(this.profileDir(id), 'sources.json');
+  }
+  private historyDir(id: string) {
+    return path.join(this.profileDir(id), 'history');
   }
 
-  /* ---------------- settings ---------------- */
-  async getSettings(): Promise<Settings> {
-    const raw = await readJson<unknown>(this.settingsFile);
+  /* ---------------- profiles ---------------- */
+  async getProfiles(): Promise<ProfilesIndex> {
+    return serialized('profiles', async () => {
+      const raw = await readJson<unknown>(this.profilesFile);
+      if (raw) return ProfilesFile.parse(raw);
+      // first use: migrate the single pre-profile configuration into the default profile
+      const now = new Date().toISOString();
+      const id = DEFAULT_PROFILE_ID;
+      const legacyS = await readJson<unknown>(path.join(this.p.config, 'settings.json'));
+      const legacySrc = await readJson<unknown>(path.join(this.p.config, 'sources.json'));
+      if (legacyS) await writeJsonAtomic(this.settingsFile(id), legacyS);
+      if (legacySrc) await writeJsonAtomic(this.sourcesFile(id), legacySrc);
+      try {
+        for (const f of await fs.readdir(path.join(this.p.config, 'history'))) {
+          await fs.mkdir(this.historyDir(id), { recursive: true });
+          await fs.copyFile(path.join(this.p.config, 'history', f), path.join(this.historyDir(id), f));
+        }
+      } catch {
+        /* no history yet */
+      }
+      const idx: ProfilesIndex = {
+        schemaVersion: 1, activeId: id,
+        profiles: [{ id, name: 'TP.HCM', description: 'Cấu hình mặc định: ngành xây dựng TP.HCM (từ Skill)', autoCollect: true, clonedFrom: null, createdAt: now, updatedAt: now }],
+      };
+      await writeJsonAtomic(this.profilesFile, idx);
+      return idx;
+    });
+  }
+  private async saveProfiles(idx: ProfilesIndex) {
+    await writeJsonAtomic(this.profilesFile, ProfilesFile.parse(idx));
+  }
+  async activeProfileId(): Promise<string> {
+    return (await this.getProfiles()).activeId;
+  }
+  private async pid(id?: string) {
+    const idx = await this.getProfiles();
+    const want = id ?? idx.activeId;
+    if (!idx.profiles.some((p) => p.id === want)) throw Object.assign(new Error(`Không có cấu hình "${want}"`), { statusCode: 404 });
+    return want;
+  }
+
+  /** new profile: clone an existing one, or start from the defaults for a new region */
+  async createProfile(input: unknown): Promise<ProfileMeta> {
+    const n = NewProfileSchema.parse(input);
+    const idx = await this.getProfiles();
+    let settings: Settings;
+    let sources: Source[];
+    if (n.cloneFrom) {
+      settings = await this.getSettings(await this.pid(n.cloneFrom));
+      sources = await this.getSources(n.cloneFrom);
+    } else {
+      if (!n.regionName) throw Object.assign(new Error('Nhập tên địa bàn (ví dụ: Hà Nội) hoặc chọn cấu hình để sao chép'), { statusCode: 400 });
+      settings = settingsForNewRegion(n.regionName, n.regionAliases);
+      sources = defaultSources(this.seedWebsitesTxt);
+    }
+    let id = slugify(n.name) || 'cau-hinh';
+    for (let k = 2; idx.profiles.some((p) => p.id === id); k++) id = `${slugify(n.name).slice(0, 36) || 'cau-hinh'}-${k}`;
+    const now = new Date().toISOString();
+    const meta: ProfileMeta = { id, name: n.name, description: n.description, autoCollect: false, clonedFrom: n.cloneFrom, createdAt: now, updatedAt: now };
+    await writeJsonAtomic(this.settingsFile(id), settings);
+    await writeJsonAtomic(this.sourcesFile(id), { schemaVersion: 3, sources });
+    await serialized('profiles', async () => {
+      const cur = ProfilesFile.parse(await readJson<unknown>(this.profilesFile));
+      cur.profiles.push(meta);
+      await this.saveProfiles(cur);
+    });
+    return meta;
+  }
+  async updateProfile(id: string, patch: { name?: string; description?: string; autoCollect?: boolean }): Promise<ProfileMeta> {
+    await this.pid(id);
+    return serialized('profiles', async () => {
+      const cur = ProfilesFile.parse(await readJson<unknown>(this.profilesFile));
+      const i = cur.profiles.findIndex((p) => p.id === id);
+      const next = ProfileMetaSchema.parse({ ...cur.profiles[i], ...patch, updatedAt: new Date().toISOString() });
+      cur.profiles[i] = next;
+      await this.saveProfiles(cur);
+      return next;
+    });
+  }
+  async setActiveProfile(id: string) {
+    await this.pid(id);
+    await serialized('profiles', async () => {
+      const cur = ProfilesFile.parse(await readJson<unknown>(this.profilesFile));
+      await this.saveProfiles({ ...cur, activeId: id });
+    });
+  }
+  /** files are kept (moved to config/profiles-deleted/) so a mistaken delete can be recovered by hand */
+  async deleteProfile(id: string) {
+    await this.pid(id);
+    await serialized('profiles', async () => {
+      const cur = ProfilesFile.parse(await readJson<unknown>(this.profilesFile));
+      if (cur.profiles.length <= 1) throw Object.assign(new Error('Phải còn ít nhất một cấu hình'), { statusCode: 400 });
+      const rest = cur.profiles.filter((p) => p.id !== id);
+      await this.saveProfiles({ ...cur, profiles: rest, activeId: cur.activeId === id ? rest[0]!.id : cur.activeId });
+      const bin = path.join(this.p.config, 'profiles-deleted');
+      await fs.mkdir(bin, { recursive: true });
+      await fs.rename(this.profileDir(id), path.join(bin, `${id}-${Date.now()}`)).catch(() => undefined);
+    });
+  }
+
+  /* ---------------- settings (per profile; default = active) ---------------- */
+  async getSettings(profileId?: string): Promise<Settings> {
+    const id = await this.pid(profileId);
+    const raw = await readJson<unknown>(this.settingsFile(id));
     if (!raw) {
       const s = defaultSettings();
-      await writeJsonAtomic(this.settingsFile, s);
+      await writeJsonAtomic(this.settingsFile(id), s);
       return s;
     }
     const parsed = SettingsSchema.safeParse(raw);
     if (parsed.success) return parsed.data;
     // migration/validation failure: preserve original copy, fall back to defaults merged
-    await writeJsonAtomic(path.join(this.historyDir, `settings.invalid.${Date.now()}.json`), raw);
+    await writeJsonAtomic(path.join(this.historyDir(id), `settings.invalid.${Date.now()}.json`), raw);
     return defaultSettings();
   }
 
-  async saveSettings(next: unknown, summary = 'Cập nhật cài đặt'): Promise<Settings> {
+  async saveSettings(next: unknown, summary = 'Cập nhật cài đặt', profileId?: string): Promise<Settings> {
     const s = SettingsSchema.parse(next);
-    return serialized('settings', async () => {
-      const prev = await readJson<unknown>(this.settingsFile);
-      if (prev) await this.snapshot('settings', prev, summary);
-      await writeJsonAtomic(this.settingsFile, s);
+    const id = await this.pid(profileId);
+    return serialized(`settings:${id}`, async () => {
+      const prev = await readJson<unknown>(this.settingsFile(id));
+      if (prev) await this.snapshot(id, 'settings', prev, summary);
+      await writeJsonAtomic(this.settingsFile(id), s);
       return s;
     });
   }
 
   /* ---------------- sources ---------------- */
-  async getSources(): Promise<Source[]> {
-    const raw = await readJson<unknown>(this.sourcesFile);
+  async getSources(profileId?: string): Promise<Source[]> {
+    const id = await this.pid(profileId);
+    const raw = await readJson<unknown>(this.sourcesFile(id));
     if (!raw) {
       const seeded = defaultSources(this.seedWebsitesTxt);
-      await writeJsonAtomic(this.sourcesFile, { schemaVersion: 3, sources: seeded });
+      await writeJsonAtomic(this.sourcesFile(id), { schemaVersion: 3, sources: seeded });
       return seeded;
     }
     return SourcesFile.parse(raw).sources;
   }
 
-  async saveSources(list: unknown, summary = 'Cập nhật nguồn tin'): Promise<Source[]> {
+  async saveSources(list: unknown, summary = 'Cập nhật nguồn tin', profileId?: string): Promise<Source[]> {
     const sources = z.array(SourceSchema).parse(list);
     const ids = new Set<string>();
     for (const s of sources) {
       if (ids.has(s.id)) throw new Error(`Trùng mã nguồn: ${s.id}`);
       ids.add(s.id);
     }
-    return serialized('sources', async () => {
-      const prev = await readJson<unknown>(this.sourcesFile);
-      if (prev) await this.snapshot('sources', prev, summary);
-      await writeJsonAtomic(this.sourcesFile, { schemaVersion: 3, sources });
+    const id = await this.pid(profileId);
+    return serialized(`sources:${id}`, async () => {
+      const prev = await readJson<unknown>(this.sourcesFile(id));
+      if (prev) await this.snapshot(id, 'sources', prev, summary);
+      await writeJsonAtomic(this.sourcesFile(id), { schemaVersion: 3, sources });
       return sources;
     });
   }
 
-  /* ---------------- history / backup ---------------- */
-  private async snapshot(kind: 'settings' | 'sources', value: unknown, summary: string) {
+  /* ---------------- history / backup (active profile) ---------------- */
+  private async snapshot(profileId: string, kind: 'settings' | 'sources', value: unknown, summary: string) {
     const id = `${Date.now()}-${kind}`;
-    await writeJsonAtomic(path.join(this.historyDir, `${id}.json`), { id, at: new Date().toISOString(), kind, summary, value });
+    await writeJsonAtomic(path.join(this.historyDir(profileId), `${id}.json`), { id, at: new Date().toISOString(), kind, summary, value });
   }
 
   async listHistory(): Promise<HistoryEntry[]> {
+    const dir = this.historyDir(await this.pid());
     let files: string[] = [];
     try {
-      files = (await fs.readdir(this.historyDir)).filter((f) => /^\d+-(settings|sources)\.json$/.test(f));
+      files = (await fs.readdir(dir)).filter((f) => /^\d+-(settings|sources)\.json$/.test(f));
     } catch {
       return [];
     }
     const out: HistoryEntry[] = [];
     for (const f of files.sort().reverse().slice(0, 100)) {
-      const j = await readJson<HistoryEntry & { value: unknown }>(path.join(this.historyDir, f));
+      const j = await readJson<HistoryEntry & { value: unknown }>(path.join(dir, f));
       if (j) out.push({ id: j.id, at: j.at, kind: j.kind, summary: j.summary });
     }
     return out;
@@ -121,16 +243,17 @@ export class Stores {
 
   async rollback(id: string): Promise<void> {
     if (!/^\d+-(settings|sources)$/.test(id)) throw new Error('INVALID_HISTORY_ID');
-    const j = await readJson<{ kind: 'settings' | 'sources'; value: unknown }>(safeJoin(this.historyDir, `${id}.json`));
+    const j = await readJson<{ kind: 'settings' | 'sources'; value: unknown }>(safeJoin(this.historyDir(await this.pid()), `${id}.json`));
     if (!j) throw new Error('HISTORY_NOT_FOUND');
     if (j.kind === 'settings') await this.saveSettings(j.value, `Khôi phục phiên bản ${id}`);
     else await this.saveSources((j.value as { sources: unknown }).sources, `Khôi phục phiên bản ${id}`);
   }
 
   async exportBackup() {
-    return { kind: 'hcm-news-reporter-backup', exportedAt: new Date().toISOString(), settings: await this.getSettings(), sources: await this.getSources() };
+    const idx = await this.getProfiles();
+    const profile = idx.profiles.find((p) => p.id === idx.activeId);
+    return { kind: 'hcm-news-reporter-backup', exportedAt: new Date().toISOString(), profile, settings: await this.getSettings(), sources: await this.getSources() };
   }
-
   /* ---------------- runs ---------------- */
   runDir(runId: string) {
     if (!/^run_[0-9a-z_-]+$/i.test(runId)) throw new Error('INVALID_RUN_ID');

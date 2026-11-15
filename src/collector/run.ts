@@ -35,6 +35,8 @@ export interface RunContext {
   extraLookbackHours?: number;
   /** Retry only these candidate ids (retry failed) */
   retryCandidateIds?: string[];
+  /** profile (cấu hình) whose settings/sources are used; recorded in the manifest */
+  profileId?: string;
 }
 
 export const now = () => toVnIso(new Date());
@@ -223,6 +225,7 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
     completeness: 'unknown',
     settingsHash: hash32(JSON.stringify(settings)),
     notes: [],
+    ...(ctx.profileId ? { profileId: ctx.profileId } : {}),
   };
   manifest.status = 'running';
   manifest.finishedAt = null;

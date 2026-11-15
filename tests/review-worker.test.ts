@@ -81,7 +81,7 @@ describe('shared review worker', () => {
       const r = await handle(req(W), genv(), fakeGitHub());
       expect(r.status).toBe(202);
       const d = calls.find((c) => c.url.endsWith('/actions/workflows/pages.yml/dispatches'))!;
-      expect(JSON.parse(d.body!)).toEqual({ ref: 'main', inputs: { from: W.from, to: W.to, requested_by: 'A' } });
+      expect(JSON.parse(d.body!)).toEqual({ ref: 'main', inputs: { from: W.from, to: W.to, requested_by: 'A', profile: 'hcm' } });
     });
     it('refuses while another collection runs, bad windows, wrong code, missing token', async () => {
       expect((await handle(req(W), genv(), fakeGitHub(true))).status).toBe(409);
@@ -125,8 +125,8 @@ describe('shared review worker', () => {
       calls.length = 0;
       expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'off' });
       expect(calls.some((c) => c.includes('/dispatches'))).toBe(false);
-      const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { auto: { enabled: boolean; by: string }; lastAuto: { result: string } };
-      expect(st.auto).toMatchObject({ enabled: false, by: 'B' });
+      const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { profiles: Array<{ id: string; autoCollect: boolean; autoBy: string }>; lastAuto: { result: string } };
+      expect(st.profiles[0]).toMatchObject({ id: 'hcm', autoCollect: false, autoBy: 'B' });
       expect(st.lastAuto.result).toBe('off');
       await setAuto(e, true);
       expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'dispatched' });
@@ -175,6 +175,57 @@ describe('shared review worker', () => {
       expect((await get('http://ok.vn/a.png')).status).toBe(400);
       expect((await get('https://127.0.0.1/a.png')).status).toBe(400);
       expect((await get('https://page.vn/not-image')).status).toBe(502);
+    });
+  });
+  describe('profiles (cấu hình theo địa bàn)', () => {
+    const H = { origin: ORIGIN, 'x-review-code': 'HCM-test-1234', 'content-type': 'application/json' };
+    const req = (e: Env, method: string, p: string, body?: unknown, code = 'HCM-test-1234') =>
+      handle(new Request(`https://w.example${p}`, { method, headers: { ...H, 'x-review-code': code }, body: body === undefined ? undefined : JSON.stringify(body) }), e);
+    it('default TP.HCM (legacy config + switch kept), create / rename / delete, config per profile', async () => {
+      const e = env();
+      // configuration and hourly switch saved before profiles existed
+      await e.REVIEWS.put('cfg:config', JSON.stringify({ settings: { v: 'old' }, sources: [], by: 'X', at: 't', summary: 's' }));
+      await e.REVIEWS.put('cfg:auto', JSON.stringify({ enabled: false, by: 'Y', at: 't' }));
+      const list = (await (await handle(new Request('https://w.example/profiles'), e)).json()) as { profiles: Array<{ id: string; autoCollect: boolean }> };
+      expect(list.profiles).toEqual([expect.objectContaining({ id: 'hcm', autoCollect: false })]);
+      expect(((await (await handle(new Request('https://w.example/config?profile=hcm'), e)).json()) as { config: { settings: { v: string } } }).config.settings.v).toBe('old');
+
+      expect((await req(e, 'POST', '/profiles', { name: 'Hà Nội', settings: { v: 'hn' }, sources: [] }, 'wrong')).status).toBe(401);
+      expect((await req(e, 'POST', '/profiles', { name: '', settings: {}, sources: [] })).status).toBe(400);
+      const hn = (await (await req(e, 'POST', '/profiles', { name: 'Hà Nội', settings: { v: 'hn' }, sources: [], reviewer: 'B' })).json()) as { id: string; autoCollect: boolean };
+      expect(hn).toMatchObject({ id: 'ha-noi', autoCollect: false });
+      expect(((await (await handle(new Request('https://w.example/config?profile=ha-noi'), e)).json()) as { config: { settings: { v: string } } }).config.settings.v).toBe('hn');
+      // config + history are per profile
+      expect((await req(e, 'POST', '/config', { profile: 'ha-noi', settings: { v: 'hn2' }, sources: [] })).status).toBe(200);
+      const hist = (await (await req(e, 'GET', '/config/history?profile=ha-noi')).json()) as { items: unknown[] };
+      expect(hist.items).toHaveLength(1);
+      expect(((await (await handle(new Request('https://w.example/config?profile=hcm'), e)).json()) as { config: { settings: { v: string } } }).config.settings.v).toBe('old');
+      expect((await req(e, 'POST', '/config', { profile: 'khong-co', settings: {}, sources: [] })).status).toBe(404);
+      // hourly switch per profile
+      expect((await req(e, 'POST', '/auto', { enabled: true, profile: 'ha-noi', reviewer: 'B' })).status).toBe(200);
+      expect(((await (await req(e, 'PATCH', '/profiles/ha-noi', { name: 'Thủ đô' })).json()) as { name: string }).name).toBe('Thủ đô');
+      const after = (await (await handle(new Request('https://w.example/profiles'), e)).json()) as { profiles: Array<{ id: string; autoCollect: boolean; name: string }> };
+      expect(after.profiles.map((p) => [p.id, p.autoCollect])).toEqual([['hcm', false], ['ha-noi', true]]);
+      expect((await req(e, 'DELETE', '/profiles/ha-noi')).status).toBe(200);
+      expect((await req(e, 'DELETE', '/profiles/hcm')).status).toBe(400); // never the last one
+    });
+    it('cron: one run for every profile switched on; off when none; on-demand names the profile', async () => {
+      const e = { ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/hcm-news-reporter', COLLECT_WORKFLOW: 'pages.yml' };
+      const calls: string[] = [];
+      const f = async (url: string, init?: RequestInit) => {
+        calls.push(`${url} ${init?.body ?? ''}`);
+        if (url.includes('/runs?status=')) return new Response(JSON.stringify({ total_count: 0 }), { status: 200 });
+        return new Response(null, { status: 204 });
+      };
+      await e.REVIEWS.put('cfg:profiles', JSON.stringify([
+        { id: 'hcm', name: 'TP.HCM', description: '', autoCollect: false, clonedFrom: null, createdAt: '', updatedAt: '' },
+        { id: 'da-nang', name: 'Đà Nẵng', description: '', autoCollect: true, clonedFrom: null, createdAt: '', updatedAt: '' },
+      ]));
+      expect(await scheduledCollect(e, f)).toMatchObject({ result: 'dispatched', profiles: ['da-nang'] });
+      await e.REVIEWS.put('cfg:profiles', JSON.stringify([{ id: 'hcm', name: 'TP.HCM', description: '', autoCollect: false, clonedFrom: null, createdAt: '', updatedAt: '' }]));
+      expect(await scheduledCollect(e, f)).toMatchObject({ result: 'off' });
+      const r = await handle(new Request('https://w.example/collect', { method: 'POST', headers: H, body: JSON.stringify({ from: '2026-11-14T17:00+07:00', to: '2026-11-15T08:00+07:00', reviewer: 'A', profile: 'nowhere' }) }), e, f);
+      expect(r.status).toBe(400);
     });
   });
   it('reviewer ids are ascii slugs', () => {

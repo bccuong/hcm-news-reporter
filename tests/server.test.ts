@@ -21,6 +21,52 @@ describe('local API', () => {
     expect((await app.inject({ method: 'GET', url: '/api/session', headers: { ...H, 'sec-fetch-site': 'cross-site' } })).statusCode).toBe(403);
   });
 
+  it('profiles: legacy config becomes TP.HCM, new region / clone, independent settings, runs record their profile', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'hcm-p-'));
+    // an install from before profiles
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    mkdirSync(path.join(root, 'config'), { recursive: true });
+    const { defaultSettings } = await import('../src/domain/defaults.js');
+    writeFileSync(path.join(root, 'config', 'settings.json'), JSON.stringify({ ...defaultSettings(), collection: { ...defaultSettings().collection, maxRetries: 5 } }));
+    const app = await boot(root);
+    const idx = (await app.inject({ method: 'GET', url: '/api/profiles', headers: H })).json();
+    expect(idx.activeId).toBe('hcm');
+    expect(idx.profiles).toEqual([expect.objectContaining({ id: 'hcm', name: 'TP.HCM', autoCollect: true })]);
+    expect((await app.inject({ method: 'GET', url: '/api/settings', headers: H })).json().collection.maxRetries).toBe(5); // migrated, not reset
+
+    // a new region starts from the defaults, knows only its own area, TP.HCM becomes "other province"
+    const hn = (await app.inject({ method: 'POST', url: '/api/profiles', headers: auth, payload: { name: 'Hà Nội', regionName: 'Hà Nội', regionAliases: ['TP Hà Nội', 'Thủ đô'], activate: true } })).json();
+    expect(hn.id).toBe('ha-noi');
+    const sHn = (await app.inject({ method: 'GET', url: '/api/settings', headers: H })).json();
+    expect(sHn.location.regionName).toBe('Hà Nội');
+    expect(sHn.location.areas).toEqual([expect.objectContaining({ name: 'Hà Nội', aliases: ['TP Hà Nội', 'Thủ đô'] })]);
+    expect(sHn.location.otherProvinces).toContain('TP.HCM');
+    expect(sHn.location.otherProvinces).not.toContain('Hà Nội');
+    expect(sHn.collection.maxRetries).toBe(2);
+    // a run uses the ACTIVE profile and records it
+    const run = (await app.inject({ method: 'POST', url: '/api/runs', headers: auth, payload: { window: WINDOW } })).json();
+    await new Promise((r) => setTimeout(r, 1500));
+    expect((await app.inject({ method: 'GET', url: `/api/runs/${run.runId}`, headers: H })).json().profileId).toBe('ha-noi');
+
+    // clone TP.HCM, edit the clone: the original is untouched
+    const clone = (await app.inject({ method: 'POST', url: '/api/profiles', headers: auth, payload: { name: 'TP.HCM – thử', cloneFrom: 'hcm' } })).json();
+    expect(clone).toMatchObject({ id: 'tp-hcm-thu', clonedFrom: 'hcm', autoCollect: false });
+    await app.inject({ method: 'POST', url: `/api/profiles/${clone.id}/activate`, headers: auth, payload: {} });
+    const sc = (await app.inject({ method: 'GET', url: '/api/settings', headers: H })).json();
+    expect(sc.collection.maxRetries).toBe(5);
+    sc.collection.maxRetries = 1;
+    await app.inject({ method: 'PUT', url: '/api/settings', headers: auth, payload: { settings: sc } });
+    await app.inject({ method: 'POST', url: '/api/profiles/hcm/activate', headers: auth, payload: {} });
+    expect((await app.inject({ method: 'GET', url: '/api/settings', headers: H })).json().collection.maxRetries).toBe(5);
+
+    // rename, delete (never the last one)
+    expect((await app.inject({ method: 'PATCH', url: '/api/profiles/ha-noi', headers: auth, payload: { name: 'Thủ đô Hà Nội' } })).json().name).toBe('Thủ đô Hà Nội');
+    const after = (await app.inject({ method: 'DELETE', url: '/api/profiles/tp-hcm-thu', headers: auth, payload: {} })).json();
+    expect(after.profiles.map((p: { id: string }) => p.id)).toEqual(['hcm', 'ha-noi']);
+    expect((await app.inject({ method: 'POST', url: '/api/profiles', headers: auth, payload: { name: 'Trống' } })).statusCode).toBe(400); // no region, no clone
+    await app.close();
+  });
+
   it('settings + sources persist across restart, are validated, and keep history for rollback (UI-01/06/07/09)', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'hcm-s-'));
     let app = await boot(root);

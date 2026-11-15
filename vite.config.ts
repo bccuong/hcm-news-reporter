@@ -8,10 +8,10 @@ export default defineConfig(({ mode }) => ({
   base: mode === 'pages' ? '/hcm-news-reporter/' : '/',
   plugins: [react()],
   // static GitHub Pages build runs the in-browser demo API (no secrets involved)
-  // live mode when the hourly cloud collector produced real data (web/public/live/index.json), demo fixtures otherwise
+  // live mode when the cloud collector produced real data (web/public/live/profiles.json, one folder per profile), demo fixtures otherwise
   define: {
     'import.meta.env.VITE_DEMO': JSON.stringify(mode === 'pages' ? '1' : ''),
-    'import.meta.env.VITE_LIVE': JSON.stringify(mode === 'pages' && existsSync(path.resolve(__dirname, 'web/public/live/index.json')) ? '1' : ''),
+    'import.meta.env.VITE_LIVE': JSON.stringify(mode === 'pages' && existsSync(path.resolve(__dirname, 'web/public/live/profiles.json')) ? '1' : ''),
     // shared review store (Cloudflare Worker URL, set as a GitHub repository variable REVIEW_API_URL)
     'import.meta.env.VITE_REVIEW_API': JSON.stringify(mode === 'pages' ? (process.env.REVIEW_API_URL ?? '') : ''),
   },

@@ -70,7 +70,7 @@ function detectLocationInner(title: string, body: string, loc: Settings['locatio
     return { status: 'other_province', evidence: [...evidence, `Tiêu đề nêu địa phương khác: ${others.join(', ')}`], score, ...extra };
   }
   if (score > 0) return { status: 'unknown', evidence: [...evidence, 'Bằng chứng địa bàn yếu – cần kiểm tra'], score, ...extra };
-  return { status: 'unknown', evidence: ['Không tìm thấy bằng chứng địa bàn TP.HCM nào (kể cả phường, xã, địa danh)'], score, ...extra };
+  return { status: 'unknown', evidence: [`Không tìm thấy bằng chứng địa bàn ${loc.regionName ?? 'TP.HCM'} nào (kể cả phường, xã, địa danh)`], score, ...extra };
 }
 
 export function normalizeAreaName(s: string): string {

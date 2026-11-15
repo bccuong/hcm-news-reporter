@@ -1,10 +1,11 @@
-import { defaultSettings, defaultSources, parseWebsitesTxt } from '../../src/domain/defaults';
+import { defaultSettings, defaultSources, parseWebsitesTxt, settingsForNewRegion } from '../../src/domain/defaults';
 import { evaluateRule, validateRule } from '../../src/domain/rules';
 import { judgeRelevance } from '../../src/domain/relevance';
 import { computeRelevanceQuality, type RelevanceQuality } from '../../src/domain/quality';
 import type { Article, Candidate, ReviewDecision, RuleNode, RunManifest, Settings, Source } from '../../src/domain/schemas';
 import { SettingsSchema, SourceSchema } from '../../src/domain/schemas';
 import { lastCompletedWindow, vnDate, type ReportWindow } from '../../src/domain/timeWindow';
+import { templateById, TEMPLATES, UPLOAD_TEMPLATE_ID } from '../../src/reports/templates';
 import skillWebsites from '../../src/domain/data/skill-websites.txt?raw';
 import { z } from 'zod';
 
@@ -14,8 +15,20 @@ export interface PreviewResult { errors: string[]; results: Array<{ id: string; 
 export interface ExportResult { ok: boolean; dryRun?: boolean; blockers?: string[]; warnings?: string[]; files?: string[]; pdfStatus?: string; stories?: number }
 export interface HistoryEntry { id: string; at: string; kind: string; summary: string }
 
+/** profiles (cấu hình theo địa bàn); web: the active one is chosen per browser */
+export interface ProfileInfo { id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string; autoBy?: string; autoAt?: string }
+export interface ProfilesState { activeId: string; profiles: ProfileInfo[] }
+export interface TemplateOption { id: string; name: string; description: string; kind: 'original-pptx' | 'style' | 'upload'; orientation: 'portrait' | 'landscape'; available?: boolean }
+export interface NewProfileInput { name: string; description?: string; cloneFrom?: string | null; regionName?: string; regionAliases?: string[] }
+
 export interface Api {
   mode: 'local' | 'demo' | 'live';
+  profiles(): Promise<ProfilesState>;
+  createProfile(p: NewProfileInput): Promise<ProfileInfo>;
+  updateProfile(id: string, patch: { name?: string; description?: string }): Promise<ProfileInfo>;
+  /** switch the active profile (local: for the whole app; web: for this browser) */
+  activateProfile(id: string): Promise<void>;
+  deleteProfile(id: string): Promise<void>;
   meta?(): Promise<{ generatedAt: string; schedule: string } | null>;
   refresh?(): void;
   getSettings(): Promise<Settings>;
@@ -41,7 +54,9 @@ export interface Api {
   review(id: string): Promise<Record<string, ReviewDecision>>;
   patchReview(id: string, articleId: string, patch: Partial<ReviewDecision>): Promise<ReviewDecision>;
   capabilities(): Promise<{ pdf: boolean; soffice: string | null; templateFile: string | null; templateFidelity: boolean }>;
-  exportRun(id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean): Promise<ExportResult>;
+  /** report templates selectable at export + the default one (Cài đặt › Báo cáo & mẫu) */
+  templates(): Promise<{ defaultId: string; templates: TemplateOption[] }>;
+  exportRun(id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean, templateId?: string): Promise<ExportResult>;
   exportUrl(file: string): string;
   uploadTemplate(name: string, base64: string): Promise<{ templateFile: string }>;
   subscribe(runId: string, cb: (e: { type: string; counts?: Record<string, number> }) => void): () => void;
@@ -52,19 +67,19 @@ export interface Api {
 
 export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: string | null; a: string | null; n: string; t: string }
 export interface CollectRun { id: number; status: string; conclusion: string | null; createdAt: string; updatedAt: string; event: string; kind?: 'auto' | 'request' | 'deploy'; title: string; url: string }
-export interface AutoCfg { enabled: boolean; by: string; at: string }
 export interface ServerStatus {
   collectEnabled: boolean;
-  auto: AutoCfg;
-  lastAuto: { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string } | null;
+  /** every profile with its hourly switch (autoCollect, autoBy, autoAt) */
+  profiles: ProfileInfo[];
+  lastAuto: { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string; profiles?: string[] } | null;
   /** queued / running collection workflow runs */
   running: CollectRun[];
 }
 export interface SharedReview {
   /** public: hourly automatic mode + what the collection server is doing now */
   serverStatus(): Promise<ServerStatus>;
-  /** switch the hourly automatic collection on/off (needs a reviewer session) */
-  setAuto(enabled: boolean): Promise<AutoCfg>;
+  /** switch the hourly automatic collection of the ACTIVE profile on/off (needs a reviewer session) */
+  setAuto(enabled: boolean): Promise<ProfileInfo>;
   session(): { name: string } | null;
   login(name: string, code: string): Promise<void>;
   logout(): void;
@@ -101,6 +116,11 @@ class LocalApi implements Api {
     }
     return j as T;
   }
+  profiles = () => this.req<ProfilesState>('GET', '/api/profiles');
+  createProfile = (p: NewProfileInput) => this.req<ProfileInfo>('POST', '/api/profiles', p);
+  updateProfile = (id: string, patch: { name?: string; description?: string }) => this.req<ProfileInfo>('PATCH', `/api/profiles/${id}`, patch);
+  activateProfile = async (id: string) => void (await this.req('POST', `/api/profiles/${id}/activate`, {}));
+  deleteProfile = async (id: string) => void (await this.req('DELETE', `/api/profiles/${id}`, {}));
   getSettings = () => this.req<Settings>('GET', '/api/settings');
   saveSettings = (s: Settings, summary: string) => this.req<Settings>('PUT', '/api/settings', { settings: s, summary });
   getSources = () => this.req<Source[]>('GET', '/api/sources');
@@ -114,7 +134,11 @@ class LocalApi implements Api {
   rollback = async (id: string) => void (await this.req('POST', '/api/settings/rollback', { id }));
   backup = () => this.req<unknown>('GET', '/api/backup');
   restore = async (backup: unknown) => void (await this.req('POST', '/api/backup/restore', { confirm: true, backup }));
-  listRuns = () => this.req<RunInfo[]>('GET', '/api/runs');
+  /** runs of the ACTIVE profile only (runs from before profiles existed belong to TP.HCM) */
+  listRuns = async () => {
+    const [rs, p] = await Promise.all([this.req<RunInfo[]>('GET', '/api/runs'), this.profiles()]);
+    return rs.filter((r) => (r.profileId ?? 'hcm') === p.activeId);
+  };
   startRun = (window: ReportWindow, trigger: 'manual' | 'auto') => this.req<{ runId?: string; skipped?: string }>('POST', '/api/runs', { window, trigger });
   getRun = (id: string) => this.req<RunInfo>('GET', `/api/runs/${id}`);
   cancel = async (id: string) => void (await this.req('POST', `/api/runs/${id}/cancel`, {}));
@@ -124,7 +148,8 @@ class LocalApi implements Api {
   review = (id: string) => this.req<Record<string, ReviewDecision>>('GET', `/api/runs/${id}/review`);
   patchReview = (id: string, articleId: string, patch: Partial<ReviewDecision>) => this.req<ReviewDecision>('PATCH', `/api/runs/${id}/reviews/${articleId}`, patch);
   capabilities = () => this.req<any>('GET', '/api/capabilities');
-  exportRun = (id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean) => this.req<ExportResult>('POST', `/api/runs/${id}/export`, { formats, dryRun });
+  templates = () => this.req<{ defaultId: string; templates: TemplateOption[] }>('GET', '/api/templates');
+  exportRun = (id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean, templateId?: string) => this.req<ExportResult>('POST', `/api/runs/${id}/export`, { formats, dryRun, templateId });
   exportUrl = (file: string) => `/api/exports/${file}`;
   uploadTemplate = (name: string, base64: string) => this.req<{ templateFile: string }>('POST', '/api/templates', { name, base64 });
   relevanceQuality = () => this.req<RelevanceQuality>('GET', '/api/quality/relevance');
@@ -228,8 +253,75 @@ class DemoApi implements Api {
   mode: 'demo' | 'live' = import.meta.env.VITE_LIVE ? 'live' : 'demo';
   private bundles = new Map<string, Promise<DemoBundle>>();
   private index: Promise<any> | null = null;
+  /* ---- profiles: the active one is chosen per browser; each has its own published data live/<id>/ ---- */
+  private get pid() {
+    return store.get<string>('profile') ?? 'hcm';
+  }
+  private get liveDir() {
+    return `${import.meta.env.BASE_URL}live/${this.pid}/`;
+  }
+  async profiles(): Promise<ProfilesState> {
+    let list: ProfileInfo[] = [];
+    if (this.sharedCfg) {
+      const r = await fetch(`${this.reviewApi}/profiles`, { cache: 'no-cache' }).catch(() => null);
+      if (r?.ok) list = ((await r.json()) as { profiles: ProfileInfo[] }).profiles;
+    }
+    if (!list.length && this.mode === 'live') {
+      const r = await fetch(`${import.meta.env.BASE_URL}live/profiles.json`, { cache: 'no-cache' }).catch(() => null);
+      if (r?.ok) list = ((await r.json()) as { profiles: ProfileInfo[] }).profiles.map((x) => ({ ...x, clonedFrom: x.clonedFrom ?? null, createdAt: x.createdAt ?? '', updatedAt: x.updatedAt ?? '' }));
+    }
+    if (!list.length) list = [{ id: 'hcm', name: 'TP.HCM', description: '', autoCollect: true, clonedFrom: null, createdAt: '', updatedAt: '' }];
+    return { activeId: list.some((x) => x.id === this.pid) ? this.pid : list[0]!.id, profiles: list };
+  }
+  private who(action: string) {
+    const s = store.get<{ name: string; code: string }>('reviewer');
+    if (!this.sharedCfg) throw new ApiError(`Bản demo không ${action} được – dùng bản local hoặc bản web có máy chủ duyệt tin.`);
+    if (!s) throw new ApiError(`Hãy đăng nhập người duyệt để ${action}`);
+    return s;
+  }
+  /** new profile: the browser builds its configuration (new region from the defaults, or a copy) and the worker stores it */
+  async createProfile(p: NewProfileInput): Promise<ProfileInfo> {
+    const s = this.who('tạo cấu hình');
+    let settings: Settings;
+    let sources: Source[];
+    if (p.cloneFrom) {
+      const j = (await (await fetch(`${this.reviewApi}/config?profile=${encodeURIComponent(p.cloneFrom)}`, { cache: 'no-cache' })).json()) as { config: { settings: unknown; sources: unknown } | null };
+      settings = j.config ? SettingsSchema.parse(j.config.settings) : defaultSettings();
+      sources = j.config ? z.array(SourceSchema).parse(j.config.sources) : defaultSources(skillWebsites);
+    } else {
+      if (!p.regionName?.trim()) throw new ApiError('Nhập tên địa bàn (ví dụ: Hà Nội) hoặc chọn cấu hình để sao chép');
+      settings = settingsForNewRegion(p.regionName, p.regionAliases ?? []);
+      sources = defaultSources(skillWebsites);
+    }
+    const r = await fetch(`${this.reviewApi}/profiles`, {
+      method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: p.name, description: p.description ?? '', clonedFrom: p.cloneFrom ?? null, settings: DemoApi.stripTemplate(settings), sources, reviewer: s.name }),
+    });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không tạo được cấu hình (HTTP ${r.status})`);
+    return (await r.json()) as ProfileInfo;
+  }
+  async updateProfile(id: string, patch: { name?: string; description?: string }): Promise<ProfileInfo> {
+    const s = this.who('đổi tên cấu hình');
+    const r = await fetch(`${this.reviewApi}/profiles/${id}`, { method: 'PATCH', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify(patch) });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không lưu được');
+    return (await r.json()) as ProfileInfo;
+  }
+  async deleteProfile(id: string) {
+    const s = this.who('xóa cấu hình');
+    const r = await fetch(`${this.reviewApi}/profiles/${id}`, { method: 'DELETE', headers: { 'x-review-code': s.code } });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không xóa được');
+    if (this.pid === id) store.set('profile', null);
+  }
+  async activateProfile(id: string) {
+    store.set('profile', id);
+    this.serverCfg = null;
+    this.refresh();
+  }
   private liveIndex() {
-    this.index ??= fetch(`${import.meta.env.BASE_URL}live/index.json`, { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null));
+    // a profile without published data yet (new profile) → no periods; a static host may answer with an HTML page
+    this.index ??= fetch(`${this.liveDir}index.json`, { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
     return this.index;
   }
   private latestId = '';
@@ -248,7 +340,7 @@ class DemoApi implements Api {
       const file = this.runMeta.get(runId)?.file ?? `${runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')}.json`;
       this.bundles.set(
         runId,
-        fetch(`${import.meta.env.BASE_URL}live/${file}`, { cache: 'no-cache' })
+        fetch(`${this.liveDir}${file}`, { cache: 'no-cache' })
           .then((r) => r.json())
           .then((d: any) => ({ manifest: d.manifest, candidates: d.candidates.map((c: Candidate) => ({ ...c, history: [] })), articles: d.articles.map((a: any) => fromPublic(a, runId, d.generatedAt)) })),
       );
@@ -272,7 +364,7 @@ class DemoApi implements Api {
   /* ---- configuration. Web with the review worker: ONE shared configuration, used by the server collector too ---- */
   private serverCfg: Promise<{ settings: Settings; sources: Source[] } | null> | null = null;
   private loadServerCfg() {
-    this.serverCfg ??= fetch(`${this.reviewApi}/config`, { cache: 'no-cache' })
+    this.serverCfg ??= fetch(`${this.reviewApi}/config?profile=${encodeURIComponent(this.pid)}`, { cache: 'no-cache' })
       .then((r) => (r.ok ? r.json() : { config: null }))
       .then((j: any) => {
         if (!j?.config) return null;
@@ -293,7 +385,7 @@ class DemoApi implements Api {
   private async pushServerCfg(settings: Settings, sources: Source[], summary: string) {
     const who = store.get<{ name: string; code: string }>('reviewer');
     if (!who) throw new ApiError('Hãy đăng nhập người duyệt để lưu cài đặt – cài đặt trên web dùng chung cho máy chủ thu thập');
-    const body = { settings: DemoApi.stripTemplate(settings), sources, summary, reviewer: who.name };
+    const body = { profile: this.pid, settings: DemoApi.stripTemplate(settings), sources, summary, reviewer: who.name };
     const r = await fetch(`${this.reviewApi}/config`, { method: 'POST', headers: { 'x-review-code': who.code, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được cài đặt (HTTP ${r.status})`);
     this.serverCfg = Promise.resolve({ settings: body.settings, sources });
@@ -358,7 +450,7 @@ class DemoApi implements Api {
     if (this.sharedCfg) {
       const who = store.get<{ name: string; code: string }>('reviewer');
       if (!who) return [];
-      const r = await fetch(`${this.reviewApi}/config/history`, { headers: { 'x-review-code': who.code }, cache: 'no-cache' });
+      const r = await fetch(`${this.reviewApi}/config/history?profile=${encodeURIComponent(this.pid)}`, { headers: { 'x-review-code': who.code }, cache: 'no-cache' });
       if (!r.ok) throw new ApiError('Không tải được lịch sử cấu hình');
       const j = (await r.json()) as { items: Array<{ id: string; at: string; by: string; summary: string }> };
       return j.items.map((x) => ({ id: x.id, at: x.at, kind: 'settings', summary: `${x.summary} – ${x.by}` }));
@@ -369,7 +461,7 @@ class DemoApi implements Api {
     if (this.sharedCfg) {
       const who = store.get<{ name: string; code: string }>('reviewer');
       if (!who) throw new ApiError('Hãy đăng nhập người duyệt để khôi phục cấu hình');
-      const r = await fetch(`${this.reviewApi}/config/rollback`, { method: 'POST', headers: { 'x-review-code': who.code, 'content-type': 'application/json' }, body: JSON.stringify({ id, reviewer: who.name }) });
+      const r = await fetch(`${this.reviewApi}/config/rollback`, { method: 'POST', headers: { 'x-review-code': who.code, 'content-type': 'application/json' }, body: JSON.stringify({ id, reviewer: who.name, profile: this.pid }) });
       if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không khôi phục được');
       this.serverCfg = null;
       return;
@@ -411,7 +503,7 @@ class DemoApi implements Api {
     const r = await fetch(`${this.reviewApi}/collect`, {
       method: 'POST',
       headers: { 'x-review-code': s.code, 'content-type': 'application/json' },
-      body: JSON.stringify({ from: window.from.slice(0, 16) + '+07:00', to: window.to.slice(0, 16) + '+07:00', reviewer: s.name }),
+      body: JSON.stringify({ from: window.from.slice(0, 16) + '+07:00', to: window.to.slice(0, 16) + '+07:00', reviewer: s.name, profile: this.pid }),
     });
     if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không gửi được yêu cầu thu thập (HTTP ${r.status})`);
     return { remote: true };
@@ -467,9 +559,9 @@ class DemoApi implements Api {
       setAuto: async (enabled) => {
         const s = store.get<{ name: string; code: string }>('reviewer');
         if (!s) throw new ApiError('Hãy đăng nhập người duyệt để đổi chế độ tự động');
-        const r = await fetch(`${this.reviewApi}/auto`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ enabled, reviewer: s.name }) });
+        const r = await fetch(`${this.reviewApi}/auto`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ enabled, reviewer: s.name, profile: this.pid }) });
         if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không đổi được chế độ tự động (HTTP ${r.status})`);
-        return ((await r.json()) as { auto: AutoCfg }).auto;
+        return ((await r.json()) as { profile: ProfileInfo }).profile;
       },
       session: () => store.get<{ name: string; code: string }>('reviewer') ?? null,
       login: async (name, code) => {
@@ -523,9 +615,20 @@ class DemoApi implements Api {
     }
   }
   /** Same report as the local app: the department's ORIGINAL template (chosen from this computer) with real article photos. */
-  async exportRun(id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean): Promise<ExportResult> {
+  async templates() {
+    const settings = await this.getSettings();
+    const up = store.get<string>('tplName');
+    return {
+      defaultId: settings.report.templateId,
+      templates: [
+        ...TEMPLATES.map((x) => ({ ...x, available: true })),
+        ...(up ? [{ id: UPLOAD_TEMPLATE_ID, name: `Mẫu trong trình duyệt này (${up})`, kind: 'upload' as const, orientation: 'portrait' as const, description: 'Tệp .pptx cùng cấu trúc mẫu Sở, chọn từ máy ở Cài đặt › Báo cáo & mẫu (không tải lên đâu).', available: true }] : []),
+      ],
+    };
+  }
+  async exportRun(id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean, templateId?: string): Promise<ExportResult> {
     const { assembleStories } = await import('../../src/reports/assemble');
-    const { buildReportPptx, checkFit } = await import('../../src/reports/pptx');
+    const { checkFit } = await import('../../src/reports/pptx');
     const { buildFromTemplate, TemplateMismatchError } = await import('../../src/reports/templatePptx');
     const b = await this.load(id);
     const settings = await this.getSettings();
@@ -573,27 +676,39 @@ class DemoApi implements Api {
     const base = settings.report.filenamePattern.replace('{date}', date).replace('{from}', hhmm(w.from)).replace('{to}', hhmm(w.to)).replace(/[^\w.-]+/g, '_');
     let bytes: Uint8Array;
     let name: string;
-    const tpl = store.get<string>('tplName') ? await idbGet<Uint8Array>('template') : undefined;
-    if (tpl) {
-      try {
-        const coverImageKey = stories.find((s) => s.group === 'needs_attention' && s.imageKey)?.imageKey ?? stories.find((s) => s.imageKey)?.imageKey ?? null;
-        const r = await buildFromTemplate(tpl, { organization: settings.report.organization, reportDate: date, stories, images, coverImageKey, tcFeatureKey, contactEmail: settings.report.contactEmail });
-        bytes = r.bytes;
-        warn.push(...r.notes);
+    // template chosen in the export panel: the Department's template from the Skill (published with the site),
+    // one of the app's original designs, or the template kept in this browser
+    const chosen = templateId ?? settings.report.templateId;
+    const info = chosen === UPLOAD_TEMPLATE_ID ? null : templateById(chosen);
+    const fill = async (tplBytes: Uint8Array) => {
+      const coverImageKey = stories.find((s) => s.group === 'needs_attention' && s.imageKey)?.imageKey ?? stories.find((s) => s.imageKey)?.imageKey ?? null;
+      const r = await buildFromTemplate(tplBytes, { organization: settings.report.organization, reportDate: date, stories, images, coverImageKey, tcFeatureKey, contactEmail: settings.report.contactEmail });
+      warn.push(...r.notes);
+      return r.bytes;
+    };
+    try {
+      if (!info) {
+        const up = store.get<string>('tplName') ? await idbGet<Uint8Array>('template') : undefined;
+        if (!up) return { ok: false, blockers: ['Trình duyệt này chưa có mẫu tải lên (Cài đặt › Báo cáo & mẫu › Tải mẫu .pptx)'], warnings: warn };
+        bytes = await fill(up);
         name = `${base}.pptx`;
-      } catch (e) {
-        if (!(e instanceof TemplateMismatchError)) throw e;
-        return { ok: false, blockers: [`BLOCKED – mẫu PPTX không khớp cấu trúc đã khảo sát: ${e.message}`], warnings: warn };
+      } else if (info.kind === 'original-pptx') {
+        const r = await fetch(`${import.meta.env.BASE_URL}templates/${info.file}`);
+        if (!r.ok) return { ok: false, blockers: [`Không tải được tệp mẫu "${info.name}" (HTTP ${r.status})`], warnings: warn };
+        bytes = await fill(new Uint8Array(await r.arrayBuffer()));
+        name = `${base}.pptx`;
+      } else {
+        const { buildStyledPptx } = await import('../../src/reports/styles');
+        bytes = await buildStyledPptx(info.style!, {
+          organization: settings.report.organization, window: w, reportDateLabel: `${d}/${mo}/${y}`, stories,
+          storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, regionName: settings.location.regionName,
+        });
+        name = `${base}_${info.id}.pptx`;
       }
-    } else {
-      warn.push('Trình duyệt này chưa có mẫu PPTX gốc (Cài đặt › Báo cáo & mẫu › Tải mẫu .pptx) – đã xuất bằng bố cục DEMO.');
-      bytes = await buildReportPptx({
-        organization: settings.report.organization, window: w, reportDateLabel: `${d}/${mo}/${y}`, stories,
-        storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, isDemoTemplate: true,
-      });
-      name = `${base}_DEMO.pptx`;
-    }
-    const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+    } catch (e) {
+      if (!(e instanceof TemplateMismatchError)) throw e;
+      return { ok: false, blockers: [`BLOCKED – mẫu PPTX không khớp cấu trúc đã khảo sát: ${e.message}`], warnings: warn };
+    }    const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;

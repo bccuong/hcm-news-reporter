@@ -86,7 +86,7 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
     if (!location.leadHit && (location.distinct ?? 0) < settings.location.minBodyAreasWithoutLead) {
       return {
         status: 'review', reasonCode: 'HCM_ONLY_IN_BODY',
-        evidence: [...evidence, ...location.evidence, `TP.HCM không có trong tiêu đề/sapo, chỉ ${location.distinct} địa danh trong thân bài`], ruleTrace, location,
+        evidence: [...evidence, ...location.evidence, `${settings.location.regionName} không có trong tiêu đề/sapo, chỉ ${location.distinct} địa danh trong thân bài`], ruleTrace, location,
       };
     }
     return { status: 'relevant', reasonCode: null, evidence: [...evidence, ...location.evidence], ruleTrace, location };

@@ -26,6 +26,9 @@ Thumbs.db
 /config/settings.json
 /config/sources.json
 /config/history/
+/config/profiles.json
+/config/profiles/
+/config/profiles-deleted/
 /templates/user/
 /web/public/demo/
 /dist/

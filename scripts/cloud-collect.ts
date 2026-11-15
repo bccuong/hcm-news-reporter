@@ -7,10 +7,10 @@
  *    so the web matches the local app), publication time, classification, candidate ledger, coverage and adapter health.
  *    Photos are published as LINKS only (loaded from the publisher, like the local app), never copied.
  *  - Previous days are carried over from the currently deployed site (and give the adapter-health baseline).
- *  - Config: defaults from the repo (Skill sources/rules), or `deploy/config.json` (a backup exported from
- *    Settings › Sao lưu & lịch sử) when the operator commits one.
+ *  - One dataset per PROFILE (cấu hình theo địa bàn) under live/<profileId>/, list in live/profiles.json. Config per
+ *    profile from the web (review worker), else deploy/config.json / repo defaults for the default TP.HCM profile.
  *
- * Usage: npx tsx scripts/cloud-collect.ts [--site https://bccuong.github.io/hcm-news-reporter/] [--out web/public/live]
+ * Usage: npx tsx scripts/cloud-collect.ts [--site <deployed site>] [--out web/public/live] [--profile <id>] [--from … --to … --requested-by …]
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,7 +18,7 @@ import path from 'node:path';
 import { HttpClient } from '../src/collector/http.js';
 import { reconcile, runCollection } from '../src/collector/run.js';
 import { defaultSettings, defaultSources } from '../src/domain/defaults.js';
-import { SettingsSchema, SourceSchema, type Article, type Candidate, type ImageCandidate, type RunManifest, type Settings, type Source } from '../src/domain/schemas.js';
+import { DEFAULT_PROFILE_ID, SettingsSchema, SourceSchema, type Article, type Candidate, type ImageCandidate, type RunManifest, type Settings, type Source } from '../src/domain/schemas.js';
 import { lastCompletedWindow, toVnIso, vnDate, windowForReportDate } from '../src/domain/timeWindow.js';
 import { makePaths, Stores } from '../src/storage/stores.js';
 
@@ -79,21 +79,33 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
+/** profiles published on the web (worker store); without a worker: the default TP.HCM profile only */
+export interface PublicProfile { id: string; name: string; description: string; autoCollect: boolean; regionName?: string }
+const API = () => process.env.REVIEW_API_URL?.trim().replace(/\/$/, '') ?? '';
+
+async function loadProfiles(): Promise<PublicProfile[]> {
+  const fallback = [{ id: DEFAULT_PROFILE_ID, name: 'TP.HCM', description: '', autoCollect: true }];
+  if (!API()) return fallback;
+  const j = await getJson<{ profiles: PublicProfile[] }>(`${API()}/profiles`);
+  return j?.profiles?.length ? j.profiles : fallback;
+}
+
 /**
- * Configuration priority: (1) the shared configuration edited on the web ("Cài đặt", stored by the review worker),
- * (2) deploy/config.json, (3) repo defaults. An invalid web configuration is reported and skipped, never half-applied.
+ * Configuration of one profile, in priority order: (1) the shared configuration edited on the web (Cài đặt, stored by
+ * the review worker), (2) deploy/config.json (TP.HCM only), (3) repo defaults (TP.HCM only). An invalid web
+ * configuration is reported and skipped, never half-applied. Other profiles without a configuration are not collected.
  */
-async function loadConfig(): Promise<{ settings: Settings; sources: Source[]; origin: string }> {
-  const api = process.env.REVIEW_API_URL?.trim();
-  if (api) {
-    const j = await getJson<{ config: { settings: unknown; sources: unknown; by: string; at: string } | null }>(`${api.replace(/\/$/, '')}/config`);
+async function loadConfig(profileId: string): Promise<{ settings: Settings; sources: Source[]; origin: string } | null> {
+  if (API()) {
+    const j = await getJson<{ config: { settings: unknown; sources: unknown; by: string; at: string } | null }>(`${API()}/config?profile=${encodeURIComponent(profileId)}`);
     if (j?.config) {
       const s = SettingsSchema.safeParse(j.config.settings);
       const src = SourceSchema.array().safeParse(j.config.sources);
       if (s.success && src.success) return { settings: s.data, sources: src.data, origin: `web config (${j.config.by}, ${j.config.at})` };
-      console.warn(`web config ignored (invalid): ${(s.error ?? src.error)?.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+      console.warn(`[${profileId}] web config ignored (invalid): ${(s.error ?? src.error)?.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
     }
   }
+  if (profileId !== DEFAULT_PROFILE_ID) return null;
   const f = 'deploy/config.json';
   if (existsSync(f)) {
     const j = JSON.parse(readFileSync(f, 'utf8'));
@@ -102,86 +114,119 @@ async function loadConfig(): Promise<{ settings: Settings; sources: Source[]; or
   return { settings: defaultSettings(), sources: defaultSources(readFileSync('src/domain/data/skill-websites.txt', 'utf8')), origin: 'repo defaults (Skill)' };
 }
 
-async function main() {
-  const now = new Date();
-  const { settings, sources, origin } = await loadConfig();
-  const { startClock, endClock } = settings.reportWindow;
-  mkdirSync(OUT, { recursive: true });
-
-  // previously published data (carry-over + adapter-health baseline)
-  const prevIndex = await getJson<PublicIndex>(new URL('live/index.json', SITE).toString());
+/** periods already published for a profile (TP.HCM: also the pre-profile location live/index.json) */
+async function previousDays(profileId: string): Promise<Map<string, PublicDay>> {
+  const dirs = profileId === DEFAULT_PROFILE_ID ? [`live/${profileId}/`, 'live/'] : [`live/${profileId}/`];
   const prevDays = new Map<string, PublicDay>();
-  for (const d of prevIndex?.days ?? []) {
-    const day = await getJson<PublicDay>(new URL(`live/${d.file ?? `${d.reportDate}.json`}`, SITE).toString());
-    if (day) prevDays.set(keyOf(d), { ...day, key: keyOf(d), custom: d.custom, requestedBy: d.requestedBy });
-  }
-  console.log(`config: ${origin}; previously published periods: ${prevDays.size}`);
-
-  // windows to collect now: an on-demand window (--from/--to from the web "Thu thập" button) OR the hourly periods
-  const reqFrom = arg('--from', '');
-  const reqTo = arg('--to', '');
-  const requestedBy = arg('--requested-by', '').slice(0, 40);
-  const jobs: Array<{ key: string; reportDate: string; window: { from: string; to: string }; provisional: boolean; custom?: boolean }> = [];
-  if (reqFrom || reqTo) {
-    if (!VN_ISO.test(reqFrom) || !VN_ISO.test(reqTo) || !(Date.parse(reqTo) > Date.parse(reqFrom)) || Date.parse(reqTo) - Date.parse(reqFrom) > 72 * 3600_000) {
-      throw new Error(`invalid on-demand window: ${reqFrom} → ${reqTo}`);
+  for (const dir of dirs) {
+    const prevIndex = await getJson<PublicIndex>(new URL(`${dir}index.json`, SITE).toString());
+    if (!prevIndex) continue;
+    for (const d of prevIndex.days ?? []) {
+      const day = await getJson<PublicDay>(new URL(`${dir}${d.file ?? `${d.reportDate}.json`}`, SITE).toString());
+      if (day) prevDays.set(keyOf(d), { ...day, key: keyOf(d), custom: d.custom, requestedBy: d.requestedBy });
     }
-    const window = { from: toVnIso(new Date(reqFrom)), to: toVnIso(new Date(reqTo)) };
-    jobs.push({ key: `custom-${stamp(window.from)}-${stamp(window.to)}`, reportDate: vnDate(new Date(window.to)), window, provisional: Date.parse(reqTo) > now.getTime(), custom: true });
-  } else {
-    const last = lastCompletedWindow(now, startClock, endClock);
-    const todays = windowForReportDate(vnDate(now), startClock, endClock);
-    const tomorrow = windowForReportDate(vnDate(new Date(now.getTime() + 86400_000)), startClock, endClock);
-    const inProgress = [todays, tomorrow].find((w) => new Date(w.from) <= now && now < new Date(w.to));
-    if (inProgress) jobs.push({ key: vnDate(new Date(inProgress.to)), reportDate: vnDate(new Date(inProgress.to)), window: inProgress, provisional: true });
-    const lastFrozen = prevDays.get(last.reportDate) && !prevDays.get(last.reportDate)!.provisional && now.getTime() - new Date(last.to).getTime() > FREEZE_AFTER_H * 3600_000;
-    if (!lastFrozen) jobs.push({ key: last.reportDate, reportDate: last.reportDate, window: { from: last.from, to: last.to }, provisional: false });
+    break;
   }
+  return prevDays;
+}
 
-  const http = new HttpClient({
-    maxConcurrent: settings.collection.maxConcurrentRequests, perHost: settings.collection.maxRequestsPerHost, timeoutMs: settings.collection.timeoutMs,
-    maxRetries: settings.collection.maxRetries, backoffBaseMs: settings.collection.backoffBaseMs, userAgent: settings.collection.userAgent,
-    hostOverrides: Object.fromEntries(sources.map((s) => [new URL(s.baseUrl).hostname.replace(/^www\./, ''), { concurrency: s.maxConcurrency, pauseMs: s.pauseMs }])),
-  });
-
+async function collectProfile(profile: PublicProfile, collect: boolean, now: Date): Promise<{ regionName?: string; periods: number }> {
+  const out = path.join(OUT, profile.id);
+  mkdirSync(out, { recursive: true });
+  const prevDays = await previousDays(profile.id);
   const published = new Map<string, PublicDay>(prevDays);
-  for (const job of jobs) {
-    const stores = new Stores(makePaths(mkdtempSync(path.join(tmpdir(), 'hcm-cloud-'))), '');
-    // seed history with previously published manifests (adapter-health baseline)
-    for (const d of prevDays.values()) if (!d.custom) await stores.saveManifest({ ...d.manifest, runId: `run_hist_${d.reportDate.replace(/-/g, '')}` });
-    const runId = `run_live_${job.key.replace(/[^0-9a-z]/gi, '')}`;
-    const t0 = Date.now();
-    const m = await runCollection({ runId, window: job.window, trigger: 'auto', settings, sources, stores, http });
-    const cands = await stores.getCandidates(runId);
-    const arts = await stores.getArticles(runId);
-    const keep = new Set(cands.filter((c) => c.articleId && !['outside_window'].includes(c.state)).map((c) => c.articleId));
-    m.notes.push(`Thu thập trên máy chủ GitHub Actions lúc ${toVnIso(now)} (${((Date.now() - t0) / 1000).toFixed(0)} giây); cấu hình: ${origin}.`);
-    if (job.custom) m.notes.push(`Thu thập theo yêu cầu${requestedBy ? ` của ${requestedBy}` : ''} trên web.`);
-    if (job.provisional) m.notes.push('Kỳ đang diễn ra – tạm thời');
-    published.set(job.key, {
-      kind: 'hcm-live-day', reportDate: job.reportDate, key: job.key, custom: job.custom, requestedBy: job.custom ? requestedBy : undefined, provisional: job.provisional, generatedAt: toVnIso(new Date()),
-      manifest: { ...m, reconciliation: reconcile(cands) },
-      candidates: cands.map(({ history: _h, ...c }) => c),
-      articles: arts.filter((a) => keep.has(a.id)).map(toPublicArticle),
+  const cfg = collect ? await loadConfig(profile.id) : null;
+  if (collect && !cfg) console.warn(`[${profile.id}] no configuration saved on the web yet – not collected`);
+  console.log(`[${profile.id}] ${collect && cfg ? `collect; config: ${cfg.origin}` : 'carry over only'}; previously published periods: ${prevDays.size}`);
+
+  if (cfg) {
+    const { settings, sources, origin } = cfg;
+    const { startClock, endClock } = settings.reportWindow;
+    // windows to collect now: an on-demand window (--from/--to from the web "Thu thập" button) OR the hourly periods
+    const reqFrom = arg('--from', '');
+    const reqTo = arg('--to', '');
+    const requestedBy = arg('--requested-by', '').slice(0, 40);
+    const jobs: Array<{ key: string; reportDate: string; window: { from: string; to: string }; provisional: boolean; custom?: boolean }> = [];
+    if (reqFrom || reqTo) {
+      if (!VN_ISO.test(reqFrom) || !VN_ISO.test(reqTo) || !(Date.parse(reqTo) > Date.parse(reqFrom)) || Date.parse(reqTo) - Date.parse(reqFrom) > 72 * 3600_000) {
+        throw new Error(`invalid on-demand window: ${reqFrom} → ${reqTo}`);
+      }
+      const window = { from: toVnIso(new Date(reqFrom)), to: toVnIso(new Date(reqTo)) };
+      jobs.push({ key: `custom-${stamp(window.from)}-${stamp(window.to)}`, reportDate: vnDate(new Date(window.to)), window, provisional: Date.parse(reqTo) > now.getTime(), custom: true });
+    } else {
+      const last = lastCompletedWindow(now, startClock, endClock);
+      const todays = windowForReportDate(vnDate(now), startClock, endClock);
+      const tomorrow = windowForReportDate(vnDate(new Date(now.getTime() + 86400_000)), startClock, endClock);
+      const inProgress = [todays, tomorrow].find((w) => new Date(w.from) <= now && now < new Date(w.to));
+      if (inProgress) jobs.push({ key: vnDate(new Date(inProgress.to)), reportDate: vnDate(new Date(inProgress.to)), window: inProgress, provisional: true });
+      const lastFrozen = prevDays.get(last.reportDate) && !prevDays.get(last.reportDate)!.provisional && now.getTime() - new Date(last.to).getTime() > FREEZE_AFTER_H * 3600_000;
+      if (!lastFrozen) jobs.push({ key: last.reportDate, reportDate: last.reportDate, window: { from: last.from, to: last.to }, provisional: false });
+    }
+
+    const http = new HttpClient({
+      maxConcurrent: settings.collection.maxConcurrentRequests, perHost: settings.collection.maxRequestsPerHost, timeoutMs: settings.collection.timeoutMs,
+      maxRetries: settings.collection.maxRetries, backoffBaseMs: settings.collection.backoffBaseMs, userAgent: settings.collection.userAgent,
+      hostOverrides: Object.fromEntries(sources.map((s) => [new URL(s.baseUrl).hostname.replace(/^www\./, ''), { concurrency: s.maxConcurrency, pauseMs: s.pauseMs }])),
     });
-    console.log(`${job.key}${job.provisional ? ' (đang diễn ra)' : ''}: ${cands.length} link, counts=${JSON.stringify(m.counts)}, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
-    for (const s of m.sources) console.log(`  ${s.sourceName.padEnd(20)} ${s.status.padEnd(16)} ${s.candidates} link  adapter=${s.adapter?.status ?? '-'} ${s.error ?? ''}`);
+
+    for (const job of jobs) {
+      const stores = new Stores(makePaths(mkdtempSync(path.join(tmpdir(), 'hcm-cloud-'))), '');
+      // seed history with previously published manifests (adapter-health baseline)
+      for (const d of prevDays.values()) if (!d.custom) await stores.saveManifest({ ...d.manifest, runId: `run_hist_${d.reportDate.replace(/-/g, '')}` });
+      const runId = `run_live_${job.key.replace(/[^0-9a-z]/gi, '')}`;
+      const t0 = Date.now();
+      const m = await runCollection({ runId, window: job.window, trigger: 'auto', settings, sources, stores, http, profileId: profile.id });
+      const cands = await stores.getCandidates(runId);
+      const arts = await stores.getArticles(runId);
+      const keep = new Set(cands.filter((c) => c.articleId && !['outside_window'].includes(c.state)).map((c) => c.articleId));
+      m.notes.push(`Thu thập trên máy chủ GitHub Actions lúc ${toVnIso(now)} (${((Date.now() - t0) / 1000).toFixed(0)} giây); cấu hình "${profile.name}": ${origin}.`);
+      if (job.custom) m.notes.push(`Thu thập theo yêu cầu${requestedBy ? ` của ${requestedBy}` : ''} trên web.`);
+      if (job.provisional) m.notes.push('Kỳ đang diễn ra – tạm thời');
+      published.set(job.key, {
+        kind: 'hcm-live-day', reportDate: job.reportDate, key: job.key, custom: job.custom, requestedBy: job.custom ? requestedBy : undefined, provisional: job.provisional, generatedAt: toVnIso(new Date()),
+        manifest: { ...m, reconciliation: reconcile(cands) },
+        candidates: cands.map(({ history: _h, ...c }) => c),
+        articles: arts.filter((a) => keep.has(a.id)).map(toPublicArticle),
+      });
+      console.log(`[${profile.id}] ${job.key}${job.provisional ? ' (đang diễn ra)' : ''}: ${cands.length} link, counts=${JSON.stringify(m.counts)}, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+      for (const s of m.sources) console.log(`  ${s.sourceName.padEnd(20)} ${s.status.padEnd(16)} ${s.candidates} link  adapter=${s.adapter?.status ?? '-'} ${s.error ?? ''}`);
+    }
   }
 
   const all = [...published.values()];
   const daily = all.filter((d) => !d.custom).sort((a, b) => b.reportDate.localeCompare(a.reportDate)).slice(0, KEEP_DAYS);
   const customs = all.filter((d) => d.custom).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)).slice(0, KEEP_CUSTOM);
   const days = [...customs, ...daily].sort((a, b) => b.manifest.window.to.localeCompare(a.manifest.window.to) || (a.custom ? -1 : 1));
-  for (const d of days) writeFileSync(path.join(OUT, `${keyOf(d)}.json`), JSON.stringify(d));
+  for (const d of days) writeFileSync(path.join(out, `${keyOf(d)}.json`), JSON.stringify(d));
   const index: PublicIndex = {
-    kind: 'hcm-live-index', generatedAt: toVnIso(new Date()), schedule: 'Mỗi giờ + theo yêu cầu (nút "Thu thập" trên web)',
+    kind: 'hcm-live-index', generatedAt: toVnIso(new Date()), schedule: 'Mỗi giờ (nếu bật tự động) + theo yêu cầu (nút "Thu thập" trên web)',
     days: days.map((d) => ({
       reportDate: d.reportDate, key: keyOf(d), file: `${keyOf(d)}.json`, custom: d.custom, requestedBy: d.requestedBy, window: d.manifest.window,
       provisional: d.provisional, generatedAt: d.generatedAt, counts: d.manifest.counts, completeness: d.manifest.completeness,
     })),
   };
-  writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(index));
-  console.log(`published ${days.length} day(s) to ${OUT}`);
+  writeFileSync(path.join(out, 'index.json'), JSON.stringify(index));
+  console.log(`[${profile.id}] published ${days.length} period(s) to ${out}`);
+  return { regionName: cfg?.settings.location.regionName, periods: days.length };
 }
 
+/**
+ * Every run republishes ALL profiles (GitHub Pages replaces the whole site): profiles collected now get new periods,
+ * the others are carried over unchanged. Which profiles are collected: --profile <id> (on-demand "Thu thập" on the
+ * web), otherwise every profile with "Tự động thu thập mỗi giờ" switched on.
+ */
+async function main() {
+  const now = new Date();
+  mkdirSync(OUT, { recursive: true });
+  const profiles = await loadProfiles();
+  const only = arg('--profile', '');
+  if (only && !profiles.some((p) => p.id === only)) throw new Error(`unknown profile: ${only}`);
+  const out: Array<PublicProfile & { periods: number }> = [];
+  for (const p of profiles) {
+    const collect = only ? p.id === only : p.autoCollect;
+    const r = await collectProfile(p, collect, now);
+    out.push({ id: p.id, name: p.name, description: p.description ?? '', autoCollect: p.autoCollect, regionName: r.regionName ?? p.regionName, periods: r.periods });
+  }
+  writeFileSync(path.join(OUT, 'profiles.json'), JSON.stringify({ kind: 'hcm-live-profiles', generatedAt: toVnIso(new Date()), profiles: out }));
+}
 if (process.argv[1] && /cloud-collect/.test(process.argv[1])) await main();

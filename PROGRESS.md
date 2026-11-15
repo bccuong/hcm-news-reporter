@@ -7,7 +7,28 @@
 - Last session: 2026-11-15 (session 8) – last commit `6293e33` (shared team review), all tests green locally
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 11b – web made equal to local)
+## ▶ RESUME HERE (session 12 – profiles, templates, 50/source, Dân trí, rename to News Reporter)
+- User asked (15/11/2026):
+  - Dân trí on by default.
+  - Max 50 articles per publisher, configurable.
+  - Rename to "News Reporter" (web + folder).
+  - Settings as PROFILES (TP.HCM default; create new or clone for Hà Nội, Đà Nẵng…).
+  - Default template from the Skill plus 4 more, chosen at export.
+- Decisions asked and answered:
+  - Publish the Skill template publicly as the default (`web/public/templates/skill-so-xay-dung.pptx`; reference/ itself stays ignored).
+  - 4 ORIGINAL designs (`src/reports/styles.ts`: hanh-chinh, ban-tin, toi-gian, anh-lon), visually QA'd via PowerPoint PNG export.
+  - Each profile has its own data and its own hourly switch.
+- Done:
+  - `collection.maxArticlesPerSource` (default 50, in-window dated articles first). A real dry-run showed no in-window dated article cut.
+  - Profiles:
+    - local: `config/profiles/<id>/`; legacy config is copied into "hcm"; runs carry `profileId`.
+    - worker: `cfg:profiles`, `cfg:config:<id>`, history per profile, `/auto` per profile; cron dispatches one run for all auto profiles.
+    - cloud-collect: one run publishes every profile (`live/<id>/`, `live/profiles.json`), collects the auto ones or `--profile`.
+    - web: profile picker in the header, Settings › Cấu hình (profile).
+  - Template picker at export (local + web) and a default template in Settings.
+- Tests: vitest 88/88, playwright 9/9, live E2E 5/5.
+
+## (history) Session 11b – web made equal to local
 - User: "web articles have no photos like local – find the differences and make them the same". Decisions asked and answered: full text → **publish publicly**; export → **template chosen from the user's computer (browser-only)**; settings → **apply to the server collector**.
 - Done: photos (links only, loaded from the publisher like local), full text (`contentSections`; bodyText rebuilt in the browser), shared config in worker KV (`/config`, history, rollback) read by `cloud-collect.ts` via `REVIEW_API_URL`, browser export with the original template + real photos via worker `/img`. Tests: vitest 84/84, playwright 8/8, live E2E 4/4 (the template part runs only where reference/ exists). Worker deployed.
 - Remaining local-only: detect/test source, per-source rescan (need direct network). PDF only via PowerPoint locally (web: open .pptx › Save as PDF).

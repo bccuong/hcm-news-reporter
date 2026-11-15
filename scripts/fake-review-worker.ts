@@ -23,7 +23,7 @@ const env = {
   GITHUB_TOKEN: 'fake', GITHUB_REPO: 'bccuong/hcm-news-reporter', COLLECT_WORKFLOW: 'pages.yml',
 };
 
-const LIVE = path.resolve('dist/pages/live');
+const LIVE = path.resolve('dist/pages/live/hcm');
 const runs: Array<{ id: number; status: string; conclusion: string | null; created_at: string; updated_at: string; event: string; display_title: string; html_url: string }> = [];
 const stamp = (iso: string) => iso.slice(0, 16).replace(/[-:T]/g, '');
 

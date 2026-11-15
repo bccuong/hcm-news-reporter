@@ -5,12 +5,13 @@ import { detectLocation } from '../../src/domain/location';
 import { SettingsSchema, type LocationArea, type RuleGroup, type Settings, type Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
 import { uid } from '../../src/domain/text';
-import { api, type HistoryEntry, type PreviewResult } from './api';
+import { api, type HistoryEntry, type PreviewResult, type ProfilesState, type TemplateOption } from './api';
 import { RuleBuilder } from './RuleBuilder';
 import { SourcesPanel } from './SourcesPanel';
 import { ChipEditor, Field, NumberField, Section, Select, Toggle, useToast } from './ui';
 
 const NAV = [
+  ['profiles', 'Cấu hình (profile)'],
   ['sources', 'Nguồn tin'],
   ['rules', 'Từ khóa & quy tắc'],
   ['location', 'Địa điểm'],
@@ -95,7 +96,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
           <h2 className="text-lg font-bold text-navy-700">Cài đặt</h2>
           {(dirtyS || dirtySrc) && <span className="chip border-amber-300 bg-amber-50 text-amber-800">Chưa lưu</span>}
           <span className="flex-1" />
-          <button className="btn-ghost" onClick={resetSection} disabled={nav === 'sources' || nav === 'backup'}>
+          <button className="btn-ghost" onClick={resetSection} disabled={nav === 'profiles' || nav === 'sources' || nav === 'backup'}>
             <RotateCcw className="h-4 w-4" /> Mặc định mục này
           </button>
           <button className="btn-ghost" disabled={!(dirtyS || dirtySrc)} onClick={() => saved && (setS(structuredClone(saved.s)), setSrc(structuredClone(saved.src)))}>
@@ -135,6 +136,8 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
           <main className="min-w-0 flex-1 overflow-auto p-4">
             {!s ? (
               <p>Đang tải…</p>
+            ) : nav === 'profiles' ? (
+              <ProfilesPanel dirty={dirtyS || dirtySrc} />
             ) : nav === 'sources' ? (
               <SourcesPanel sources={src} setSources={setSrc} />
             ) : nav === 'rules' ? (
@@ -162,6 +165,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
 }
 
 const SEARCH_INDEX: Record<string, string[]> = {
+  profiles: ['profile', 'cấu hình', 'hà nội', 'đà nẵng', 'tỉnh', 'thành phố', 'sao chép', 'clone'],
   sources: ['rss', 'sitemap', 'chuyên mục', 'báo', 'website', 'phân trang', 'độ sâu'],
   rules: ['từ khóa', 'đồng nghĩa', 'and', 'or', 'not', 'loại trừ', 'quy tắc'],
   location: ['phường', 'xã', 'tp.hcm', 'địa bàn', 'bí danh', 'tỉnh'],
@@ -292,34 +296,38 @@ function LocationPanel({ s, up }: { s: Settings; up: Up }) {
   const shown = areas.filter((a) => (kind === 'all' || a.kind === kind) && (!q || [a.name, ...a.aliases].some((x) => x.toLowerCase().includes(q.toLowerCase()))));
   const setAreas = (list: LocationArea[]) => up('location', { areas: list });
   const r = detectLocation(test, '', s.location);
+  const R = s.location.regionName;
   return (
     <div>
+      <Section title="Địa bàn của cấu hình">
+        <Field label="Tên địa bàn (hiển thị trong ứng dụng và báo cáo)" help="Ví dụ TP.HCM, Hà Nội, Đà Nẵng. Bộ lọc dùng danh sách địa danh & bí danh bên dưới, không chỉ tên này."><input className="input" value={R} onChange={(e) => up('location', { regionName: e.target.value })} /></Field>
+      </Section>
       <Section title="Kiểm tra nhanh">
         <input className="input" value={test} onChange={(e) => setTest(e.target.value)} aria-label="Câu thử địa bàn" />
         <p className="text-xs">
-          Kết quả: <b>{r.status === 'hcm' ? 'TP.HCM' : r.status === 'connected' ? 'Liên vùng – cần kiểm tra' : r.status === 'other_province' ? 'Địa phương khác' : 'Chưa rõ – vào hàng Cần kiểm tra'}</b>
+          Kết quả: <b>{r.status === 'hcm' ? R : r.status === 'connected' ? 'Liên vùng – cần kiểm tra' : r.status === 'other_province' ? 'Địa phương khác' : 'Chưa rõ – vào hàng Cần kiểm tra'}</b>
           <br />
           {r.evidence.join(' · ')}
         </p>
       </Section>
       <Section title="Quy tắc địa bàn">
-        <Toggle checked={s.location.requireHcmEvidence} onChange={(v) => up('location', { requireHcmEvidence: v })} label="Bắt buộc có bằng chứng địa bàn TP.HCM để vào nhóm sẵn sàng (không có → Cần kiểm tra, không bị bỏ)" />
+        <Toggle checked={s.location.requireHcmEvidence} onChange={(v) => up('location', { requireHcmEvidence: v })} label={`Bắt buộc có bằng chứng địa bàn ${R} để vào nhóm sẵn sàng (không có → Cần kiểm tra, không bị bỏ)`} />
         <Toggle checked={s.location.connectedAreasForReview} onChange={(v) => up('location', { connectedAreasForReview: v })} label="Dự án liên vùng (Vành đai 3, Long Thành…) đưa vào Cần kiểm tra" />
         <Select
-          label="Bài không có bất kỳ dấu hiệu địa bàn TP.HCM nào (kể cả phường, xã, địa danh)"
+          label={`Bài không có bất kỳ dấu hiệu địa bàn ${R} nào (kể cả phường, xã, địa danh)`}
           value={s.location.noEvidencePolicy}
           onChange={(v) => up('location', { noEvidencePolicy: v })}
           options={[['exclude_with_reason', 'Loại kèm lý do NO_HCM_EVIDENCE (xem được trong Sổ ứng viên)'], ['review', 'Đưa vào hàng Cần kiểm tra']]}
         />
         <NumberField
-          label="TP.HCM không có ở tiêu đề/sapo: số địa danh TP.HCM tối thiểu trong thân bài để vào nhóm Sẵn sàng"
+          label={`${R} không có ở tiêu đề/sapo: số địa danh ${R} tối thiểu trong thân bài để vào nhóm Sẵn sàng`}
           value={s.location.minBodyAreasWithoutLead}
           min={1}
           max={10}
           onChange={(n) => up('location', { minBodyAreasWithoutLead: n })}
           help="Ít hơn → bài vào hàng Cần kiểm tra (HCM_ONLY_IN_BODY), không bị loại."
         />
-        <ChipEditor values={s.location.otherProvinces} onChange={(v) => up('location', { otherProvinces: v })} label="Địa phương khác (nêu trong tiêu đề mà không có bằng chứng TP.HCM → loại kèm lý do)" />
+        <ChipEditor values={s.location.otherProvinces} onChange={(v) => up('location', { otherProvinces: v })} label={`Địa phương khác (nêu trong tiêu đề mà không có bằng chứng ${R} → loại kèm lý do)`} />
       </Section>
       <Section
         title={`Địa danh & bí danh (${areas.length})`}
@@ -439,8 +447,10 @@ function QualityPanel({ s, up }: { s: Settings; up: Up }) {
 function ReportPanel({ s, up }: { s: Settings; up: Up }) {
   const toast = useToast();
   const [caps, setCaps] = useState<{ pdf: boolean; soffice: string | null; powerpoint?: string | null } | null>(null);
+  const [tpls, setTpls] = useState<TemplateOption[]>([]);
   useEffect(() => {
     api.capabilities().then(setCaps).catch(() => setCaps(null));
+    api.templates().then((r) => setTpls(r.templates)).catch(() => setTpls([]));
   }, []);
   const upload = async (f: File) => {
     if (!f.name.toLowerCase().endsWith('.pptx')) return toast('err', 'Chỉ nhận tệp .pptx');
@@ -457,22 +467,31 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
   };
   return (
     <div>
+      <Section title="Mẫu báo cáo" help="Khi xuất vẫn chọn được mẫu khác cho từng lần.">
+        <Field label="Mẫu mặc định khi xuất">
+          <select className="input" aria-label="Mẫu mặc định khi xuất" value={s.report.templateId} onChange={(e) => up('report', { templateId: e.target.value })}>
+            {tpls.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </Field>
+        <p className="text-xs text-slate-600">{tpls.find((x) => x.id === s.report.templateId)?.description}</p>
+      </Section>
       {s.report.templateFile ? (
         <div className="mb-4 rounded border border-green-300 bg-green-50 p-3 text-xs text-green-900">
-          <b>Đang dùng mẫu PPTX gốc:</b> báo cáo được dựng bằng cách nhân bản đúng các trang của mẫu (Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị), thay nội dung trong các khung sẵn có và giữ nguyên định dạng. Nếu tải mẫu khác cấu trúc, xuất báo cáo sẽ báo <b>BLOCKED</b> thay vì tạo tệp sai.
+          <b>Đã có mẫu tải lên:</b> báo cáo được dựng bằng cách nhân bản đúng các trang của mẫu (Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị), thay nội dung trong các khung sẵn có và giữ nguyên định dạng. Nếu tải mẫu khác cấu trúc, xuất báo cáo sẽ báo <b>BLOCKED</b> thay vì tạo tệp sai.
         </div>
       ) : (
         <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-          <b>Chưa có mẫu PPTX gốc:</b> báo cáo sẽ dùng bố cục <b>DEMO</b> (mỗi trang có nhãn "BẢN DEMO"). Tải tệp mẫu của Sở ở bên dưới để xuất đúng mẫu.
+          Muốn dùng <b>mẫu riêng</b> (cùng cấu trúc mẫu Sở: Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị)? Tải tệp .pptx ở bên dưới, rồi chọn "Mẫu đã tải lên" khi xuất.
         </div>
       )}
-      <Section title="Mẫu PowerPoint">
+      <Section title="Mẫu PowerPoint tải lên & thông tin cơ quan">
         <p className="text-xs">Tệp mẫu đang chọn: <b>{s.report.templateFile || '(chưa có – dùng bố cục demo)'}</b></p>
         {api.mode !== 'local' && <p className="text-xs text-slate-600">Bản web: mẫu chỉ lưu trong <b>trình duyệt này</b> (không tải lên máy chủ hay GitHub); xuất báo cáo dựng ngay trong trình duyệt, ảnh báo gốc lấy qua máy chủ duyệt tin (cần đăng nhập). PDF: mở tệp .pptx bằng PowerPoint › Lưu thành PDF.</p>}
         <label className="btn-ghost w-fit cursor-pointer">
           <FileUp className="h-4 w-4" /> Tải mẫu .pptx
           <input type="file" accept=".pptx" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
         </label>
+        <Field label="Dòng mô tả dưới tên ứng dụng"><input className="input" value={s.report.subtitle} onChange={(e) => up('report', { subtitle: e.target.value })} /></Field>
         <Field label="Tên cơ quan trên bìa"><input className="input" value={s.report.organization} onChange={(e) => up('report', { organization: e.target.value })} /></Field>
         <Field label="Email phúc đáp (trang Kiến nghị)"><input className="input" value={s.report.contactEmail} onChange={(e) => up('report', { contactEmail: e.target.value })} /></Field>
         <NumberField label="Số tin mỗi trang" value={s.report.storiesPerPage} min={1} max={4} onChange={(n) => up('report', { storiesPerPage: n })} />
@@ -576,6 +595,139 @@ function BackupPanel({ onRestored }: { onRestored: () => void }) {
             ))}
           </tbody>
         </table>
+      </Section>
+    </div>
+  );
+}
+
+/* ---------------- Profiles (cấu hình theo địa bàn) ---------------- */
+function ProfilesPanel({ dirty }: { dirty: boolean }) {
+  const toast = useToast();
+  const [st, setSt] = useState<ProfilesState | null>(null);
+  const reload = () => api.profiles().then(setSt).catch((e) => toast('err', (e as Error).message));
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [mode, setMode] = useState<'region' | 'clone'>('region');
+  const [name, setName] = useState('');
+  const [region, setRegion] = useState('');
+  const [aliases, setAliases] = useState('');
+  const [cloneFrom, setCloneFrom] = useState('hcm');
+  const [desc, setDesc] = useState('');
+  const [useNow, setUseNow] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+
+  const activate = async (id: string) => {
+    if (dirty && !confirm('Có thay đổi cài đặt chưa lưu. Chuyển cấu hình và bỏ thay đổi?')) return;
+    await api.activateProfile(id);
+    window.location.reload();
+  };
+  const create = async () => {
+    if (!name.trim()) return toast('err', 'Nhập tên cấu hình');
+    setBusy(true);
+    try {
+      const meta = await api.createProfile({
+        name: name.trim(), description: desc, cloneFrom: mode === 'clone' ? cloneFrom : null,
+        regionName: mode === 'region' ? region.trim() : '', regionAliases: aliases.split(',').map((x) => x.trim()).filter(Boolean),
+      });
+      toast('ok', `Đã tạo cấu hình "${meta.name}"`);
+      setName('');
+      setRegion('');
+      setAliases('');
+      setDesc('');
+      if (useNow) return activate(meta.id);
+      reload();
+    } catch (e) {
+      toast('err', (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const rename = async () => {
+    if (!renaming?.name.trim()) return;
+    try {
+      await api.updateProfile(renaming.id, { name: renaming.name.trim() });
+      setRenaming(null);
+      reload();
+      toast('ok', 'Đã đổi tên cấu hình');
+    } catch (e) {
+      toast('err', (e as Error).message);
+    }
+  };
+  const remove = async (id: string, label: string) => {
+    if (!confirm(`Xóa cấu hình "${label}"? Dữ liệu đã thu thập của cấu hình này không hiện trong danh sách nữa.`)) return;
+    try {
+      await api.deleteProfile(id);
+      if (id === st?.activeId) return window.location.reload();
+      reload();
+      toast('ok', `Đã xóa cấu hình "${label}"`);
+    } catch (e) {
+      toast('err', (e as Error).message);
+    }
+  };
+
+  return (
+    <div>
+      <Section
+        title="Cấu hình theo địa bàn (profile)"
+        help="Mỗi cấu hình là một bộ đầy đủ: nguồn báo, từ khóa & quy tắc, địa danh, lĩnh vực, báo cáo… Mặc định là TP.HCM. Muốn thu thập cho Hà Nội, Đà Nẵng hay bất kỳ đâu: tạo cấu hình mới hoặc sao chép một cấu hình có sẵn rồi chỉnh. Các mục Cài đặt khác luôn áp dụng cho cấu hình đang dùng."
+      >
+        <table className="w-full text-sm" data-testid="profiles-table">
+          <tbody>
+            {st?.profiles.map((p) => (
+              <tr key={p.id} className="border-b border-slate-100">
+                <td className="py-2 pr-2">
+                  {renaming?.id === p.id ? (
+                    <span className="flex gap-1">
+                      <input className="input" aria-label="Tên mới" value={renaming.name} onChange={(e) => setRenaming({ id: p.id, name: e.target.value })} />
+                      <button className="btn-primary btn-xs" onClick={rename}>Lưu tên</button>
+                      <button className="btn-ghost btn-xs" onClick={() => setRenaming(null)}>Hủy</button>
+                    </span>
+                  ) : (
+                    <>
+                      <b>{p.name}</b> <span className="text-xs text-slate-500">({p.id})</span>
+                      {p.id === st.activeId && <span className="chip ml-2 border-teal-300 bg-teal-50 text-teal-900">đang dùng</span>}
+                      {api.mode !== 'local' && p.autoCollect && <span className="chip ml-1 border-green-300 bg-green-50 text-green-800">tự động mỗi giờ</span>}
+                      {p.clonedFrom && <span className="ml-1 text-xs text-slate-500">· sao chép từ {st.profiles.find((x) => x.id === p.clonedFrom)?.name ?? p.clonedFrom}</span>}
+                      {p.description && <div className="text-xs text-slate-500">{p.description}</div>}
+                    </>
+                  )}
+                </td>
+                <td className="whitespace-nowrap py-2 text-right">
+                  {p.id !== st.activeId && <button className="btn-teal btn-xs" onClick={() => activate(p.id)}>Dùng cấu hình này</button>}
+                  <button className="btn-ghost btn-xs" onClick={() => (setMode('clone'), setCloneFrom(p.id), setName(`${p.name} (bản sao)`))}>Sao chép</button>
+                  <button className="btn-ghost btn-xs" onClick={() => setRenaming({ id: p.id, name: p.name })}>Đổi tên</button>
+                  {st.profiles.length > 1 && <button className="btn-danger btn-xs" onClick={() => remove(p.id, p.name)}>Xóa</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Section>
+      <Section title="Tạo cấu hình mới">
+        <div className="flex gap-4 text-sm">
+          <label className="flex items-center gap-1"><input type="radio" checked={mode === 'region'} onChange={() => setMode('region')} /> Địa bàn mới (từ cấu hình chuẩn)</label>
+          <label className="flex items-center gap-1"><input type="radio" checked={mode === 'clone'} onChange={() => setMode('clone')} /> Sao chép từ cấu hình có sẵn</label>
+        </div>
+        <Field label="Tên cấu hình"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ví dụ: Hà Nội" /></Field>
+        {mode === 'region' ? (
+          <>
+            <Field label="Tên địa bàn" help="Dùng để lọc bài theo địa bàn; thêm phường/xã/địa danh sau ở mục Địa điểm."><input className="input" value={region} onChange={(e) => setRegion(e.target.value)} placeholder="Hà Nội" /></Field>
+            <Field label="Cách viết khác của địa bàn (cách nhau bằng dấu phẩy)"><input className="input" value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="TP Hà Nội, Thủ đô, thành phố Hà Nội" /></Field>
+            <p className="text-xs text-slate-500">Cấu hình mới giữ nguyên nguồn báo, từ khóa ngành, lĩnh vực và quy tắc chuẩn; TP.HCM được xem là "địa phương khác".</p>
+          </>
+        ) : (
+          <Field label="Sao chép từ">
+            <select className="input" value={cloneFrom} onChange={(e) => setCloneFrom(e.target.value)} aria-label="Sao chép từ">
+              {st?.profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+        )}
+        <Field label="Mô tả (không bắt buộc)"><input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} /></Field>
+        <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={useNow} onChange={(e) => setUseNow(e.target.checked)} /> Dùng cấu hình mới ngay sau khi tạo</label>
+        <button className="btn-primary w-fit" disabled={busy} onClick={create}><Plus className="h-4 w-4" /> Tạo cấu hình</button>
       </Section>
     </div>
   );
