@@ -76,7 +76,7 @@ See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.
 - Demo (GitHub Pages) still uses the DEMO renderer: the Department template is private and not published.
 
 ## Next single executable action
-Editor feedback loop: add "Đúng / Không liên quan" buttons in the review list that store a label per article (review file), and extend `scripts/eval-relevance.ts` to read these editor labels across runs – so precision/recall are tracked on real editorial decisions instead of Claude's sample labels.
+After the editor has labelled 1–2 weeks of runs in the local app: `npx tsx scripts/eval-editor-labels.ts`, review the MISSED list (rule that wrongly excluded each story) and adjust keywords/rules in Settings; optionally add a "Tải nhãn đánh giá" export on the public site so labels made there can be merged.
 
 ## Session handoff log
 | Session date | Changes made | Tests actually run | Next action |
