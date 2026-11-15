@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { handle, reviewerId, type Env, type KVLike } from '../cloud/review-worker/src/handler.js';
+import { handle, reviewerId, runKind, scheduledCollect, type Env, type KVLike } from '../cloud/review-worker/src/handler.js';
 
 class MemKV implements KVLike {
   m = new Map<string, { v: string; meta?: unknown }>();
@@ -97,6 +97,49 @@ describe('shared review worker', () => {
       const j = (await r.json()) as { enabled: boolean; runs: Array<{ id: number; status: string }> };
       expect(j.enabled).toBe(true);
       expect(j.runs[0]).toMatchObject({ id: 7, status: 'in_progress' });
+    });
+  });
+  describe('hourly automatic collection (worker cron) + public server status', () => {
+    const calls: string[] = [];
+    let running: Array<Record<string, unknown>> = [];
+    const gh = async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url} ${init?.body ?? ''}`);
+      if (url.includes('/runs?status=')) return new Response(JSON.stringify({ total_count: url.includes('in_progress') ? running.length : 0 }), { status: 200 });
+      if (url.endsWith('/dispatches')) return new Response(null, { status: 204 });
+      if (url.includes('/runs?per_page')) return new Response(JSON.stringify({ workflow_runs: running }), { status: 200 });
+      return new Response('{}', { status: 404 });
+    };
+    const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/hcm-news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
+    const setAuto = (e: Env, enabled: unknown, code = 'HCM-test-1234') =>
+      handle(new Request('https://w.example/auto', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ enabled, reviewer: 'B' }) }), e, gh);
+
+    it('is on by default, dispatches trigger=auto, can be switched off/on by a reviewer', async () => {
+      const e = genv();
+      running = [];
+      calls.length = 0;
+      expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'dispatched' });
+      expect(calls.find((c) => c.includes('/dispatches'))).toContain('"inputs":{"trigger":"auto"}');
+      expect((await setAuto(e, false, 'wrong')).status).toBe(401);
+      expect((await setAuto(e, 'no')).status).toBe(400);
+      expect((await setAuto(e, false)).status).toBe(200);
+      calls.length = 0;
+      expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'off' });
+      expect(calls.some((c) => c.includes('/dispatches'))).toBe(false);
+      const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { auto: { enabled: boolean; by: string }; lastAuto: { result: string } };
+      expect(st.auto).toMatchObject({ enabled: false, by: 'B' });
+      expect(st.lastAuto.result).toBe('off');
+      await setAuto(e, true);
+      expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'dispatched' });
+    });
+    it('skips while the server is busy; status (no login) names the running run kind', async () => {
+      const e = genv();
+      running = [{ id: 1, status: 'in_progress', conclusion: null, created_at: 'c', updated_at: 'u', event: 'push', display_title: 'Live data', html_url: 'h' }];
+      expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'busy' });
+      const st = (await (await handle(new Request('https://w.example/status'), e, gh)).json()) as { running: Array<{ kind: string }> };
+      expect(st.running[0]!.kind).toBe('deploy');
+      expect(runKind({ event: 'workflow_dispatch', display_title: 'Thu thập tự động hằng giờ' })).toBe('auto');
+      expect(runKind({ event: 'workflow_dispatch', display_title: 'Thu thập theo yêu cầu x → y (A)' })).toBe('request');
+      expect(await scheduledCollect(env(), gh)).toMatchObject({ result: 'not_configured' });
     });
   });
   it('reviewer ids are ascii slugs', () => {

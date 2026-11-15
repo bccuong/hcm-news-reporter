@@ -110,6 +110,65 @@ async function gh(env: Env, f: Fetch, path: string, init: RequestInit = {}) {
 }
 interface RunInfo { id: number; status: string; conclusion: string | null; created_at: string; updated_at: string; event: string; display_title: string; html_url: string }
 
+const ghReady = (env: Env) => !!(env.GITHUB_TOKEN && env.GITHUB_REPO && env.COLLECT_WORKFLOW);
+
+/** is a collection workflow run queued or running? */
+async function busy(env: Env, f: Fetch): Promise<boolean> {
+  for (const st of ['in_progress', 'queued']) {
+    const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?status=${st}&per_page=1`);
+    if (r.ok && ((await r.json()) as { total_count: number }).total_count > 0) return true;
+  }
+  return false;
+}
+
+/* ---------- hourly automatic collection (Cloudflare cron → workflow_dispatch), switchable from the web ---------- */
+export interface AutoCfg { enabled: boolean; by: string; at: string }
+export interface AutoLast { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string }
+const AUTO_KEY = 'cfg:auto';
+const AUTO_LAST_KEY = 'cfg:autoLast';
+export const AUTO_TITLE = 'Thu thập tự động hằng giờ';
+
+export async function getAuto(env: Env): Promise<AutoCfg> {
+  const v = await env.REVIEWS.get(AUTO_KEY);
+  return v ? (JSON.parse(v) as AutoCfg) : { enabled: true, by: '', at: '' };
+}
+
+/** called by the Worker's cron trigger every hour */
+export async function scheduledCollect(env: Env, f: Fetch = (i, init) => fetch(i, init)): Promise<AutoLast> {
+  const at = new Date().toISOString();
+  let last: AutoLast;
+  if (!ghReady(env)) last = { at, result: 'not_configured' };
+  else if (!(await getAuto(env)).enabled) last = { at, result: 'off' };
+  else if (await busy(env, f)) last = { at, result: 'busy' };
+  else {
+    const d = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { trigger: 'auto' } }) });
+    last = d.status === 204 ? { at, result: 'dispatched' } : { at, result: 'error', detail: `HTTP ${d.status}` };
+  }
+  await env.REVIEWS.put(AUTO_LAST_KEY, JSON.stringify(last));
+  return last;
+}
+
+/** what kind of workflow run this is (shown to users) */
+export function runKind(x: { event: string; display_title: string }): 'auto' | 'request' | 'deploy' {
+  if (x.event === 'schedule' || x.display_title.startsWith(AUTO_TITLE)) return 'auto';
+  if (x.event === 'workflow_dispatch') return 'request';
+  return 'deploy';
+}
+const mapRun = (x: RunInfo) => ({
+  id: x.id, status: x.status, conclusion: x.conclusion, createdAt: x.created_at, updatedAt: x.updated_at, event: x.event, kind: runKind(x), title: x.display_title, url: x.html_url,
+});
+
+/** public server status: automatic mode + what the collection server is doing right now */
+async function serverStatus(env: Env, f: Fetch, h: Record<string, string>) {
+  const auto = await getAuto(env);
+  const lv = await env.REVIEWS.get(AUTO_LAST_KEY);
+  const lastAuto = lv ? (JSON.parse(lv) as AutoLast) : null;
+  if (!ghReady(env)) return json({ collectEnabled: false, auto, lastAuto, running: [] }, 200, h);
+  const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?per_page=6`);
+  const runs = r.ok ? ((await r.json()) as { workflow_runs: RunInfo[] }).workflow_runs.map(mapRun) : [];
+  return json({ collectEnabled: true, auto, lastAuto, running: runs.filter((x) => x.status !== 'completed') }, r.ok ? 200 : 502, h);
+}
+
 /** On-demand collection for a custom window: dispatch the collection workflow (one at a time). */
 async function collect(req: Request, env: Env, f: Fetch, h: Record<string, string>) {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ error: 'Chưa cấu hình thu thập theo yêu cầu (GITHUB_TOKEN)' }, 503, h);
@@ -129,12 +188,7 @@ async function collect(req: Request, env: Env, f: Fetch, h: Record<string, strin
   if (a > Date.now()) return json({ error: 'Thời điểm bắt đầu ở tương lai' }, 400, h);
   const reviewer = String(b.reviewer ?? '').trim().slice(0, 40) || 'web';
   // one collection at a time (the workflow also serialises runs)
-  for (const st of ['in_progress', 'queued']) {
-    const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?status=${st}&per_page=1`);
-    if (r.ok && ((await r.json()) as { total_count: number }).total_count > 0) {
-      return json({ error: 'Đang có một lượt thu thập chạy – vui lòng chờ lượt đó xong', busy: true }, 409, h);
-    }
-  }
+  if (await busy(env, f)) return json({ error: 'Máy chủ đang chạy một lượt thu thập khác (xem dòng trạng thái máy chủ) – vui lòng chờ lượt đó xong', busy: true }, 409, h);
   const d = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/dispatches`, {
     method: 'POST',
     body: JSON.stringify({ ref: 'main', inputs: { from, to, requested_by: reviewer } }),
@@ -147,9 +201,7 @@ async function collectStatus(env: Env, f: Fetch, h: Record<string, string>) {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ enabled: false, runs: [] }, 200, h);
   const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?per_page=6`);
   if (!r.ok) return json({ error: `GitHub HTTP ${r.status}` }, 502, h);
-  const runs = ((await r.json()) as { workflow_runs: RunInfo[] }).workflow_runs.map((x) => ({
-    id: x.id, status: x.status, conclusion: x.conclusion, createdAt: x.created_at, updatedAt: x.updated_at, event: x.event, title: x.display_title, url: x.html_url,
-  }));
+  const runs = ((await r.json()) as { workflow_runs: RunInfo[] }).workflow_runs.map(mapRun);
   return json({ enabled: true, runs }, 200, h);
 }
 
@@ -158,6 +210,7 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
   const url = new URL(req.url);
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
   if (url.pathname === '/health') return json({ ok: true }, 200, h);
+  if (url.pathname === '/status' && req.method === 'GET') return serverStatus(env, f, h);
 
   // nightly export for the GitHub Action (bearer token, never sent to browsers)
   if (url.pathname === '/export' && req.method === 'GET') {
@@ -181,6 +234,18 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
   if (url.pathname === '/login' && req.method === 'POST') return json({ ok: true, collectEnabled: !!env.GITHUB_TOKEN }, 200, h);
   if (url.pathname === '/collect' && req.method === 'POST') return collect(req, env, f, h);
   if (url.pathname === '/collect/status' && req.method === 'GET') return collectStatus(env, f, h);
+  if (url.pathname === '/auto' && req.method === 'POST') {
+    let b: { enabled?: unknown; reviewer?: unknown };
+    try {
+      b = (await req.json()) as typeof b;
+    } catch {
+      return json({ error: 'INVALID_JSON' }, 400, h);
+    }
+    if (typeof b.enabled !== 'boolean') return json({ error: 'enabled phải là true/false' }, 400, h);
+    const cfg: AutoCfg = { enabled: b.enabled, by: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', at: new Date().toISOString() };
+    await env.REVIEWS.put(AUTO_KEY, JSON.stringify(cfg));
+    return json({ ok: true, auto: cfg }, 200, h);
+  }
 
   if (url.pathname === '/labels' && req.method === 'GET') {
     const date = url.searchParams.get('date') ?? '';

@@ -1,7 +1,10 @@
 # Duyệt tin theo nhóm (GitHub Pages + Cloudflare Worker)
 
 ```
-Báo ──(mỗi giờ)──▶ GitHub Actions: thu thập ──▶ GitHub Pages (một bản web, cùng giao diện bản local)
+Worker cron :07 mỗi giờ (nếu ô "Tự động thu thập mỗi giờ" đang bật) ─┐
+Nút "Thu thập" trên web (khung từ/đến, cần đăng nhập) ───────────────┤ workflow_dispatch pages.yml
+Push mã mới lên main ─────────────────────────────────────────────────┘
+Báo ──▶ GitHub Actions: thu thập ──▶ GitHub Pages (một bản web, cùng giao diện bản local)
                                                     │ người duyệt: tên + mã truy cập → ✓/✗, lĩnh vực, tính chất, ghi chú
                                                     ▼
                                    Cloudflare Worker + KV (miễn phí) – cloud/review-worker
@@ -11,6 +14,12 @@ Báo ──(mỗi giờ)──▶ GitHub Actions: thu thập ──▶ GitHub Pa
                                                     ▼
                          npx tsx scripts/eval-shared-labels.ts → chỉnh quy tắc/từ khóa → bộ thu thập chính xác hơn
 ```
+
+## Cơ chế thu thập trên web
+- **Tự động mỗi giờ**: Cloudflare cron (`wrangler.toml` → `[triggers] crons = ["7 * * * *"]`) gọi `scheduledCollect` → gửi `workflow_dispatch` với `trigger=auto` (tên lượt "Thu thập tự động hằng giờ"). Không dùng `schedule:` của GitHub vì hay trễ/bỏ lượt. Bỏ qua nếu ô **Tự động thu thập mỗi giờ** đang tắt (KV `cfg:auto`) hoặc máy chủ đang bận; kết quả lần hẹn giờ gần nhất lưu ở `cfg:autoLast`.
+- **Theo yêu cầu**: nút **Thu thập** → `POST /collect` (tối đa 72 h, mỗi lúc một lượt).
+- **Push mã mới** cũng chạy một lượt thu thập + deploy.
+- `GET /status` (công khai) trả về chế độ tự động + lượt đang chạy; web hiển thị ở dòng trạng thái máy chủ và khóa nút Thu thập khi máy chủ bận. `POST /auto {enabled}` (cần mã truy cập) bật/tắt.
 
 ## Gửi cho người duyệt
 - Link: https://bccuong.github.io/hcm-news-reporter/

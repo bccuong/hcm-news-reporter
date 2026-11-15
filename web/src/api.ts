@@ -51,8 +51,20 @@ export interface Api {
 }
 
 export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: string | null; a: string | null; n: string; t: string }
-export interface CollectRun { id: number; status: string; conclusion: string | null; createdAt: string; updatedAt: string; event: string; title: string; url: string }
+export interface CollectRun { id: number; status: string; conclusion: string | null; createdAt: string; updatedAt: string; event: string; kind?: 'auto' | 'request' | 'deploy'; title: string; url: string }
+export interface AutoCfg { enabled: boolean; by: string; at: string }
+export interface ServerStatus {
+  collectEnabled: boolean;
+  auto: AutoCfg;
+  lastAuto: { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string } | null;
+  /** queued / running collection workflow runs */
+  running: CollectRun[];
+}
 export interface SharedReview {
+  /** public: hourly automatic mode + what the collection server is doing now */
+  serverStatus(): Promise<ServerStatus>;
+  /** switch the hourly automatic collection on/off (needs a reviewer session) */
+  setAuto(enabled: boolean): Promise<AutoCfg>;
   session(): { name: string } | null;
   login(name: string, code: string): Promise<void>;
   logout(): void;
@@ -346,6 +358,18 @@ class DemoApi implements Api {
   shared: SharedReview | undefined = this.reviewApi && this.mode === 'live' ? this.makeShared() : undefined;
   private makeShared(): SharedReview {
     return {
+      serverStatus: async () => {
+        const r = await fetch(`${this.reviewApi}/status`, { cache: 'no-cache' });
+        if (!r.ok) throw new ApiError('Không xem được trạng thái máy chủ thu thập');
+        return (await r.json()) as ServerStatus;
+      },
+      setAuto: async (enabled) => {
+        const s = store.get<{ name: string; code: string }>('reviewer');
+        if (!s) throw new ApiError('Hãy đăng nhập người duyệt để đổi chế độ tự động');
+        const r = await fetch(`${this.reviewApi}/auto`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ enabled, reviewer: s.name }) });
+        if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không đổi được chế độ tự động (HTTP ${r.status})`);
+        return ((await r.json()) as { auto: AutoCfg }).auto;
+      },
       session: () => store.get<{ name: string; code: string }>('reviewer') ?? null,
       login: async (name, code) => {
         const r = await fetch(`${this.reviewApi}/login`, { method: 'POST', headers: { 'x-review-code': code } });

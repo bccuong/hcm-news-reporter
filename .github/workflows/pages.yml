@@ -1,14 +1,19 @@
 name: Live data – hourly collection & GitHub Pages deploy
-run-name: ${{ inputs.from && format('Thu thập theo yêu cầu {0} → {1} ({2})', inputs.from, inputs.to, inputs.requested_by) || 'Live data – hourly collection & GitHub Pages deploy' }}
+run-name: ${{ inputs.from && format('Thu thập theo yêu cầu {0} → {1} ({2})', inputs.from, inputs.to, inputs.requested_by) || inputs.trigger == 'auto' && 'Thu thập tự động hằng giờ' || 'Live data – collection & GitHub Pages deploy' }}
 
+# The hourly automatic run is NOT a GitHub `schedule:` (often late or skipped). The Cloudflare review worker's cron
+# trigger dispatches this workflow with trigger=auto every hour at :07 – only while "Tự động thu thập mỗi giờ" is
+# switched on in the web app (KV cfg:auto) and no other collection is running.
 on:
-  schedule:
-    - cron: '7 * * * *' # hourly (UTC; GitHub may start scheduled runs a few minutes late)
   push:
     branches: [main]
   workflow_dispatch:
-    # on-demand window from the web "Thu thập" button (dispatched by the review worker)
+    # on-demand window from the web "Thu thập" button, or trigger=auto from the worker cron
     inputs:
+      trigger:
+        description: 'auto = lượt tự động hằng giờ (do worker gửi)'
+        required: false
+        default: ''
       from:
         description: 'Từ (ISO +07:00), ví dụ 2026-11-14T17:00+07:00'
         required: false

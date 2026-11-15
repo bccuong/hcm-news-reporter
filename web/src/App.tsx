@@ -4,7 +4,7 @@ import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
-import { api, type ExportResult, type RelevanceQuality, type RunInfo, type Vote } from './api';
+import { api, type CollectRun, type ExportResult, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
 
@@ -197,7 +197,7 @@ export function App() {
     const tick = async () => {
       try {
         const st = await api.shared!.collectStatus();
-        const run = st.runs.find((x) => x.event === 'workflow_dispatch' && Date.parse(x.createdAt) >= remote.at - 90_000);
+        const run = st.runs.find((x) => (x.kind ? x.kind === 'request' : x.event === 'workflow_dispatch') && Date.parse(x.createdAt) >= remote.at - 90_000);
         if (!run) return setRemote((r) => (r ? { ...r, status: 'đang chờ GitHub nhận yêu cầu' } : r));
         if (run.status !== 'completed') {
           return setRemote((r) => (r ? { ...r, status: run.status === 'queued' ? 'đang xếp hàng' : 'đang thu thập', url: run.url } : r));
@@ -226,6 +226,36 @@ export function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remote?.at]);
+
+  // collection server (web): hourly automatic mode + whatever run is busy right now (visible to everyone)
+  const [server, setServer] = useState<ServerStatus | null>(null);
+  const loadServer = useCallback(async () => {
+    if (!api.shared) return;
+    try {
+      setServer(await api.shared.serverStatus());
+    } catch {
+      /* status strip is informative only */
+    }
+  }, []);
+  const serverRunning = (server?.running.length ?? 0) > 0;
+  useEffect(() => {
+    if (!api.shared) return;
+    loadServer();
+    const t = setInterval(loadServer, remote || serverRunning ? 15_000 : 60_000);
+    return () => clearInterval(t);
+  }, [loadServer, !!remote, serverRunning]);
+  const busyRun: CollectRun | undefined = server?.running[0];
+  const toggleAuto = async (enabled: boolean) => {
+    if (!api.shared) return;
+    if (!api.shared.session()) return setLoginOpen(true);
+    try {
+      const auto = await api.shared.setAuto(enabled);
+      setServer((s) => (s ? { ...s, auto } : s));
+      toast('ok', enabled ? 'Đã BẬT tự động thu thập mỗi giờ' : 'Đã TẮT tự động thu thập – chỉ thu thập khi có người bấm Thu thập');
+    } catch (e) {
+      toast('err', (e as Error).message);
+    }
+  };
 
   // shared review (GitHub Pages): reviewer session + the team's votes for the current period
   const [reviewer, setReviewer] = useState(api.shared?.session() ?? null);
@@ -290,7 +320,7 @@ export function App() {
       )}
       {api.mode === 'live' && (
         <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
-          <b>DỮ LIỆU THẬT</b> – thu thập tự động mỗi giờ trên máy chủ GitHub{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}. Hiển thị tiêu đề, sapo ngắn, nguồn, độ phủ (không đăng toàn văn bài).
+          <b>DỮ LIỆU THẬT</b> – {server?.auto.enabled === false ? 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)' : 'thu thập tự động mỗi giờ trên máy chủ GitHub'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}. Hiển thị tiêu đề, sapo ngắn, nguồn, độ phủ (không đăng toàn văn bài).
           {api.shared ? <> Đăng nhập để <b>chọn khung giờ và bấm Thu thập</b> (chạy trên máy chủ GitHub, 5–10 phút) và duyệt tin: ✓/✗, sửa lĩnh vực/tính chất, góp ý.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
         </div>
       )}
@@ -375,9 +405,17 @@ export function App() {
           ) : (
             <button
               className="btn-primary"
-              disabled={!!windowErr || !online || api.mode === 'demo' || (api.mode === 'live' && (!api.shared || !!remote))}
+              disabled={!!windowErr || !online || api.mode === 'demo' || (api.mode === 'live' && (!api.shared || !!remote || !!busyRun))}
               onClick={collect}
-              title={api.mode === 'live' ? 'Thu thập trên máy chủ GitHub (5–10 phút), tối đa 72 giờ mỗi lần; cần đăng nhập người duyệt' : api.mode === 'demo' ? 'Bản demo không thu thập báo thật' : ''}
+              title={
+                api.mode === 'live'
+                  ? busyRun
+                    ? 'Máy chủ đang chạy một lượt thu thập khác – nút mở lại khi lượt đó xong'
+                    : 'Thu thập trên máy chủ GitHub (5–10 phút), tối đa 72 giờ mỗi lần; cần đăng nhập người duyệt'
+                  : api.mode === 'demo'
+                    ? 'Bản demo không thu thập báo thật'
+                    : ''
+              }
             >
               <Play className="h-4 w-4" /> Thu thập
             </button>
@@ -396,6 +434,8 @@ export function App() {
           )}
         </section>
         )}
+
+        {api.shared && server && <ServerStrip server={server} remote={!!remote} onToggle={toggleAuto} />}
 
         {remote && (
           <section className="card flex flex-wrap items-center gap-3 border-blue-300 bg-blue-50 p-3 text-sm text-blue-900" data-testid="remote-collect">
@@ -1117,5 +1157,43 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
         )}
       </div>
     </div>
+  );
+}
+
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+const RUN_KIND: Record<string, string> = { auto: 'lượt tự động hằng giờ', request: 'lượt thu thập theo yêu cầu', deploy: 'cập nhật phần mềm & dữ liệu (sau khi đẩy mã mới)' };
+const LAST_AUTO: Record<string, string> = { dispatched: 'đã chạy', off: 'bỏ qua vì đang tắt', busy: 'bỏ qua vì máy chủ bận', error: 'lỗi', not_configured: 'chưa cấu hình' };
+
+/** web: hourly automatic switch + what the collection server is doing now */
+function ServerStrip({ server, remote, onToggle }: { server: ServerStatus; remote: boolean; onToggle: (on: boolean) => void }) {
+  const next = new Date();
+  next.setUTCMinutes(7, 0, 0);
+  if (next.getTime() <= Date.now()) next.setTime(next.getTime() + 3600_000);
+  const run = server.running[0];
+  const who = run?.kind === 'request' ? /\(([^)]*)\)\s*$/.exec(run.title)?.[1] : undefined;
+  return (
+    <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm" data-testid="server-status">
+      <label className="inline-flex cursor-pointer items-center gap-2 font-medium">
+        <input type="checkbox" className="h-4 w-4" checked={server.auto.enabled} disabled={!server.collectEnabled} onChange={(e) => onToggle(e.target.checked)} />
+        Tự động thu thập mỗi giờ
+      </label>
+      <span className="text-xs text-slate-500" data-testid="auto-info">
+        {server.auto.enabled ? <>Bật – chạy phút :07 mỗi giờ, lượt kế tiếp khoảng <b>{hhmm(next.toISOString())}</b> (bỏ qua nếu máy chủ đang bận)</> : <>Tắt – chỉ thu thập khi có người bấm <b>Thu thập</b></>}
+        {server.auto.by && <> · {server.auto.by} đổi lúc {hhmm(server.auto.at)} {new Date(server.auto.at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</>}
+        {server.lastAuto && <> · lần hẹn giờ gần nhất {hhmm(server.lastAuto.at)}: {LAST_AUTO[server.lastAuto.result] ?? server.lastAuto.result}</>}
+      </span>
+      <span className="flex-1" />
+      {run ? (
+        <span className="inline-flex items-center gap-2 font-medium text-amber-800" data-testid="server-busy">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Máy chủ đang {run.status === 'queued' ? 'xếp hàng' : 'chạy'}: {RUN_KIND[run.kind ?? 'deploy']}
+          {who ? ` (${who})` : ''} – bắt đầu {hhmm(run.createdAt)}
+          {!remote && ' · nút Thu thập mở lại khi xong'}
+          <a className="font-normal underline" href={run.url} target="_blank" rel="noreferrer">chi tiết</a>
+        </span>
+      ) : (
+        <span className="text-xs text-green-700" data-testid="server-idle">● Máy chủ rảnh – có thể bấm Thu thập</span>
+      )}
+    </section>
   );
 }

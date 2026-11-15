@@ -47,6 +47,39 @@ test('shared review: login gate, votes from two reviewers, team quality, export'
   expect(new Set(ex.labels.map((l: { reviewerId: string }) => l.reviewerId))).toEqual(new Set(['nguoi-duyet-a', 'nguoi-duyet-b']));
 });
 
+test('hourly automatic switch + busy server is visible and blocks "Thu thập"', async ({ page, request }) => {
+  test.setTimeout(90_000);
+  await page.goto('');
+  const strip = page.getByTestId('server-status');
+  const auto = strip.getByLabel('Tự động thu thập mỗi giờ');
+  await expect(auto).toBeChecked();
+  await expect(page.getByTestId('server-idle')).toBeVisible();
+  // switching needs a reviewer session
+  await auto.click(); // stays on: no session yet
+  await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
+  await expect(auto).toBeChecked();
+  await page.getByLabel('Họ tên').fill('Người duyệt D');
+  await page.getByLabel('Mã truy cập (do quản trị gửi)').fill('HCM-TEST-CODE');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await auto.click(); // saved on the worker, then reflected
+  await expect(auto).not.toBeChecked();
+  await expect(page.getByTestId('auto-info')).toContainText('Tắt – chỉ thu thập khi có người bấm');
+  await expect(page.getByTestId('auto-info')).toContainText('Người duyệt D đổi lúc');
+  await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập đang TẮT');
+  // the worker cron skips while switched off
+  expect((await (await request.get('http://127.0.0.1:5181/__cron')).json()).result).toBe('off');
+  await auto.click();
+  await expect(auto).toBeChecked();
+  // another run (e.g. a deploy after a push) occupies the server: shown to everyone, Thu thập disabled with the reason
+  await request.get('http://127.0.0.1:5181/__deploy');
+  await page.reload();
+  await expect(page.getByTestId('server-busy')).toContainText('Máy chủ đang chạy: cập nhật phần mềm & dữ liệu');
+  await expect(page.getByRole('button', { name: 'Thu thập' })).toBeDisabled();
+  await page.screenshot({ path: 'docs/screenshots/web-server-busy.png' });
+  await expect(page.getByTestId('server-idle')).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByRole('button', { name: 'Thu thập' })).toBeEnabled();
+});
+
 test('web "Thu thập" like the local app: choose from/to → server collection → progress → new period opens', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto('');

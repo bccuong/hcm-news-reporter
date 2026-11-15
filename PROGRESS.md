@@ -3,14 +3,18 @@
 ## Current status
 - Specification: v1.2
 - Milestones: **M0 DONE · M1 DONE · M2 DONE · M5 DONE (original template; PDF via Microsoft PowerPoint or LibreOffice, visually inspected)** · M3/M4 mostly done · M6 partial
-- Repository: https://github.com/bccuong/hcm-news-reporter (branch `main`, public) · Live site: https://bccuong.github.io/hcm-news-reporter/ (real data, hourly)
+- Repository: https://github.com/bccuong/hcm-news-reporter (branch `main`, public) · Live site: https://bccuong.github.io/hcm-news-reporter/ (real data, hourly auto collection switchable on the web + on-demand "Thu thập")
 - Last session: 2026-11-15 (session 8) – last commit `6293e33` (shared team review), all tests green locally
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 10 – web "Thu thập" with from/to, waiting for a GitHub token)
-- User asked: the web version must work like the local one (choose from/to, click Thu thập). Done in code + deployed (commit `83318b5`): web uses the same window controls; "Thu thập" → review worker `POST /collect` → dispatches `pages.yml` with inputs from/to/requested_by → `cloud-collect.ts --from --to` publishes a "custom" period → the page polls `/collect/status` and opens it. Max 72 h per request, one at a time, reviewer login required. Tests: vitest 80/80, playwright 8/8, live E2E 2/2 (fake GitHub API simulates dispatch → publish).
-- **Blocked on the user:** create a fine-grained GitHub token (repo bccuong/hcm-news-reporter only, permission Actions: Read and write) and store it in the worker themselves: `cd cloud/review-worker; npx wrangler@3.112.0 secret put GITHUB_TOKEN` (paste when asked). Until then the web shows "Chưa cấu hình thu thập theo yêu cầu (GITHUB_TOKEN)".
-- After the user confirms: log in on the real site, collect a short window (e.g. 2 h), watch the Actions run (`gh run list --workflow pages.yml`), verify the custom period opens; check `/collect/status`.
+## ▶ RESUME HERE (session 11 – auto-collect on/off switch, server status visible)
+- User saw "Đang có một lượt thu thập chạy" with no visible progress (a push-triggered deploy run + a real test dispatch were running) and asked for a switch for the hourly auto collection.
+- Done: hourly auto moved from GitHub `schedule:` (it had NEVER fired on this repo) to the worker's Cloudflare cron `7 * * * *` → `scheduledCollect` dispatches `pages.yml` with `trigger=auto` unless KV `cfg:auto` is off or the server is busy. Web: checkbox "Tự động thu thập mỗi giờ" (login required to change), public `GET /status` strip shows the running run (tự động / theo yêu cầu (tên) / cập nhật phần mềm) and disables Thu thập with the reason. Worker deployed (cron registered). Tests: vitest 82/82, live E2E 3/3.
+- Verified for real before this change: GITHUB_TOKEN set; on-demand 17:00→19:00 15/11 from the real site succeeded (run 20:21→20:25), custom period published.
+- Next: after the next :07, check `gh run list --workflow pages.yml` shows "Thu thập tự động hằng giờ" and `/status` lastAuto=dispatched.
+
+## (history) Session 10 – web "Thu thập" with from/to
+- Web uses the same window controls as local; "Thu thập" → worker `POST /collect` → dispatches `pages.yml` (from/to/requested_by) → `cloud-collect.ts --from --to` publishes a "custom" period → page polls `/collect/status` and opens it. Max 72 h, one at a time, login required. GITHUB_TOKEN = fine-grained PAT (this repo, Actions R/W) stored as worker secret.
 
 ## (history) Session 9 – shared review is LIVE
 - Review worker deployed: https://hcm-news-review.bccuong.workers.dev (health 200; real access code accepted, wrong code 401; export token OK). GitHub variable `REVIEW_API_URL` + secret `EXPORT_TOKEN` set.

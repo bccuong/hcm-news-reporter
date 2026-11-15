@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
-import { handle, type KVLike } from '../cloud/review-worker/src/handler.js';
+import { AUTO_TITLE, handle, scheduledCollect, type KVLike } from '../cloud/review-worker/src/handler.js';
 
 class MemKV implements KVLike {
   m = new Map<string, { v: string; meta?: unknown }>();
@@ -43,10 +43,12 @@ const fakeGitHub = async (url: string, init?: RequestInit): Promise<Response> =>
   }
   if (url.endsWith('/dispatches')) {
     const { inputs } = JSON.parse(String(init?.body));
-    const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'workflow_dispatch', display_title: `Thu thập theo yêu cầu ${inputs.from} → ${inputs.to}`, html_url: 'https://github.com/bccuong/hcm-news-reporter/actions' };
+    const auto = inputs.trigger === 'auto';
+    const title = auto ? AUTO_TITLE : `Thu thập theo yêu cầu ${inputs.from} → ${inputs.to} (${inputs.requested_by})`;
+    const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'workflow_dispatch', display_title: title, html_url: 'https://github.com/bccuong/hcm-news-reporter/actions' };
     runs.unshift(run);
     setTimeout(() => {
-      publishCustom(inputs.from, inputs.to, inputs.requested_by);
+      if (!auto) publishCustom(inputs.from, inputs.to, inputs.requested_by);
       run.status = 'completed';
       run.conclusion = 'success';
     }, 3000);
@@ -60,6 +62,18 @@ createServer(async (req, res) => {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
+  // test hooks: fire the hourly cron now; simulate a deploy run (push) occupying the server for a few seconds
+  if (req.url === '/__cron') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify(await scheduledCollect(env, fakeGitHub)));
+  }
+  if (req.url === '/__deploy') {
+    const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'push', display_title: 'Live data – collection & GitHub Pages deploy', html_url: 'https://github.com/bccuong/hcm-news-reporter/actions' };
+    runs.unshift(run);
+    setTimeout(() => ((run.status = 'completed'), (run.conclusion = 'success')), 6000);
+    res.writeHead(200);
+    return res.end('ok');
+  }
   const r = await handle(
     new Request(`http://127.0.0.1:5181${req.url}`, { method: req.method, headers: req.headers as Record<string, string>, body: req.method === 'GET' || req.method === 'HEAD' ? undefined : body }),
     env,
