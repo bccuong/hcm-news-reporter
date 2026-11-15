@@ -5,6 +5,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { deflateSync } from 'node:zlib';
 import path from 'node:path';
 import { AUTO_TITLE, handle, scheduledCollect, type KVLike } from '../cloud/review-worker/src/handler.js';
 
@@ -36,7 +37,43 @@ function publishCustom(from: string, to: string, by: string) {
   writeFileSync(path.join(LIVE, 'index.json'), JSON.stringify(index));
 }
 
+/** a real PNG (1200×800, solid colour; a text chunk pads it above the 8 KB "tracking pixel" threshold) for fixture photo URLs */
+function makePng(w = 1200, h = 800): Uint8Array {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (b: Buffer) => {
+    let c = 0xffffffff;
+    for (const x of b) c = crcTable[(c ^ x) & 0xff]! ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr.set([8, 2, 0, 0, 0], 8); // 8-bit RGB
+  const row = Buffer.alloc(1 + w * 3);
+  for (let x = 0; x < w; x++) row.set([30, 90 + (x % 120), 160], 1 + x * 3);
+  const raw = Buffer.concat(Array.from({ length: h }, () => row));
+  return new Uint8Array(Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr),
+    chunk('tEXt', Buffer.from(`Comment\0${'fixture photo '.repeat(700)}`, 'latin1')), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
+  ]));
+}
+const PNG = makePng();
+
 const fakeGitHub = async (url: string, init?: RequestInit): Promise<Response> => {
+  // publisher photos of the fixture sites (fetched by the worker's /img proxy)
+  if (/^https:\/\/fixture-[a-z]\.example\.vn\/img\//.test(url)) return new Response(PNG as Uint8Array<ArrayBuffer>, { status: 200, headers: { 'content-type': 'image/png' } });
   if (url.includes('/runs?status=')) {
     const st = /status=(\w+)/.exec(url)![1];
     return new Response(JSON.stringify({ total_count: runs.filter((r) => r.status === st).length }), { status: 200 });
@@ -66,6 +103,10 @@ createServer(async (req, res) => {
   if (req.url === '/__cron') {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify(await scheduledCollect(env, fakeGitHub)));
+  }
+  if (req.url === '/__png') {
+    res.writeHead(200, { 'content-type': 'image/png' });
+    return res.end(Buffer.from(PNG));
   }
   if (req.url === '/__deploy') {
     const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'push', display_title: 'Live data – collection & GitHub Pages deploy', html_url: 'https://github.com/bccuong/hcm-news-reporter/actions' };

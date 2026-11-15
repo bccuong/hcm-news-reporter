@@ -3,9 +3,9 @@
  *
  *  - Collects the IN-PROGRESS window (17:00 → 08:00, when one is running) and the LAST COMPLETED window
  *    (re-collected until 2 h after it ended, then frozen).
- *  - Publishes a REDACTED dataset to web/public/live/: titles, links, short sapo (≤ 300 chars), publication time,
- *    classification, candidate ledger, coverage and adapter health. Full article text and publisher photos are
- *    NOT published (copyright); the public page links to the original articles.
+ *  - Publishes the dataset to web/public/live/: titles, links, sapo, FULL article text (owner's decision, 15/11/2026,
+ *    so the web matches the local app), publication time, classification, candidate ledger, coverage and adapter health.
+ *    Photos are published as LINKS only (loaded from the publisher, like the local app), never copied.
  *  - Previous days are carried over from the currently deployed site (and give the adapter-health baseline).
  *  - Config: defaults from the repo (Skill sources/rules), or `deploy/config.json` (a backup exported from
  *    Settings › Sao lưu & lịch sử) when the operator commits one.
@@ -18,7 +18,7 @@ import path from 'node:path';
 import { HttpClient } from '../src/collector/http.js';
 import { reconcile, runCollection } from '../src/collector/run.js';
 import { defaultSettings, defaultSources } from '../src/domain/defaults.js';
-import { SettingsSchema, SourceSchema, type Article, type Candidate, type RunManifest, type Settings, type Source } from '../src/domain/schemas.js';
+import { SettingsSchema, SourceSchema, type Article, type Candidate, type ImageCandidate, type RunManifest, type Settings, type Source } from '../src/domain/schemas.js';
 import { lastCompletedWindow, toVnIso, vnDate, windowForReportDate } from '../src/domain/timeWindow.js';
 import { makePaths, Stores } from '../src/storage/stores.js';
 
@@ -32,11 +32,13 @@ const KEEP_DAYS = 14;
 const FREEZE_AFTER_H = 2;
 
 export interface PublicArticle {
-  id: string; sourceId: string; sourceName: string; url: string; title: string; sapo: string; publishedAt: string | null; modifiedAt: string | null;
+  id: string; sourceId: string; sourceName: string; url: string; title: string; sapo: string; /** full text (bodyText is rebuilt from these in the browser) */ contentSections: Article['contentSections']; author: string | null; publishedAt: string | null; modifiedAt: string | null;
   dateConfidence: Article['dateConfidence']; extractionCompleteness: Article['extractionCompleteness']; extractionWarnings: string[];
   sections: { paragraphs: number; headings: number; tables: number; figures: number }; location: Article['location']; relevance: Article['relevance'];
   primaryCategory: Article['primaryCategory']; classificationEvidence: string[]; suggestedAssessment: Article['suggestedAssessment']; assessmentEvidence: string[];
   duplicateGroupId: string | null; dateEvidence: Article['dateEvidence'];
+  /** photo LINKS only (the browser loads them from the publisher, like the local app); no copies are published */
+  images: Array<Pick<ImageCandidate, 'url' | 'caption' | 'credit' | 'origin' | 'rightsStatus'>>;
 }
 export interface PublicDay {
   kind: 'hcm-live-day'; reportDate: string; provisional: boolean; generatedAt: string;
@@ -58,11 +60,13 @@ const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, s.lastI
 export function toPublicArticle(a: Article): PublicArticle {
   const count = (t: string) => a.contentSections.filter((s) => s.type === t).length;
   return {
-    id: a.id, sourceId: a.sourceId, sourceName: a.sourceName, url: a.canonicalUrl ?? a.originalUrl, title: a.title, sapo: cut(a.sapo, 300),
+    id: a.id, sourceId: a.sourceId, sourceName: a.sourceName, url: a.canonicalUrl ?? a.originalUrl, title: a.title, sapo: a.sapo, contentSections: a.contentSections, author: a.author,
     publishedAt: a.publishedAt, modifiedAt: a.modifiedAt, dateConfidence: a.dateConfidence, extractionCompleteness: a.extractionCompleteness,
     extractionWarnings: a.extractionWarnings, sections: { paragraphs: count('paragraph'), headings: count('heading'), tables: count('table'), figures: count('figure') },
     location: a.location, relevance: a.relevance, primaryCategory: a.primaryCategory, classificationEvidence: a.classificationEvidence,
     suggestedAssessment: a.suggestedAssessment, assessmentEvidence: a.assessmentEvidence, duplicateGroupId: a.duplicateGroupId, dateEvidence: a.dateEvidence,
+    images: a.imageCandidates.filter((i) => /^https:\/\//.test(i.url) && i.rightsStatus !== 'not_usable').slice(0, 3)
+      .map((i) => ({ url: i.url, caption: i.caption ? cut(i.caption, 200) : undefined, credit: i.credit, origin: i.origin, rightsStatus: i.rightsStatus })),
   };
 }
 
@@ -75,7 +79,21 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-function loadConfig(): { settings: Settings; sources: Source[]; origin: string } {
+/**
+ * Configuration priority: (1) the shared configuration edited on the web ("Cài đặt", stored by the review worker),
+ * (2) deploy/config.json, (3) repo defaults. An invalid web configuration is reported and skipped, never half-applied.
+ */
+async function loadConfig(): Promise<{ settings: Settings; sources: Source[]; origin: string }> {
+  const api = process.env.REVIEW_API_URL?.trim();
+  if (api) {
+    const j = await getJson<{ config: { settings: unknown; sources: unknown; by: string; at: string } | null }>(`${api.replace(/\/$/, '')}/config`);
+    if (j?.config) {
+      const s = SettingsSchema.safeParse(j.config.settings);
+      const src = SourceSchema.array().safeParse(j.config.sources);
+      if (s.success && src.success) return { settings: s.data, sources: src.data, origin: `web config (${j.config.by}, ${j.config.at})` };
+      console.warn(`web config ignored (invalid): ${(s.error ?? src.error)?.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+    }
+  }
   const f = 'deploy/config.json';
   if (existsSync(f)) {
     const j = JSON.parse(readFileSync(f, 'utf8'));
@@ -86,7 +104,7 @@ function loadConfig(): { settings: Settings; sources: Source[]; origin: string }
 
 async function main() {
   const now = new Date();
-  const { settings, sources, origin } = loadConfig();
+  const { settings, sources, origin } = await loadConfig();
   const { startClock, endClock } = settings.reportWindow;
   mkdirSync(OUT, { recursive: true });
 

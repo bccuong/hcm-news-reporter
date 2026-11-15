@@ -142,6 +142,41 @@ describe('shared review worker', () => {
       expect(await scheduledCollect(env(), gh)).toMatchObject({ result: 'not_configured' });
     });
   });
+  describe('shared collector configuration + image proxy', () => {
+    const H = { origin: ORIGIN, 'x-review-code': 'HCM-test-1234', 'content-type': 'application/json' };
+    const put = (e: Env, settings: unknown, summary: string, code = 'HCM-test-1234') =>
+      handle(new Request('https://w.example/config', { method: 'POST', headers: { ...H, 'x-review-code': code }, body: JSON.stringify({ settings, sources: [{ id: 's1' }], summary, reviewer: 'C' }) }), e);
+    it('public read, reviewer write, every save kept in history, rollback restores', async () => {
+      const e = env();
+      expect(await (await handle(new Request('https://w.example/config'), e)).json()).toEqual({ config: null });
+      expect((await put(e, { a: 1 }, 'v1', 'wrong')).status).toBe(401);
+      expect((await handle(new Request('https://w.example/config', { method: 'POST', headers: H, body: JSON.stringify({ settings: [], sources: 'x' }) }), e)).status).toBe(400);
+      expect((await put(e, { a: 1 }, 'v1')).status).toBe(200);
+      await new Promise((r) => setTimeout(r, 5));
+      expect((await put(e, { a: 2 }, 'v2')).status).toBe(200);
+      const cur = (await (await handle(new Request('https://w.example/config'), e)).json()) as { config: { settings: { a: number }; by: string; summary: string } };
+      expect(cur.config).toMatchObject({ settings: { a: 2 }, by: 'C', summary: 'v2' });
+      const hist = (await (await handle(new Request('https://w.example/config/history', { headers: H }), e)).json()) as { items: Array<{ id: string; summary: string }> };
+      expect(hist.items.map((x) => x.summary)).toEqual(['v1']);
+      expect((await handle(new Request('https://w.example/config/rollback', { method: 'POST', headers: H, body: JSON.stringify({ id: hist.items[0]!.id }) }), e)).status).toBe(200);
+      const back = (await (await handle(new Request('https://w.example/config'), e)).json()) as { config: { settings: { a: number }; summary: string } };
+      expect(back.config.settings.a).toBe(1);
+      expect(back.config.summary).toMatch(/^Khôi phục/);
+    });
+    it('image proxy: reviewers only, https public images only', async () => {
+      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+      const f = async (url: string) => (url.includes('ok.vn') ? new Response(png, { headers: { 'content-type': 'image/png' } }) : new Response('<html>', { headers: { 'content-type': 'text/html' } }));
+      const get = (u: string, code = 'HCM-test-1234') => handle(new Request(`https://w.example/img?url=${encodeURIComponent(u)}`, { headers: { origin: ORIGIN, 'x-review-code': code } }), env(), f);
+      const r = await get('https://ok.vn/a.png');
+      expect(r.status).toBe(200);
+      expect(r.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+      expect(new Uint8Array(await r.arrayBuffer())).toEqual(png);
+      expect((await get('https://ok.vn/a.png', 'wrong')).status).toBe(401);
+      expect((await get('http://ok.vn/a.png')).status).toBe(400);
+      expect((await get('https://127.0.0.1/a.png')).status).toBe(400);
+      expect((await get('https://page.vn/not-image')).status).toBe(502);
+    });
+  });
   it('reviewer ids are ascii slugs', () => {
     expect(reviewerId('  Lê Đình Ánh ')).toBe('le-dinh-anh');
   });

@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import JSZip from 'jszip';
 
 /** Two reviewers label the same published (fixture) articles through the shared review store. */
 const FLOOD = /Liên quan: \[Mẫu thử\] Mưa lớn tối 8\.11 khiến/;
@@ -104,4 +106,80 @@ test('web "Thu thập" like the local app: choose from/to → server collection 
   await expect(page.getByTestId('remote-collect')).toHaveCount(0);
   const selected = page.locator('select').filter({ hasText: 'theo yêu cầu' });
   await expect(selected).toContainText('18:00 08/11/2026 → 07:00 09/11/2026 · Thu thập theo yêu cầu (Người duyệt C)');
+});
+
+/** The Department's template is private (reference/ is git-ignored): the template part runs only where it exists. */
+const TEMPLATE = 'reference/hcm-news-reporter-skill/assets/reference-report.pptx';
+
+test('web = local: photos, full article text, shared settings used by the server, export with the original template', async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const png = await (await request.get('http://127.0.0.1:5181/__png')).body();
+  // publisher photo links load straight from the publisher in the browser (fixture domains are served here)
+  await page.route(/^https:\/\/fixture-[a-z]\.example\.vn\/img\//, (r) => r.fulfill({ body: png, contentType: 'image/png' }).catch(() => {})); // a photo may still be loading when the page navigates
+  await page.goto('');
+  const card = page.locator('article').filter({ hasText: 'Mưa lớn tối 8.11 khiến' }).first();
+  const thumb = card.locator('img').first();
+  await expect(thumb).toBeVisible();
+  await expect.poll(() => thumb.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(1200);
+
+  // full text in "Xem chi tiết", like the local app
+  await card.getByRole('button', { name: 'Xem chi tiết' }).click();
+  await expect(page.getByText('Nhiều điểm ngập kéo dài')).toBeVisible();
+  await expect(page.getByText('Lượng mưa theo trạm')).toBeVisible();
+  await expect(page.getByText(/Kỳ này được đăng trước khi web có toàn văn/)).toHaveCount(0);
+  await page.screenshot({ path: 'docs/screenshots/web-full-text.png' });
+  await page.keyboard.press('Escape');
+  await page.goto('');
+
+  // settings are SHARED: saved through the worker, which the server collector reads (scripts/cloud-collect.ts)
+  await login(page, 'Người duyệt E', 'HCM-TEST-CODE');
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  await expect(dlg.getByTestId('shared-config-note')).toBeVisible();
+  await dlg.getByRole('button', { name: 'Báo cáo & mẫu', exact: true }).click();
+  await dlg.getByLabel('Tên cơ quan trên bìa').fill('SỞ XÂY DỰNG TP.HCM (thử web)');
+  if (existsSync(TEMPLATE)) {
+    await dlg.locator('input[type=file][accept=".pptx"]').setInputFiles(TEMPLATE);
+    await expect(page.getByText(/Đã lưu bản sao mẫu/)).toBeVisible();
+  }
+  await dlg.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect(page.getByText('Đã lưu cài đặt')).toBeVisible();
+  const cfg = (await (await request.get('http://127.0.0.1:5181/config')).json()).config;
+  expect(cfg.by).toBe('Người duyệt E');
+  expect(cfg.settings.report.organization).toBe('SỞ XÂY DỰNG TP.HCM (thử web)');
+  expect(cfg.settings.report.templateFile).toBe(''); // the template never leaves this browser
+  expect(cfg.sources.length).toBeGreaterThan(0);
+  await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
+
+  // export: selected story with the real photo, through the worker's image proxy
+  await page.getByLabel(/Chọn bài \[Mẫu thử\] Mưa lớn tối 8.11 khiến/).check();
+  await page.getByRole('button', { name: /Xuất báo cáo \(1\)/ }).click();
+  // capture the generated file in the page (a real browser download makes Playwright+Edge throw at teardown)
+  await page.evaluate(() => {
+    const w = window as unknown as { __dl?: { name: string; b64: string } };
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      const name = this.download;
+      void fetch(this.href).then((r) => r.arrayBuffer()).then((buf) => {
+        let s = '';
+        const u = new Uint8Array(buf);
+        for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
+        w.__dl = { name, b64: btoa(s) };
+      });
+    };
+  });
+  await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __dl?: unknown }).__dl), { timeout: 30_000 }).toBe(true);
+  const out = await page.evaluate(() => (window as unknown as { __dl: { name: string; b64: string } }).__dl);
+  const file = { suggestedFilename: () => out.name };
+  const zip = await JSZip.loadAsync(Buffer.from(out.b64, 'base64'));
+  const media = Object.keys(zip.files).filter((f) => f.startsWith('ppt/media/'));
+  const slidesXml = (await Promise.all(Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f)).map((f) => zip.file(f)!.async('string')))).join('');
+  expect(slidesXml).toContain('Mưa lớn tối 8.11');
+  expect(media.length).toBeGreaterThan(0); // photo embedded
+  if (existsSync(TEMPLATE)) {
+    expect(file.suggestedFilename()).not.toContain('DEMO');
+    expect(slidesXml).not.toContain('BẢN DEMO');
+  } else expect(file.suggestedFilename()).toContain('DEMO');
+  await page.screenshot({ path: 'docs/screenshots/web-export-template.png' });
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });

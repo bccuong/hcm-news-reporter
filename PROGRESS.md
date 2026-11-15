@@ -7,7 +7,13 @@
 - Last session: 2026-11-15 (session 8) – last commit `6293e33` (shared team review), all tests green locally
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 11 – auto-collect on/off switch, server status visible)
+## ▶ RESUME HERE (session 11b – web made equal to local)
+- User: "web articles have no photos like local – find the differences and make them the same". Decisions asked and answered: full text → **publish publicly**; export → **template chosen from the user's computer (browser-only)**; settings → **apply to the server collector**.
+- Done: photos (links only, loaded from the publisher like local), full text (`contentSections`; bodyText rebuilt in the browser), shared config in worker KV (`/config`, history, rollback) read by `cloud-collect.ts` via `REVIEW_API_URL`, browser export with the original template + real photos via worker `/img`. Tests: vitest 84/84, playwright 8/8, live E2E 4/4 (the template part runs only where reference/ exists). Worker deployed.
+- Remaining local-only: detect/test source, per-source rescan (need direct network). PDF only via PowerPoint locally (web: open .pptx › Save as PDF).
+- Periods published before this change have no photos/full text; new collections have them.
+
+## (history) Session 11 – auto-collect on/off switch, server status visible
 - User saw "Đang có một lượt thu thập chạy" with no visible progress (a push-triggered deploy run + a real test dispatch were running) and asked for a switch for the hourly auto collection.
 - Done: hourly auto moved from GitHub `schedule:` (it had NEVER fired on this repo) to the worker's Cloudflare cron `7 * * * *` → `scheduledCollect` dispatches `pages.yml` with `trigger=auto` unless KV `cfg:auto` is off or the server is busy. Web: checkbox "Tự động thu thập mỗi giờ" (login required to change), public `GET /status` strip shows the running run (tự động / theo yêu cầu (tên) / cập nhật phần mềm) and disables Thu thập with the reason. Worker deployed (cron registered). Tests: vitest 82/82, live E2E 3/3.
 - Verified for real before this change: GITHUB_TOKEN set; on-demand 17:00→19:00 15/11 from the real site succeeded (run 20:21→20:25), custom period published.

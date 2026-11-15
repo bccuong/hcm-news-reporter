@@ -54,6 +54,7 @@ jobs:
           REQ_FROM: ${{ inputs.from }}
           REQ_TO: ${{ inputs.to }}
           REQ_BY: ${{ inputs.requested_by }}
+          REVIEW_API_URL: ${{ vars.REVIEW_API_URL }} # shared configuration edited on the web (Cài đặt)
         run: |
           if [ -n "$REQ_FROM" ]; then
             npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/hcm-news-reporter/" --out web/public/live --from "$REQ_FROM" --to "$REQ_TO" --requested-by "$REQ_BY"

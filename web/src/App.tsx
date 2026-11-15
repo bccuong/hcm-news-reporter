@@ -149,7 +149,8 @@ export function App() {
       }
     }
     try {
-      if (preset === 'custom' && settings) {
+      // remember the custom window (local/demo only; on the web settings are SHARED with the server collector)
+      if (preset === 'custom' && settings && api.mode !== 'live') {
         const s2 = await api.saveSettings({ ...settings, reportWindow: { ...settings.reportWindow, customFrom: windowIso.from, customTo: windowIso.to } }, 'Lưu khung giờ tùy chỉnh');
         setSettings(s2);
       }
@@ -320,7 +321,7 @@ export function App() {
       )}
       {api.mode === 'live' && (
         <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
-          <b>DỮ LIỆU THẬT</b> – {server?.auto.enabled === false ? 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)' : 'thu thập tự động mỗi giờ trên máy chủ GitHub'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}. Hiển thị tiêu đề, sapo ngắn, nguồn, độ phủ (không đăng toàn văn bài).
+          <b>DỮ LIỆU THẬT</b> – {server?.auto.enabled === false ? 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)' : 'thu thập tự động mỗi giờ trên máy chủ GitHub'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}.
           {api.shared ? <> Đăng nhập để <b>chọn khung giờ và bấm Thu thập</b> (chạy trên máy chủ GitHub, 5–10 phút) và duyệt tin: ✓/✗, sửa lĩnh vực/tính chất, góp ý.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
         </div>
       )}
@@ -959,7 +960,7 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
                 return (
                   <div className="mt-1">
                     Bộ bóc tách: {a.extractionAdapterVersion} · {k.paragraphs} đoạn · {k.headings} tiêu đề phụ · {k.tables} bảng · {k.figures} ảnh
-                    {pub && <div className="mt-1 text-slate-600">Bản web công khai không đăng toàn văn bài – bấm "Mở bài gốc" để đọc đầy đủ.</div>}
+                    {pub && <div className="mt-1 text-slate-600">Kỳ này được đăng trước khi web có toàn văn bài – bấm "Mở bài gốc" để đọc đầy đủ (các lượt thu thập mới có đủ nội dung).</div>}
                   </div>
                 );
               })()}

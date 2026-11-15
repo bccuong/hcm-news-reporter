@@ -108,6 +108,11 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
             <X className="h-4 w-4" />
           </button>
         </header>
+        {api.mode === 'live' && api.shared && (
+          <div className="border-b border-teal-200 bg-teal-50 px-4 py-2 text-xs text-teal-900" data-testid="shared-config-note">
+            <b>Cài đặt dùng chung:</b> bấm Lưu (cần đăng nhập người duyệt) là áp dụng cho <b>máy chủ thu thập</b> từ lượt kế tiếp (tự động hoặc bấm Thu thập) và cho mọi người dùng web. Mỗi lần lưu được ghi vào Lịch sử, có thể khôi phục. Riêng <b>mẫu PPTX</b> chỉ lưu trong trình duyệt này.
+          </div>
+        )}
         {validation && !validation.success && (
           <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-800">
             {validation.error.issues.slice(0, 5).map((i) => (
@@ -463,6 +468,7 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
       )}
       <Section title="Mẫu PowerPoint">
         <p className="text-xs">Tệp mẫu đang chọn: <b>{s.report.templateFile || '(chưa có – dùng bố cục demo)'}</b></p>
+        {api.mode !== 'local' && <p className="text-xs text-slate-600">Bản web: mẫu chỉ lưu trong <b>trình duyệt này</b> (không tải lên máy chủ hay GitHub); xuất báo cáo dựng ngay trong trình duyệt, ảnh báo gốc lấy qua máy chủ duyệt tin (cần đăng nhập). PDF: mở tệp .pptx bằng PowerPoint › Lưu thành PDF.</p>}
         <label className="btn-ghost w-fit cursor-pointer">
           <FileUp className="h-4 w-4" /> Tải mẫu .pptx
           <input type="file" accept=".pptx" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />

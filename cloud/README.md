@@ -21,6 +21,12 @@ Báo ──▶ GitHub Actions: thu thập ──▶ GitHub Pages (một bản we
 - **Push mã mới** cũng chạy một lượt thu thập + deploy.
 - `GET /status` (công khai) trả về chế độ tự động + lượt đang chạy; web hiển thị ở dòng trạng thái máy chủ và khóa nút Thu thập khi máy chủ bận. `POST /auto {enabled}` (cần mã truy cập) bật/tắt.
 
+## Web giống bản local (quyết định của chủ dự án 15/11/2026)
+- **Toàn văn bài** được đăng công khai trong dữ liệu web (`contentSections`), ảnh chỉ đăng **link** (trình duyệt tải trực tiếp từ báo, như bản local).
+- **Cài đặt dùng chung**: `GET /config` (công khai, không chứa bí mật) / `POST /config` (cần mã truy cập; mỗi lần lưu giữ bản cũ ở `cfg:hist:<thời điểm>`, tối đa 30) / `GET /config/history`, `POST /config/rollback`. Bộ thu thập trên GitHub (`scripts/cloud-collect.ts`, biến `REVIEW_API_URL`) dùng cấu hình này; cấu hình không hợp lệ bị bỏ qua (dùng mặc định) và ghi log.
+- **Xuất báo cáo trên web**: người dùng chọn tệp mẫu .pptx của Sở **từ máy mình** (Cài đặt › Báo cáo & mẫu) – lưu trong IndexedDB của trình duyệt, không tải lên đâu; PPTX dựng ngay trong trình duyệt bằng cùng bộ điền mẫu với bản local. Ảnh báo gốc lấy qua `GET /img?url=` (cần mã truy cập, chỉ https, chỉ ảnh ≤ 8 MB). PDF: mở .pptx bằng PowerPoint › Lưu thành PDF (bản local chuyển tự động).
+- Còn khác bản local: dò/thử nguồn và "quét lại từng nguồn" cần mạng trực tiếp từ máy → chỉ ở bản local; trên web bấm **Thu thập** để quét lại cả khung giờ.
+
 ## Gửi cho người duyệt
 - Link: https://bccuong.github.io/hcm-news-reporter/
 - Mã truy cập: gửi riêng (không đăng công khai). Đổi mã: `cd cloud/review-worker && npx wrangler secret put ACCESS_CODE` (người cũ phải đăng nhập lại).

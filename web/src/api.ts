@@ -4,7 +4,7 @@ import { judgeRelevance } from '../../src/domain/relevance';
 import { computeRelevanceQuality, type RelevanceQuality } from '../../src/domain/quality';
 import type { Article, Candidate, ReviewDecision, RuleNode, RunManifest, Settings, Source } from '../../src/domain/schemas';
 import { SettingsSchema, SourceSchema } from '../../src/domain/schemas';
-import { lastCompletedWindow, type ReportWindow } from '../../src/domain/timeWindow';
+import { lastCompletedWindow, vnDate, type ReportWindow } from '../../src/domain/timeWindow';
 import skillWebsites from '../../src/domain/data/skill-websites.txt?raw';
 import { z } from 'zod';
 
@@ -167,19 +167,60 @@ const store = {
   },
 };
 
-interface DemoBundle { manifest: RunManifest; candidates: Candidate[]; articles: Article[] }
-const NO_NET = 'Bản web trên GitHub Pages chỉ để xem: dữ liệu được thu thập tự động mỗi giờ trên máy chủ GitHub. Muốn tự thu thập, sửa cấu hình hay xuất báo cáo theo mẫu Sở, hãy dùng bản local trên Windows (npm start).';
+/* small IndexedDB store for files that must stay in this browser (the department's PPTX template) */
+function idbOpen(): Promise<IDBDatabase> {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('hcm-news-reporter', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('files');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbPut(key: string, value: unknown) {
+  const db = await idbOpen();
+  await new Promise<void>((res, rej) => {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').put(value, key);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbGet<T>(key: string): Promise<T | undefined> {
+  try {
+    const db = await idbOpen();
+    return await new Promise<T | undefined>((res, rej) => {
+      const r = db.transaction('files').objectStore('files').get(key);
+      r.onsuccess = () => res(r.result as T | undefined);
+      r.onerror = () => rej(r.error);
+    });
+  } catch {
+    return undefined;
+  }
+}
+function toBase64(b: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 
-/** Redacted public article (scripts/cloud-collect.ts) → Article shape used by the UI (no full text, no photos). */
+interface DemoBundle { manifest: RunManifest; candidates: Candidate[]; articles: Article[] }
+const NO_NET = 'Chức năng này cần truy cập mạng trực tiếp từ máy (dò/thử nguồn, quét lại từng nguồn) nên chỉ có ở bản local trên Windows (npm start). Trên web: chọn khung giờ và bấm Thu thập để máy chủ quét lại toàn bộ.';
+
+/** Published article (scripts/cloud-collect.ts) → Article shape used by the UI. Periods published before 15/11/2026 have no full text. */
 function fromPublic(p: any, runId: string, generatedAt: string): Article {
+  const sections: Article['contentSections'] = p.contentSections ?? [];
   return {
     id: p.id, runId, sourceId: p.sourceId, sourceName: p.sourceName, originType: 'website', originalUrl: p.url, canonicalUrl: p.url, title: p.title, sapo: p.sapo,
-    bodyText: '', contentSections: [], articleLinks: [], author: null, publishedAt: p.publishedAt, modifiedAt: p.modifiedAt, collectedAt: generatedAt,
+    // same rule as the extractor (src/collector/extract.ts): every non-figure section, one per line
+    bodyText: sections.filter((s) => s.type !== 'figure').map((s) => s.text).join('\n'), contentSections: sections, articleLinks: [], author: p.author ?? null, publishedAt: p.publishedAt, modifiedAt: p.modifiedAt, collectedAt: generatedAt,
     dateConfidence: p.dateConfidence, dateEvidence: p.dateEvidence ?? [], extractionAdapterVersion: 'cloud', extractionCompleteness: p.extractionCompleteness,
     extractionWarnings: p.extractionWarnings ?? [], continuation: { detected: false, urls: [] }, location: p.location, relevance: p.relevance,
     primaryCategory: p.primaryCategory, secondaryCategories: [], classificationEvidence: p.classificationEvidence ?? [], suggestedAssessment: p.suggestedAssessment,
-    assessmentEvidence: p.assessmentEvidence ?? [], imageCandidates: [], duplicateGroupId: p.duplicateGroupId, warnings: [],
-    publicSections: p.sections,
+    assessmentEvidence: p.assessmentEvidence ?? [],
+    // photo links (loaded from the publisher, exactly like the local app)
+    imageCandidates: (p.images ?? []).map((i: any) => ({ ...i, sourceArticleUrl: p.url })),
+    duplicateGroupId: p.duplicateGroupId, warnings: [],
+    publicSections: sections.length ? undefined : p.sections,
   } as Article & { publicSections: unknown };
 }
 
@@ -228,21 +269,65 @@ class DemoApi implements Api {
     h.unshift({ id: `${Date.now()}-${kind}`, at: new Date().toISOString(), kind, summary, value });
     store.set('history', h.slice(0, 50));
   }
+  /* ---- configuration. Web with the review worker: ONE shared configuration, used by the server collector too ---- */
+  private serverCfg: Promise<{ settings: Settings; sources: Source[] } | null> | null = null;
+  private loadServerCfg() {
+    this.serverCfg ??= fetch(`${this.reviewApi}/config`, { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : { config: null }))
+      .then((j: any) => {
+        if (!j?.config) return null;
+        const s = SettingsSchema.safeParse(j.config.settings);
+        const src = z.array(SourceSchema).safeParse(j.config.sources);
+        return s.success && src.success ? { settings: s.data, sources: src.data } : null;
+      })
+      .catch(() => null);
+    return this.serverCfg;
+  }
+  /** the PPTX template lives in THIS browser only (never uploaded): overlay its name on the shared settings */
+  private withLocalTemplate(s: Settings): Settings {
+    return { ...s, report: { ...s.report, templateFile: store.get<string>('tplName') ?? '' } };
+  }
+  private static stripTemplate(s: Settings): Settings {
+    return { ...s, report: { ...s.report, templateFile: '' } };
+  }
+  private async pushServerCfg(settings: Settings, sources: Source[], summary: string) {
+    const who = store.get<{ name: string; code: string }>('reviewer');
+    if (!who) throw new ApiError('Hãy đăng nhập người duyệt để lưu cài đặt – cài đặt trên web dùng chung cho máy chủ thu thập');
+    const body = { settings: DemoApi.stripTemplate(settings), sources, summary, reviewer: who.name };
+    const r = await fetch(`${this.reviewApi}/config`, { method: 'POST', headers: { 'x-review-code': who.code, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được cài đặt (HTTP ${r.status})`);
+    this.serverCfg = Promise.resolve({ settings: body.settings, sources });
+  }
+  private get sharedCfg() {
+    return !!this.reviewApi && this.mode === 'live';
+  }
   async getSettings() {
+    if (this.sharedCfg) return this.withLocalTemplate((await this.loadServerCfg())?.settings ?? defaultSettings());
     const s = store.get<Settings>('settings');
     return s ? SettingsSchema.parse(s) : defaultSettings();
   }
   async saveSettings(s: Settings, summary: string) {
     const v = SettingsSchema.parse(s);
+    if (this.sharedCfg) {
+      // only the browser-local template changed → nothing to share
+      const cur = await this.getSettings();
+      if (JSON.stringify(DemoApi.stripTemplate(cur)) !== JSON.stringify(DemoApi.stripTemplate(v))) await this.pushServerCfg(v, await this.getSources(), summary);
+      return this.withLocalTemplate(v);
+    }
     this.hist('settings', summary, await this.getSettings());
     store.set('settings', v);
     return v;
   }
   async getSources() {
+    if (this.sharedCfg) return (await this.loadServerCfg())?.sources ?? defaultSources(skillWebsites);
     return store.get<Source[]>('sources') ?? defaultSources(skillWebsites);
   }
   async saveSources(list: Source[], summary: string) {
     const v = z.array(SourceSchema).parse(list);
+    if (this.sharedCfg) {
+      await this.pushServerCfg(await this.getSettings(), v, summary);
+      return v;
+    }
     this.hist('sources', summary, await this.getSources());
     store.set('sources', v);
     return v;
@@ -270,9 +355,25 @@ class DemoApi implements Api {
     return { errors: validateRule(root), results };
   }
   async history() {
+    if (this.sharedCfg) {
+      const who = store.get<{ name: string; code: string }>('reviewer');
+      if (!who) return [];
+      const r = await fetch(`${this.reviewApi}/config/history`, { headers: { 'x-review-code': who.code }, cache: 'no-cache' });
+      if (!r.ok) throw new ApiError('Không tải được lịch sử cấu hình');
+      const j = (await r.json()) as { items: Array<{ id: string; at: string; by: string; summary: string }> };
+      return j.items.map((x) => ({ id: x.id, at: x.at, kind: 'settings', summary: `${x.summary} – ${x.by}` }));
+    }
     return (store.get<HistoryEntry[]>('history') ?? []).map(({ id, at, kind, summary }) => ({ id, at, kind, summary }));
   }
   async rollback(id: string) {
+    if (this.sharedCfg) {
+      const who = store.get<{ name: string; code: string }>('reviewer');
+      if (!who) throw new ApiError('Hãy đăng nhập người duyệt để khôi phục cấu hình');
+      const r = await fetch(`${this.reviewApi}/config/rollback`, { method: 'POST', headers: { 'x-review-code': who.code, 'content-type': 'application/json' }, body: JSON.stringify({ id, reviewer: who.name }) });
+      if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không khôi phục được');
+      this.serverCfg = null;
+      return;
+    }
     const h = store.get<Array<HistoryEntry & { value: unknown }>>('history') ?? [];
     const e = h.find((x) => x.id === id);
     if (!e) throw new ApiError('Không tìm thấy phiên bản');
@@ -401,35 +502,120 @@ class DemoApi implements Api {
     if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được đánh giá (HTTP ${r.status})`);
   }
   async capabilities() {
-    return { pdf: false, soffice: null, templateFile: null, templateFidelity: false };
+    const tpl = store.get<string>('tplName') ?? null;
+    return { pdf: false, soffice: null, templateFile: tpl, templateFidelity: !!tpl };
   }
+  /** article photo for the report, through the review worker (publishers do not allow cross-origin reads) */
+  private async fetchImage(url: string, minWidth: number) {
+    const { imageSize } = await import('../../src/reports/templatePptx');
+    const who = store.get<{ name: string; code: string }>('reviewer');
+    if (!who || !this.reviewApi) return null;
+    try {
+      const r = await fetch(`${this.reviewApi}/img?url=${encodeURIComponent(url)}`, { headers: { 'x-review-code': who.code } });
+      if (!r.ok) return null;
+      const buf = new Uint8Array(await r.arrayBuffer());
+      if (buf.length < 8_000 || buf.length > 8_000_000) return null; // tracking pixel / oversized (same rule as the local app)
+      const size = imageSize(buf);
+      if (!size || size.width < minWidth || size.width / size.height > 4 || size.height / size.width > 4) return null;
+      return { bytes: buf, ...size };
+    } catch {
+      return null;
+    }
+  }
+  /** Same report as the local app: the department's ORIGINAL template (chosen from this computer) with real article photos. */
   async exportRun(id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean): Promise<ExportResult> {
     const { assembleStories } = await import('../../src/reports/assemble');
     const { buildReportPptx, checkFit } = await import('../../src/reports/pptx');
+    const { buildFromTemplate, TemplateMismatchError } = await import('../../src/reports/templatePptx');
     const b = await this.load(id);
     const settings = await this.getSettings();
     const asm = assembleStories(b.articles, await this.review(id), settings);
-    const warn = [...asm.warnings, ...checkFit(asm.stories).map((f) => f.message), 'Bản web: bố cục DEMO, không nhúng ảnh báo (báo cáo theo mẫu Sở chỉ xuất ở bản local).'];
+    const warn = [...asm.warnings, ...checkFit(asm.stories).map((f) => f.message)];
     if (asm.blockers.length || dryRun) return { ok: false, dryRun, blockers: asm.blockers, warnings: warn, stories: asm.stories.length };
+    const articles = b.articles;
+    const images = new Map<string, { bytes: Uint8Array; ext: 'jpeg' | 'png'; width: number; height: number; credit?: string; sourceUrl: string }>();
+    const stories = asm.stories.map((s) => ({ ...s, imageKey: null as string | null }));
+    let tcFeatureKey: string | null = null;
+    if (settings.editorial.photoPolicy !== 'link_only') {
+      if (!this.shared?.session()) warn.push('Chưa đăng nhập người duyệt – không tải được ảnh báo gốc, các tin dùng bố cục chữ.');
+      else
+        for (const st of stories) {
+          if (!st.imageUrl || st.group === 'neutral') continue;
+          const art = articles.find((a) => a.id === st.articleId);
+          const owner = [st.articleId, ...st.mergedArticleIds].map((x) => articles.find((a) => a.id === x)).find((a) => a?.imageCandidates.some((i) => i.url === st.imageUrl));
+          const cand = owner?.imageCandidates.find((i) => i.url === st.imageUrl);
+          if (settings.editorial.photoPolicy === 'strict_verified_only' && cand?.rightsStatus !== 'verified') {
+            warn.push(`${st.id}: ảnh chưa xác minh quyền – để trống theo chính sách`);
+            continue;
+          }
+          const img = await this.fetchImage(st.imageUrl, settings.editorial.minImageWidth);
+          if (img) {
+            const pub = owner?.sourceName ?? st.sources[0]?.name;
+            const credit = cand?.credit ? `${cand.credit}/${pub}` : pub;
+            images.set(st.imageUrl, { ...img, credit, sourceUrl: owner?.canonicalUrl ?? owner?.originalUrl ?? st.sources[0]?.url ?? st.imageUrl });
+            st.imageKey = st.imageUrl;
+            st.image = { data: `data:image/${img.ext};base64,${toBase64(img.bytes)}`, caption: cand?.caption, credit };
+          } else warn.push(`${st.id}: không tải được ảnh gốc hợp lệ (jpeg/png, đủ kích thước) – dùng bố cục chữ`);
+          if (st.group === 'positive' && !tcFeatureKey && art) {
+            const second = art.imageCandidates.find((i) => i.url !== st.imageUrl && i.origin === 'body' && i.rightsStatus !== 'not_usable');
+            const f2 = second ? await this.fetchImage(second.url, settings.editorial.minImageWidth) : null;
+            if (second && f2) {
+              images.set(second.url, { ...f2, credit: second.credit ? `${second.credit}/${st.sources[0]?.name}` : st.sources[0]?.name, sourceUrl: st.sources[0]?.url ?? second.url });
+              tcFeatureKey = second.url;
+            }
+          }
+        }
+    }
     const w = b.manifest.window;
-    const d = w.to.slice(0, 10).split('-');
-    const bytes = await buildReportPptx({
-      organization: settings.report.organization, window: w, reportDateLabel: `${d[2]}/${d[1]}/${d[0]}`, stories: asm.stories,
-      storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, isDemoTemplate: true,
-    });
+    const date = vnDate(new Date(w.to));
+    const [y, mo, d] = date.split('-');
+    const hhmm = (iso: string) => iso.slice(11, 16).replace(':', '');
+    const base = settings.report.filenamePattern.replace('{date}', date).replace('{from}', hhmm(w.from)).replace('{to}', hhmm(w.to)).replace(/[^\w.-]+/g, '_');
+    let bytes: Uint8Array;
+    let name: string;
+    const tpl = store.get<string>('tplName') ? await idbGet<Uint8Array>('template') : undefined;
+    if (tpl) {
+      try {
+        const coverImageKey = stories.find((s) => s.group === 'needs_attention' && s.imageKey)?.imageKey ?? stories.find((s) => s.imageKey)?.imageKey ?? null;
+        const r = await buildFromTemplate(tpl, { organization: settings.report.organization, reportDate: date, stories, images, coverImageKey, tcFeatureKey, contactEmail: settings.report.contactEmail });
+        bytes = r.bytes;
+        warn.push(...r.notes);
+        name = `${base}.pptx`;
+      } catch (e) {
+        if (!(e instanceof TemplateMismatchError)) throw e;
+        return { ok: false, blockers: [`BLOCKED – mẫu PPTX không khớp cấu trúc đã khảo sát: ${e.message}`], warnings: warn };
+      }
+    } else {
+      warn.push('Trình duyệt này chưa có mẫu PPTX gốc (Cài đặt › Báo cáo & mẫu › Tải mẫu .pptx) – đã xuất bằng bố cục DEMO.');
+      bytes = await buildReportPptx({
+        organization: settings.report.organization, window: w, reportDateLabel: `${d}/${mo}/${y}`, stories,
+        storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, isDemoTemplate: true,
+      });
+      name = `${base}_DEMO.pptx`;
+    }
     const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `HCM_Diem_tin_DEMO_${w.to.slice(0, 10)}.pptx`;
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    return { ok: true, files: [a.download], pdfStatus: formats.includes('pdf') ? 'unavailable: bản web không chuyển PDF (cần LibreOffice ở bản local)' : 'not_requested', warnings: warn };
+    return {
+      ok: true, files: [name], warnings: warn,
+      pdfStatus: formats.includes('pdf') ? 'unavailable: trình duyệt không tự chuyển PDF – mở tệp .pptx bằng PowerPoint › Lưu thành PDF (hoặc dùng bản local để xuất PDF tự động)' : 'not_requested',
+    };
   }
   exportUrl(f: string) {
     return f;
   }
-  async uploadTemplate(): Promise<never> {
-    throw new ApiError('Bản demo không lưu được tệp mẫu PPTX – dùng bản local.');
+  /** the template stays in THIS browser (IndexedDB) – never uploaded anywhere */
+  async uploadTemplate(name: string, base64: string) {
+    const bin = atob(base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new ApiError('Tệp không phải PPTX hợp lệ');
+    await idbPut('template', bytes);
+    store.set('tplName', name);
+    return { templateFile: name };
   }
   /** labels live in this browser (localStorage); computed over every period listed */
   async relevanceQuality() {

@@ -169,6 +169,76 @@ async function serverStatus(env: Env, f: Fetch, h: Record<string, string>) {
   return json({ collectEnabled: true, auto, lastAuto, running: runs.filter((x) => x.status !== 'completed') }, r.ok ? 200 : 502, h);
 }
 
+/* ---------- shared collector configuration (settings + sources) edited on the web, used by the server collector ---------- */
+export interface SharedConfig { settings: Record<string, unknown>; sources: unknown[]; by: string; at: string; summary: string }
+const CONFIG_KEY = 'cfg:config';
+const HIST_PREFIX = 'cfg:hist:';
+const KEEP_HISTORY = 30;
+const MAX_CONFIG_BYTES = 1_000_000;
+
+async function saveConfig(env: Env, next: SharedConfig) {
+  const prev = await env.REVIEWS.get(CONFIG_KEY);
+  if (prev) {
+    const p = JSON.parse(prev) as SharedConfig;
+    // history key sorts by time; metadata lets the web list versions without reading values
+    await env.REVIEWS.put(`${HIST_PREFIX}${p.at}`, prev, { metadata: { by: p.by, at: p.at, summary: p.summary.slice(0, 200) } });
+    const old = (await listAll(env.REVIEWS, HIST_PREFIX)).map((k) => k.name).sort();
+    for (const k of old.slice(0, Math.max(0, old.length - KEEP_HISTORY))) await env.REVIEWS.delete(k);
+  }
+  await env.REVIEWS.put(CONFIG_KEY, JSON.stringify(next));
+}
+
+async function configRoutes(req: Request, url: URL, env: Env, h: Record<string, string>): Promise<Response | null> {
+  if (url.pathname === '/config' && req.method === 'POST') {
+    if (Number(req.headers.get('content-length') ?? 0) > MAX_CONFIG_BYTES) return json({ error: 'Cấu hình quá lớn' }, 413, h);
+    let b: { settings?: unknown; sources?: unknown; summary?: unknown; reviewer?: unknown };
+    try {
+      b = (await req.json()) as typeof b;
+    } catch {
+      return json({ error: 'INVALID_JSON' }, 400, h);
+    }
+    if (!b.settings || typeof b.settings !== 'object' || Array.isArray(b.settings) || !Array.isArray(b.sources)) return json({ error: 'Cấu hình không hợp lệ (cần settings + sources)' }, 400, h);
+    const cfg: SharedConfig = {
+      settings: b.settings as Record<string, unknown>, sources: b.sources, by: String(b.reviewer ?? '').trim().slice(0, 40) || 'web',
+      at: new Date().toISOString(), summary: String(b.summary ?? '').slice(0, 300) || 'Cập nhật cấu hình',
+    };
+    await saveConfig(env, cfg);
+    return json({ ok: true, by: cfg.by, at: cfg.at }, 200, h);
+  }
+  if (url.pathname === '/config/history' && req.method === 'GET') {
+    const keys = await listAll(env.REVIEWS, HIST_PREFIX);
+    const items = keys.map((k) => ({ id: k.name.slice(HIST_PREFIX.length), ...(k.metadata as { by: string; at: string; summary: string }) })).sort((a, b) => b.id.localeCompare(a.id));
+    return json({ items }, 200, h);
+  }
+  if (url.pathname === '/config/rollback' && req.method === 'POST') {
+    const b = (await req.json().catch(() => ({}))) as { id?: string; reviewer?: string };
+    const v = b.id ? await env.REVIEWS.get(`${HIST_PREFIX}${b.id}`) : null;
+    if (!v) return json({ error: 'Không tìm thấy phiên bản' }, 404, h);
+    const old = JSON.parse(v) as SharedConfig;
+    await saveConfig(env, { ...old, by: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', at: new Date().toISOString(), summary: `Khôi phục phiên bản ${b.id}` });
+    return json({ ok: true }, 200, h);
+  }
+  return null;
+}
+
+/** Article photo for the report (browser export): https only, real jpeg/png/webp, ≤ 8 MB. */
+async function imageProxy(url: URL, f: Fetch, h: Record<string, string>) {
+  const target = url.searchParams.get('url') ?? '';
+  let u: URL;
+  try {
+    u = new URL(target);
+  } catch {
+    return json({ error: 'URL không hợp lệ' }, 400, h);
+  }
+  if (u.protocol !== 'https:' || /^(localhost|\d+\.\d+\.\d+\.\d+|\[.*\])$/i.test(u.hostname)) return json({ error: 'Chỉ nhận ảnh https công khai' }, 400, h);
+  const r = await f(u.toString(), { headers: { 'user-agent': 'Mozilla/5.0 HCMNewsReporter/0.1', accept: 'image/jpeg,image/png;q=0.9,image/*;q=0.5' }, redirect: 'follow' });
+  const type = r.headers.get('content-type') ?? '';
+  if (!r.ok || !/^image\//.test(type)) return json({ error: `Không tải được ảnh (HTTP ${r.status})` }, 502, h);
+  const buf = await r.arrayBuffer();
+  if (buf.byteLength > 8_000_000) return json({ error: 'Ảnh quá lớn' }, 413, h);
+  return new Response(buf, { status: 200, headers: { 'content-type': type, 'cache-control': 'private, max-age=3600', ...h } });
+}
+
 /** On-demand collection for a custom window: dispatch the collection workflow (one at a time). */
 async function collect(req: Request, env: Env, f: Fetch, h: Record<string, string>) {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ error: 'Chưa cấu hình thu thập theo yêu cầu (GITHUB_TOKEN)' }, 503, h);
@@ -211,6 +281,11 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
   if (url.pathname === '/health') return json({ ok: true }, 200, h);
   if (url.pathname === '/status' && req.method === 'GET') return serverStatus(env, f, h);
+  // shared collector configuration: public read (the GitHub collector and every browser use it; contains no secrets)
+  if (url.pathname === '/config' && req.method === 'GET') {
+    const v = await env.REVIEWS.get(CONFIG_KEY);
+    return json({ config: v ? JSON.parse(v) : null }, 200, h);
+  }
 
   // nightly export for the GitHub Action (bearer token, never sent to browsers)
   if (url.pathname === '/export' && req.method === 'GET') {
@@ -234,6 +309,9 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
   if (url.pathname === '/login' && req.method === 'POST') return json({ ok: true, collectEnabled: !!env.GITHUB_TOKEN }, 200, h);
   if (url.pathname === '/collect' && req.method === 'POST') return collect(req, env, f, h);
   if (url.pathname === '/collect/status' && req.method === 'GET') return collectStatus(env, f, h);
+  if (url.pathname === '/img' && req.method === 'GET') return imageProxy(url, f, h);
+  const cr = await configRoutes(req, url, env, h);
+  if (cr) return cr;
   if (url.pathname === '/auto' && req.method === 'POST') {
     let b: { enabled?: unknown; reviewer?: unknown };
     try {
