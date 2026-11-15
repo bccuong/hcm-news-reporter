@@ -2,12 +2,36 @@
 
 ## Current status
 - Specification: v1.2
-- Milestones: **M0 DONE · M1 DONE · M2 DONE · M5 DONE locally (original template + LibreOffice PDF, visually inspected)** · M3/M4 in progress · M6 partial
-- Repository: https://github.com/bccuong/hcm-news-reporter (branch `main`) · Demo: https://bccuong.github.io/hcm-news-reporter/
-- Last session: 2026-11-15 (session 2)
+- Milestones: **M0 DONE · M1 DONE · M2 DONE · M5 DONE (original template; PDF via Microsoft PowerPoint or LibreOffice, visually inspected)** · M3/M4 mostly done · M6 partial
+- Repository: https://github.com/bccuong/hcm-news-reporter (branch `main`, public) · Live site: https://bccuong.github.io/hcm-news-reporter/ (real data, hourly)
+- Last session: 2026-11-15 (session 8) – last commit `6293e33` (shared team review), all tests green locally
+- The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
+
+## ▶ RESUME HERE (session 8 stopped on a user action)
+Goal of the user: ONE web version on GitHub; experienced reviewers open a link, log in (name + shared access code), label collected articles; labels are gathered centrally so Claude can make the collector more accurate.
+
+Done and pushed: Cloudflare Worker code `cloud/review-worker/` (KV namespace created, id in `wrangler.toml`; secrets `ACCESS_CODE` + `EXPORT_TOKEN` already uploaded to the Worker), web login/votes UI, nightly `labels.yml`, analysis script. Read `cloud/README.md`.
+
+**Blocked on:** Cloudflare account (chicuong.tanbinh's account, id `5c0a44e10fb8be13f57f5fd0ea4a62c5`) has no `workers.dev` subdomain. The user must register it once at https://dash.cloudflare.com/5c0a44e10fb8be13f57f5fd0ea4a62c5/workers/onboarding (suggested name `bccuong`). Claude must NOT read the wrangler OAuth token to do it via API (that was denied).
+
+Then, in order:
+1. `cd cloud/review-worker; npx --yes wrangler@3.112.0 deploy` → note the URL `https://hcm-news-review.<subdomain>.workers.dev`; check `GET <url>/health`.
+2. Secrets: the generated values were saved OUTSIDE the repo in the session scratchpad file `review-secrets.txt` (may be gone after reboot). If missing, generate new ones and re-run `npx wrangler secret put ACCESS_CODE` / `EXPORT_TOKEN` (pipe the value; never commit or print it in logs/commits).
+3. GitHub: `gh variable set REVIEW_API_URL --body "<worker url>" -R bccuong/hcm-news-reporter` and `gh secret set EXPORT_TOKEN -R bccuong/hcm-news-reporter` (same value as the Worker secret).
+4. `gh workflow run pages.yml -R bccuong/hcm-news-reporter` → wait for success → open the site, check "Đăng nhập duyệt tin" appears; log in with the real ACCESS_CODE, label one article, verify `GET <url>/labels?date=…` (header `x-review-code`) returns the vote; then remove that test vote (POST same article with label null).
+5. `gh workflow run labels.yml` → check `labels/labels.json` is committed with pseudonymised reviewers.
+6. Give the user: link + access code (privately) + the short reviewer guide from `cloud/README.md`.
+7. After reviewers have labelled some days: `npx tsx scripts/eval-shared-labels.ts` → tune rules/keywords (`src/domain/defaults.ts`, `relevance.ts`) with regression tests, push.
+
+Optional offered to the user (not decided): official PPTX export on the web by storing the private template in the Worker behind the access code.
 
 ## Assets
-See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.md`. Tools on this PC: Node 26, Git, gh, **LibreOffice** (installed session 2), Microsoft Edge (used by Playwright locally). Python not installed (not needed).
+See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.md`. Tools on this PC: Node 26, Git, gh (logged in as bccuong; `gh auth setup-git` done), **LibreOffice**, **Microsoft PowerPoint** (Office16, used for PDF), Microsoft Edge (Playwright locally), Cloudflare wrangler via `npx wrangler@3.112.0` (logged in). Python not installed (not needed). PowerShell 5.1: write commit messages to a file and use `git commit -F` (inline quotes break).
+
+## Session 8 – done (with evidence)
+- Shared team review: `cloud/review-worker` (Cloudflare Worker + KV, shared access code, CORS to Pages only, one vote per reviewer per article, `/export` bearer token); Pages app reviewer login, vote counts per card, review note, team-majority quality card; `.github/workflows/labels.yml` nightly pull → `labels/labels.json` (HMAC pseudonyms); `scripts/pull-labels.ts`, `scripts/eval-shared-labels.ts`; live-mode E2E with a local stand-in worker (`playwright.live.config.ts`, two reviewers).
+- Playwright: 10 s expect timeout, trace on failure, 1 retry on CI (one load-related flake of the DIS-08 UI test observed, then 2 clean runs).
+- Commands: tsc 0 · vitest **76/76** · playwright **8/8** · live review E2E **1/1**.
 
 ## Session 7 – done (with evidence)
 - **Editor feedback loop for the filter** (`src/domain/quality.ts`): per-article `relevanceLabel` (✓ Liên quan / ✗ Không on ready & review cards; "Thực ra liên quan?" on excluded ledger rows); articles put into a report count as relevant implicitly. `GET /api/quality/relevance` + "Chất lượng bộ lọc" card on the coverage tab: precision of the Ready tab, recall incl. stories rescued from "excluded", list of wrongly excluded stories with the rule that excluded them, false-ready list. `scripts/eval-editor-labels.ts` aggregates labels across stored runs.

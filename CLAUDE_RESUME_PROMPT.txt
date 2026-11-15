@@ -1,5 +1,7 @@
-Continue implementing HCM News Reporter in THIS repository using Claude Code. First read `CLAUDE.md`, `PROGRESS.md`, `MILESTONES.md`, and only the specification sections needed for the next incomplete gate. Inspect existing code and `git status`; do not restart the project or redo completed work.
+Continue implementing HCM News Reporter in THIS repository using Claude Code. First read `CLAUDE.md` and `PROGRESS.md` – start from the section "▶ RESUME HERE", which lists the exact blocker and the next steps in order. Then inspect `git status` and only the files needed for that step; do not restart the project or redo completed work.
 
-Pick the next single executable task recorded in `PROGRESS.md`. Write code, run relevant typecheck/test/build commands, correct failures, and record real evidence in `PROGRESS.md` and `ACCEPTANCE_REPORT.md`. Do not assume a milestone is complete based on file existence. Preserve the GUI-only Settings requirement and high-recall/no-silent-omission guarantees. If blocked, identify the exact blocker and execute the next safe unblocked task.
+The user (GitHub bccuong) has authorised commits and pushes to this repository and the GitHub Pages / Actions deployment of this project. Never commit or print secrets (access code, export token, OAuth tokens).
 
-Do not publish or git push. End with achieved tests, remaining failures and one precise next action.
+Write code, run relevant typecheck/test/build commands (`npx tsc -p tsconfig.json --noEmit`, `npx vitest run`, `npx playwright test`, `npx playwright test -c playwright.live.config.ts`), correct failures, and record real evidence in `PROGRESS.md` and `ACCEPTANCE_REPORT.md`. Preserve the GUI-only Settings requirement and the no-silent-omission guarantees. If blocked on something only the user can do, say exactly what and continue with the next safe task.
+
+Reply to the user in Vietnamese. End with achieved tests, remaining failures and one precise next action.
