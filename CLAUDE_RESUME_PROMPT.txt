@@ -1,0 +1,5 @@
+Continue implementing HCM News Reporter in THIS repository using Claude Code. First read `CLAUDE.md`, `PROGRESS.md`, `MILESTONES.md`, and only the specification sections needed for the next incomplete gate. Inspect existing code and `git status`; do not restart the project or redo completed work.
+
+Pick the next single executable task recorded in `PROGRESS.md`. Write code, run relevant typecheck/test/build commands, correct failures, and record real evidence in `PROGRESS.md` and `ACCEPTANCE_REPORT.md`. Do not assume a milestone is complete based on file existence. Preserve the GUI-only Settings requirement and high-recall/no-silent-omission guarantees. If blocked, identify the exact blocker and execute the next safe unblocked task.
+
+Do not publish or git push. End with achieved tests, remaining failures and one precise next action.

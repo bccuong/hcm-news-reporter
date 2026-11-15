@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 2,
+  "locale": "vi-VN",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "_developerNote": "Internal persistence example ONLY. User must configure every property in GUI; no manual JSON edits.",
+  "startup": {
+    "autoCollectLastCompletedWindow": true,
+    "oncePerWindow": true
+  },
+  "reportWindow": {
+    "startClock": "17:00",
+    "endClock": "08:00",
+    "mode": "last_completed"
+  },
+  "discovery": {
+    "enabledMethods": [
+      "rss",
+      "sitemap",
+      "section"
+    ],
+    "maxListingPagesPerSource": 30,
+    "maxDepth": 3,
+    "lookbackHours": 24,
+    "showIncompleteWarnings": true
+  },
+  "collection": {
+    "maxConcurrentRequests": 5,
+    "maxRequestsPerHost": 2,
+    "timeoutMs": 15000,
+    "maxRetries": 2,
+    "dynamicPageFallback": true
+  },
+  "filters": {
+    "ruleGroups": [],
+    "locationRules": {
+      "selectedAreas": [
+        "TP.HCM"
+      ],
+      "aliases": {
+        "TP.HCM": [
+          "Thành phố Hồ Chí Minh",
+          "Sài Gòn"
+        ]
+      },
+      "relatedAreasAllowedForReview": true
+    },
+    "unknownRelevancePolicy": "review"
+  },
+  "quality": {
+    "persistCandidateLedger": true,
+    "doNotSilentlyDropCandidates": true,
+    "missingContentPolicy": "flag_partial",
+    "enableCoverageDashboard": true
+  },
+  "editorial": {
+    "manualReviewRequired": true,
+    "unknownPublicationTimeRequiresReview": true,
+    "realPhotosOnly": true,
+    "imageReuseMustBeVerified": true
+  },
+  "report": {
+    "templatePath": "templates/hcm-report.pptx",
+    "outputDirectory": "exports",
+    "outputFormats": [
+      "pptx",
+      "pdf"
+    ],
+    "preserveTemplatePageDimensions": true
+  }
+}

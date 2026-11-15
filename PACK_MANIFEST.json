@@ -1,0 +1,24 @@
+{
+  "product": "HCM News Reporter",
+  "pack": "Claude Code Starter Pack",
+  "version": "1.2",
+  "supersedes": "ChatGPT Work Starter Pack v1.1",
+  "contains_binary_approved_pptx_or_skill": false,
+  "contains_implemented_app_code": false,
+  "files": [
+    ".gitignore",
+    "ACCEPTANCE_REPORT.md",
+    "ACCEPTANCE_TEST_CASES.md",
+    "CLAUDE.md",
+    "CLAUDE_RESUME_PROMPT.txt",
+    "CLAUDE_START_PROMPT.txt",
+    "COLLECTION_COVERAGE_SPEC.md",
+    "HCM_News_Reporter_Implementation_Plan.md",
+    "MILESTONES.md",
+    "PROGRESS.md",
+    "README_CLAUDE_CODE.md",
+    "UI_CONFIG_SPEC.md",
+    "settings.example.json",
+    "sources.example.json"
+  ]
+}

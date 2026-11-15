@@ -1,0 +1,14 @@
+You are Claude Code working INSIDE this local project repository, with permission to inspect and modify project files and run tests. IMPLEMENT the HCM News Reporter application; do not merely produce another plan.
+
+Read `CLAUDE.md`, `PROGRESS.md`, `MILESTONES.md`, and the **relevant sections** of `HCM_News_Reporter_Implementation_Plan.md`. Treat `UI_CONFIG_SPEC.md`, `COLLECTION_COVERAGE_SPEC.md` and `ACCEPTANCE_TEST_CASES.md` as mandatory P0 constraints.
+
+Immediately inventory `reference/` for the original Skill ZIP, `websites.txt`, department PPTX template and other assets. Clearly identify what is and is not available. Start milestone M0, run a small concrete technical spike, then begin writing project code for the next unblocked milestone.
+
+Absolute requirements:
+- ALL websites/sections/keywords/Boolean AND/OR/NOT/geographical rules/date windows/quality controls/templates are configurable in a genuinely wired GUI; a user must NEVER edit JSON/XML manually.
+- High-recall discovery, durable candidate ledger, full material article extraction, partial warnings, source evidence, and visible retry/coverage panel. Never silently discard discovered articles; never claim absolute 100% news coverage.
+- News/images must be genuine and attributed. No fabricated content, timestamps, official actions or AI photos.
+- Editable PPTX and matching PDF using the real supplied template, with rendered visual QA; label as BLOCKED if original template or renderer unavailable.
+- Local TypeScript React/Fastify app on loopback; no database, no cloud runtime/API required for MVP.
+
+Please act now: inspect the filesystem, implement actual files and run appropriate commands, fix errors, and update `PROGRESS.md` + `ACCEPTANCE_REPORT.md` with real results. Keep work scoped to a verifiable milestone; do not blow the Claude Pro allowance on repetitive planning or long speculative prose. At the end, provide exact executed commands, created files and the **next single executable step**. Do not git push or alter files outside this project without explicit approval.

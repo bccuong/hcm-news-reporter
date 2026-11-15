@@ -1,0 +1,8 @@
+https://thanhnien.vn
+https://vnexpress.net
+# Dân trí chặn địa chỉ IP máy chủ đám mây nơi Claude chạy lệnh (từ 15/11/2026); WebSearch/WebFetch vẫn đọc được.
+# Tiền tố "web:" = không thu thập bằng shell, lấy tin bằng WebSearch/WebFetch theo SKILL.md bước 2B. Bỏ tiền tố khi hết bị chặn.
+web: https://dantri.com.vn
+https://tuoitre.vn
+https://baoxaydung.vn
+https://sggp.org.vn

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 2,
+  "note": "Replace with the real verified sources from the existing Skill's websites.txt. RSS URLs are intentionally not guessed.",
+  "sources": [
+    {
+      "id": "tuoitre",
+      "name": "Tuoi Tre",
+      "baseUrl": "https://tuoitre.vn",
+      "enabled": true,
+      "strategy": "auto",
+      "rssUrls": [],
+      "sectionUrls": [],
+      "sitemapUrls": [],
+      "searchUrls": [],
+      "discoveryMethods": [
+        "rss",
+        "sitemap",
+        "section"
+      ],
+      "crawlLimits": {
+        "maxListingPages": 30,
+        "maxDepth": 3
+      }
+    },
+    {
+      "id": "thanhnien",
+      "name": "Thanh Nien",
+      "baseUrl": "https://thanhnien.vn",
+      "enabled": true,
+      "strategy": "auto",
+      "rssUrls": [],
+      "sectionUrls": [],
+      "sitemapUrls": [],
+      "searchUrls": [],
+      "discoveryMethods": [
+        "rss",
+        "sitemap",
+        "section"
+      ],
+      "crawlLimits": {
+        "maxListingPages": 30,
+        "maxDepth": 3
+      }
+    }
+  ],
+  "_developerNote": "Internal persistence ONLY; sources are managed via GUI. These are examples, not a verified source inventory."
+}

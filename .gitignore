@@ -1,0 +1,31 @@
+# Generated application state and outputs
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+*.log
+.env
+.env.*
+!.env.example
+/cache/
+/data/
+/exports/
+/logs/
+/tmp/
+# Real source template/report files are supplied privately; avoid accidental commits
+/reference/
+# Local machine Claude configuration
+.claude/settings.local.json
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/*.code-workspace
+
+# Runtime config written by the app (users configure via GUI)
+/config/settings.json
+/config/sources.json
+/config/history/
+/templates/user/
+/web/public/demo/
+/dist/
