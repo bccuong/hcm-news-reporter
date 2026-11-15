@@ -9,6 +9,14 @@
 ## Assets
 See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.md`. Tools on this PC: Node 26, Git, gh, **LibreOffice** (installed session 2), Microsoft Edge (used by Playwright locally). Python not installed (not needed).
 
+## Session 3 – done (with evidence)
+- **Multi-source stories (DIS-06):** `groupId` merge model in `src/reports/assemble.ts` (one level, chronological sources, one per publisher, photo fallback from merged article, unverified merged source excluded with warning); UI "Nguồn cùng sự kiện" panel in Article Inspector + Export tab (suggestions from title clustering, manual pick, split). Template renders `Nguồn: A | B` with a hyperlink per publisher.
+- **Microsoft PowerPoint verified:** exported PPTX opens via COM without repair; PowerPoint is now the preferred PDF backend (`auto`), LibreOffice fallback.
+- **Overflow fixed for real:** cover/recommendation summary lists fitted to box ("… và N tin khác") – found from PowerPoint render.
+- Default cover label cut at word boundary ≤42 chars; bug fixed in source ordering (in-place sort lost merged sources).
+- Fixture publisher D (same event as A) for deterministic merge tests.
+- Commands: `npx tsc` 0 errors · `npx vitest run` **42/42** · `npx playwright test` **6/6** · real-data QA: 14 cross-publisher clusters found in the 15/11 run; render check PDF by PowerPoint inspected.
+
 ## Session 2 – done (with evidence)
 - Original-template PPTX renderer `src/reports/templatePptx.ts` wired into export (falls back to labeled DEMO only when no template uploaded; mismatching template → BLOCKED/422).
 - Real-photo pipeline: jpeg/png only, magic-byte + dimension checks, cover-crop, TC feature photo = second photo of the same positive article.
@@ -43,10 +51,11 @@ See `docs/ASSET_INVENTORY.md`. Template integration: `docs/TEMPLATE_INTEGRATION.
 - Demo (GitHub Pages) still uses the DEMO renderer: the Department template is private and not published.
 
 ## Next single executable action
-Implement multi-source stories (merge same-event cluster into one story with all source links, as in the template "Nguồn: Thanh Niên | VnExpress"): add `groupId` merge UI in Export tab + `assembleStories` grouping, then re-run `npx tsx scripts/qa-template.ts`.
+DIS-08 adapter-degraded detection: per source, compare this run's extraction success rate / container selector with the last 3 runs and mark the source "degraded" in the coverage tab (`src/collector/run.ts` + `web/src/App.tsx` Coverage). Also consider transitive same-event clusters (one event split into 2 clusters in the 15/11 run).
 
 ## Session handoff log
 | Session date | Changes made | Tests actually run | Next action |
 |---|---|---|---|
 | 2026-11-15 (1) | M0–M2, UI, API, demo Pages, live run | tsc, vitest 33/33, build, live | UI tests, template |
 | 2026-11-15 (2) | Original template renderer, LibreOffice PDF + visual QA, Playwright UI tests, server crash fix | tsc, vitest 38/38, playwright 6/6, live run + template export | Multi-source stories |
+| 2026-11-15 (3) | Multi-source stories, PowerPoint verification + PDF backend, list-fit fix | tsc, vitest 42/42, playwright 6/6, PowerPoint render QA | DIS-08 degraded adapter |

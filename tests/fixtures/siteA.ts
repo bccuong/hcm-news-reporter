@@ -7,6 +7,9 @@ import type { Transport } from '../../src/collector/http.js';
 export const A = 'https://fixture-a.example.vn';
 export const B = 'https://fixture-b.example.vn';
 export const C = 'https://fixture-c.example.vn';
+/** Second working publisher reporting the SAME flood event as A (same-event merge tests). */
+export const D = 'https://fixture-d.example.vn';
+export const UD = { flood: `${D}/do-thi/mau-thu-mua-lon-toi-8-11-hiep-binh-ngap-sau-xe-chet-may-1851101101.htm` };
 export const WINDOW = { from: '2026-11-08T17:00:00+07:00', to: '2026-11-09T08:00:00+07:00' };
 
 const url = (slug: string, id: number) => `${A}/thoi-su/${slug}-${id}.htm`;
@@ -141,6 +144,23 @@ ${P(2, 'giải pháp chống ngập')}`,
     [U.sport]: { status: 200, body: page({ title: '[Mẫu thử] Bóng đá', sapo: 'x', pub: '2026-11-08T20:00:00+07:00', body: P(3, 'bóng đá') }) },
     // Source B: everything fails (unreachable source must not block A)
     [`${B}/rss/home.rss`]: { status: 503, body: '' },
+    // Source D: same event as U.flood, published later by another outlet
+    [`${D}/rss/do-thi.rss`]: {
+      status: 200,
+      body: `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Fixture D</title>
+<item><title>[Mẫu thử] Mưa lớn tối 8.11, nhiều tuyến đường phường Hiệp Bình ngập sâu</title><link>${UD.flood}</link><pubDate>Sun, 08 Nov 2026 20:15:00 +0700</pubDate></item>
+</channel></rss>`,
+    },
+    [UD.flood]: {
+      status: 200,
+      body: page({
+        title: '[Mẫu thử] Mưa lớn tối 8.11, nhiều tuyến đường phường Hiệp Bình (TP.HCM) ngập sâu, xe chết máy',
+        sapo: 'Cơn mưa lớn tối 8.11 khiến nhiều tuyến đường tại phường Hiệp Bình ngập sâu, nhiều xe chết máy.',
+        pub: '2026-11-08T20:15:00+07:00',
+        body: P(5, 'mưa ngập phường Hiệp Bình'),
+        og: `${D}/img/ngap.jpg`,
+      }),
+    },
   };
   return routes;
 }

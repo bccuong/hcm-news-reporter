@@ -18,4 +18,7 @@ Settings › Báo cáo & mẫu › "Tải mẫu .pptx". The upload is stored as 
 ## Verification done (2026-11-15)
 - `tests/template.test.ts` (runs only where the private template exists): dynamic slide count 7, every XML part well-formed, no stale sample text/photos/notes, escaped special characters, A4 size kept, text-only path, mismatch refusal.
 - Visual QA with real articles of the 15/11/2026 window (`scripts/qa-template.ts` → PPTX → LibreOffice PDF, inspected page by page). Defects found and fixed: broken XML from nested `hlinkClick` (lost sources and second story), JSZip folder removal deleting all images, stale "05/11/2026" footer in layout, feature photo gap on single-story TÍCH CỰC page. Remaining: long short-labels can overflow list boxes → warned at export.
-- Not verified: opening in Microsoft PowerPoint (not installed here).
+- **Microsoft PowerPoint (Office16) verified (session 3):** exported files open read-only via COM without repair; PowerPoint's own PDF export matches the LibreOffice render (A4 595×842 pt, Vietnamese glyphs, photos, hyperlinks, page numbers, footer).
+- PDF backend order (`pdfRenderer = auto`): Microsoft PowerPoint (`scripts/pptx-to-pdf-powerpoint.ps1`, serialized, never closes the user's other presentations) → LibreOffice.
+- Multi-source stories: merged same-event articles render as `Nguồn: A | B` (one hyperlink per publisher, chronological).
+- Summary lists on cover/recommendations are fitted to their boxes ("… và N tin khác") instead of overflowing – found when PowerPoint's render showed the list running over the footer.

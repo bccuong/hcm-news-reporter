@@ -111,7 +111,7 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByRole('button', { name: /Bài sẵn sàng \(\d+\)/ })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/Mưa lớn tối 8.11/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
   // custom window persisted (preset) after reload
   await page.reload();
   // ledger shows explicit reasons, nothing silently dropped
@@ -119,14 +119,32 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await expect(page.getByText('OUTSIDE_DATE_WINDOW').first()).toBeVisible();
   await expect(page.getByText('FETCH_403').first()).toBeVisible();
   await page.getByRole('button', { name: /Độ phủ/ }).click();
-  await expect(page.getByText(/Đối soát sổ ứng viên: 11 \/ 11/)).toBeVisible();
+  await expect(page.getByText(/Đối soát sổ ứng viên: 12 \/ 12/)).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/coverage.png', fullPage: true });
   // select and export
   await page.getByRole('button', { name: /Bài sẵn sàng/ }).click();
-  await page.getByLabel(/Chọn bài \[Mẫu thử\] Mưa lớn/).check();
+  await page.getByLabel(/Chọn bài \[Mẫu thử\] Mưa lớn tối 8.11 khiến/).check();
   await page.screenshot({ path: 'docs/screenshots/dashboard.png', fullPage: true });
   await page.getByRole('button', { name: /Xuất báo cáo \(1\)/ }).click();
+
+  // DIS-06: same event reported by publisher D is suggested and merged as a second source
+  const story = page.getByTestId(/^merge-/).first();
+  await expect(story).toContainText('Gợi ý cùng sự kiện');
+  await story.getByRole('button', { name: 'Gộp vào tin này' }).click();
+  await expect(page.getByText('Đã gộp nguồn vào tin')).toBeVisible();
+  await expect(page.getByText(/Nguồn: Báo mẫu thử A {2}\| {2}Báo mẫu thử D/)).toBeVisible();
+  await page.screenshot({ path: 'docs/screenshots/export-merged-sources.png', fullPage: true });
+
   await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
   await expect(page.getByText('Đã tạo:')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('a[href$=".pptx"]')).toHaveCount(1);
+  const manifestHref = await page.locator('a[href$="_manifest.json"]').getAttribute('href');
+  const manifest = await (await page.request.get(manifestHref!)).json();
+  expect(manifest.stories).toHaveLength(1);
+  expect(manifest.stories[0].sources.map((s: { name: string }) => s.name)).toEqual(['Báo mẫu thử A', 'Báo mẫu thử D']);
+
+  // split back: the merged article becomes independent again
+  await story.getByRole('button', { name: 'Tách ra' }).click();
+  await expect(page.getByText(/^Nguồn: Báo mẫu thử A ·/)).toBeVisible();
+  await expect(story).toContainText('Gợi ý cùng sự kiện');
 });

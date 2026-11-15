@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
+import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
 import { api, type ExportResult, type RunInfo } from './api';
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
@@ -145,6 +146,14 @@ export function App() {
     }
   };
 
+  const merge = async (secondaryId: string, targetId: string) => {
+    const ps = mergePatches(secondaryId, targetId, reviews);
+    if (!ps.length) return toast('err', 'Không thể gộp: hai bài đã cùng một tin hoặc gộp vào chính nó');
+    for (const p of ps) await patch(p.articleId, p.patch);
+    toast('ok', 'Đã gộp nguồn vào tin');
+  };
+  const split = (secondaryId: string) => patch(secondaryId, { groupId: null });
+
   const counts = run?.counts ?? {};
   const n = (...k: string[]) => k.reduce((s, x) => s + (counts[x] ?? 0), 0);
   const artById = useMemo(() => new Map(arts.map((a) => [a.id, a])), [arts]);
@@ -268,12 +277,13 @@ export function App() {
             {tab === 'review' && <ArticleList list={reviewQueue} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={patch} reviewMode />}
             {tab === 'ledger' && <Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} />}
             {tab === 'coverage' && <Coverage run={run} cands={cands} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
-            {tab === 'export' && settings && <ExportPanel run={run} arts={artById} reviews={reviews} settings={settings} onPatch={patch} onInspect={setInspect} />}
+            {tab === 'export' && settings && <ExportPanel run={run} arts={artById} reviews={reviews} settings={settings} onPatch={patch} onInspect={setInspect} onMerge={merge} onSplit={split} />}
           </>
         )}
       </main>
       {inspect && artById.get(inspect) && settings && (
-        <Inspector a={artById.get(inspect)!} c={candByArticle.get(inspect)} r={reviews[inspect]} settings={settings} onClose={() => setInspect(null)} onPatch={(p) => patch(inspect, p)} />
+        <Inspector a={artById.get(inspect)!} c={candByArticle.get(inspect)} r={reviews[inspect]} settings={settings} onClose={() => setInspect(null)} onPatch={(p) => patch(inspect, p)}
+          arts={artById} reviews={reviews} onMerge={merge} onSplit={split} onOpen={setInspect} />
       )}
       <SettingsDrawer
         open={settingsOpen}
@@ -283,6 +293,55 @@ export function App() {
           setSources(src);
         }}
       />
+    </div>
+  );
+}
+
+/** Same-event sources of one story: merged secondaries (split), clustering suggestions and manual pick (merge). */
+function MergePanel({ primaryId, arts, reviews, onMerge, onSplit }: { primaryId: string; arts: Map<string, Article>; reviews: Record<string, ReviewDecision>; onMerge: (secondaryId: string, primaryId: string) => void; onSplit: (secondaryId: string) => void }) {
+  const [pick, setPick] = useState('');
+  const primary = arts.get(primaryId);
+  if (!primary) return null;
+  const merged = secondariesOf(primaryId, reviews).map((id) => arts.get(id)).filter((x): x is Article => !!x);
+  const taken = new Set([primaryId, ...merged.map((m) => m.id)]);
+  const available = [...arts.values()].filter((a) => !taken.has(a.id) && !reviews[a.id]?.groupId && secondariesOf(a.id, reviews).length === 0);
+  const suggested = primary.duplicateGroupId ? available.filter((a) => a.duplicateGroupId === primary.duplicateGroupId) : [];
+  const others = available.filter((a) => !suggested.includes(a)).sort((x, y) => x.title.localeCompare(y.title, 'vi'));
+  return (
+    <div className="rounded border border-purple-200 bg-purple-50/40 p-2 text-xs" data-testid={`merge-${primaryId}`}>
+      <div className="mb-1 font-semibold text-purple-900">Nguồn cùng sự kiện ({merged.length + 1} bài)</div>
+      <ul className="space-y-0.5">
+        <li>
+          <b>{primary.sourceName}</b> – {primary.title} <span className="text-slate-500">(bài chính{primary.publishedAt ? `, ${formatVn(primary.publishedAt)}` : ''})</span>
+        </li>
+        {merged.map((m) => (
+          <li key={m.id} className="flex items-center gap-1">
+            <span className="flex-1">
+              <b>{m.sourceName}</b> – {m.title}
+              {m.publishedAt ? <span className="text-slate-500"> ({formatVn(m.publishedAt)})</span> : <span className="text-amber-700"> (chưa rõ giờ đăng)</span>}
+            </span>
+            <button className="btn-ghost btn-xs" onClick={() => onSplit(m.id)}>Tách ra</button>
+          </li>
+        ))}
+      </ul>
+      {suggested.length > 0 && (
+        <div className="mt-1">
+          <span className="text-purple-900">Gợi ý cùng sự kiện (tiêu đề tương tự):</span>
+          {suggested.map((s) => (
+            <div key={s.id} className="flex items-center gap-1">
+              <span className="flex-1"><b>{s.sourceName}</b> – {s.title}</span>
+              <button className="btn-ghost btn-xs" onClick={() => onMerge(s.id, primaryId)}>Gộp vào tin này</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-1 flex gap-1">
+        <select className="input py-1 text-xs" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Chọn bài để gộp nguồn">
+          <option value="">Gộp thêm bài khác (cùng sự kiện)…</option>
+          {others.map((o) => <option key={o.id} value={o.id}>{o.sourceName}: {o.title.slice(0, 90)}</option>)}
+        </select>
+        <button className="btn-ghost btn-xs" disabled={!pick} onClick={() => (onMerge(pick, primaryId), setPick(''))}>Gộp</button>
+      </div>
     </div>
   );
 }
@@ -326,7 +385,7 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
           return (
             <article key={a.id} className={`card flex gap-3 p-3 ${r?.included ? 'ring-2 ring-teal-500' : ''}`}>
               <label className="flex flex-col items-center gap-1 pt-1 text-[10px] text-slate-500">
-                <input type="checkbox" className="h-4 w-4 accent-teal-600" checked={!!r?.included} onChange={(e) => onPatch(a.id, { included: e.target.checked, order: r?.order ?? Date.now() % 1e6 })} aria-label={`Chọn bài ${a.title}`} />
+                <input type="checkbox" className="h-4 w-4 accent-teal-600" disabled={!!r?.groupId} title={r?.groupId ? 'Bài đã gộp làm nguồn phụ của tin khác' : ''} checked={!!r?.included && !r?.groupId} onChange={(e) => onPatch(a.id, { included: e.target.checked, order: r?.order ?? Date.now() % 1e6 })} aria-label={`Chọn bài ${a.title}`} />
                 chọn
               </label>
               {img ? (
@@ -341,7 +400,12 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
                   <span className="chip border-teal-200 bg-teal-50 text-teal-800">{catLabel(r?.primaryCategory ?? a.primaryCategory)}</span>
                   {asm && <span className={`chip ${ASSESS_COLOR[asm]}`}>{ASSESSMENT_LABEL[asm]}{!r?.assessment && ' (gợi ý)'}</span>}
                   {c && <StateChip state={c.state} />}
-                  {a.duplicateGroupId && <span className="chip border-purple-300 bg-purple-50 text-purple-800">cùng sự kiện?</span>}
+                  {r?.groupId ? (
+                    <span className="chip border-purple-400 bg-purple-100 text-purple-900">đã gộp làm nguồn phụ</span>
+                  ) : a.duplicateGroupId ? (
+                    <span className="chip border-purple-300 bg-purple-50 text-purple-800">cùng sự kiện?</span>
+                  ) : null}
+                  {r && !r.groupId && secondariesOf(a.id, reviews).length > 0 && <span className="chip border-purple-300 bg-purple-50 text-purple-800">+{secondariesOf(a.id, reviews).length} nguồn</span>}
                   {a.extractionWarnings.length > 0 && <span className="chip border-amber-300 bg-amber-50 text-amber-800"><AlertTriangle className="h-3 w-3" /> {a.extractionWarnings.length} cảnh báo</span>}
                 </div>
                 <h3 className="font-semibold leading-snug">{r?.title ?? a.title}</h3>
@@ -471,7 +535,8 @@ function Coverage({ run, cands, onRetry }: { run: RunInfo; cands: Candidate[]; o
   );
 }
 
-function Inspector({ a, c, r, settings, onClose, onPatch }: { a: Article; c?: Candidate; r?: ReviewDecision; settings: Settings; onClose: () => void; onPatch: (p: Partial<ReviewDecision>) => void }) {
+function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge, onSplit, onOpen }: { a: Article; c?: Candidate; r?: ReviewDecision; settings: Settings; onClose: () => void; onPatch: (p: Partial<ReviewDecision>) => void; arts: Map<string, Article>; reviews: Record<string, ReviewDecision>; onMerge: (s: string, p: string) => void; onSplit: (s: string) => void; onOpen: (id: string) => void }) {
+  const mergedInto = r?.groupId ? arts.get(rootOf(a.id, reviews)) : undefined;
   const [title, setTitle] = useState(r?.title ?? a.title);
   const [summary, setSummary] = useState(r?.summary ?? a.sapo);
   const [short, setShort] = useState(r?.shortLabel ?? a.title.slice(0, 42));
@@ -538,7 +603,17 @@ function Inspector({ a, c, r, settings, onClose, onPatch }: { a: Article; c?: Ca
           {/* editorial overlay */}
           <div className="space-y-3 p-4">
             <h3 className="text-xs font-bold uppercase text-slate-500">Biên tập cho báo cáo (không sửa dữ liệu gốc)</h3>
-            <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-teal-600" checked={!!r?.included} onChange={(e) => onPatch({ included: e.target.checked, order: r?.order ?? Date.now() % 1e6 })} /> Đưa vào báo cáo</label>
+            {mergedInto ? (
+              <div className="rounded border border-purple-200 bg-purple-50 p-2 text-xs">
+                Bài này đã được <b>gộp làm nguồn phụ</b> của tin: <button className="text-blue-700 underline" onClick={() => onOpen(mergedInto.id)}>{mergedInto.title}</button>
+                <button className="btn-ghost btn-xs ml-2" onClick={() => onSplit(a.id)}>Tách ra thành tin riêng</button>
+              </div>
+            ) : (
+              <>
+                <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-teal-600" checked={!!r?.included} onChange={(e) => onPatch({ included: e.target.checked, order: r?.order ?? Date.now() % 1e6 })} /> Đưa vào báo cáo</label>
+                <MergePanel primaryId={a.id} arts={arts} reviews={reviews} onMerge={onMerge} onSplit={onSplit} />
+              </>
+            )}
             <div>
               <span className="label">Tính chất tin</span>
               <div className="flex gap-1">
@@ -590,12 +665,12 @@ function Inspector({ a, c, r, settings, onClose, onPatch }: { a: Article; c?: Ca
   );
 }
 
-function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect }: { run: RunInfo; arts: Map<string, Article>; reviews: Record<string, ReviewDecision>; settings: Settings; onPatch: (id: string, p: Partial<ReviewDecision>) => void; onInspect: (id: string) => void }) {
+function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge, onSplit }: { run: RunInfo; arts: Map<string, Article>; reviews: Record<string, ReviewDecision>; settings: Settings; onPatch: (id: string, p: Partial<ReviewDecision>) => void; onInspect: (id: string) => void; onMerge: (s: string, p: string) => void; onSplit: (s: string) => void }) {
   const toast = useToast();
   const [res, setRes] = useState<ExportResult | null>(null);
   const [formats, setFormats] = useState<Array<'pptx' | 'pdf'>>(settings.report.outputFormats);
   const [busy, setBusy] = useState(false);
-  const sel = Object.values(reviews).filter((r) => r.included).sort((a, b) => a.order - b.order);
+  const sel = Object.values(reviews).filter((r) => r.included && !r.groupId).sort((a, b) => a.order - b.order);
   const go = async (dryRun: boolean) => {
     setBusy(true);
     try {
@@ -611,7 +686,7 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect }: { run
   useEffect(() => {
     go(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [Object.keys(reviews).length, JSON.stringify(sel.map((s) => [s.articleId, s.assessment, s.summary]))]);
+  }, [JSON.stringify(Object.values(reviews).map((s) => [s.articleId, s.included, s.groupId, s.assessment, s.summary, s.timeVerifiedManually]))]);
   const move = (i: number, d: -1 | 1) => {
     const a = sel[i];
     const b = sel[i + d];
@@ -633,13 +708,21 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect }: { run
               {list.map((r) => {
                 const a = arts.get(r.articleId);
                 const i = sel.indexOf(r);
+                const nMerged = secondariesOf(r.articleId, reviews).length;
+                const pubs = [a?.sourceName, ...secondariesOf(r.articleId, reviews).map((id) => arts.get(id)?.sourceName)].filter(Boolean);
                 return (
-                  <div key={r.articleId} className="mb-1 flex items-center gap-2 rounded border border-slate-200 p-2 text-sm">
-                    <button className="btn-ghost btn-xs" onClick={() => move(i, -1)} aria-label="Lên"><ArrowUp className="h-3 w-3" /></button>
-                    <button className="btn-ghost btn-xs" onClick={() => move(i, 1)} aria-label="Xuống"><ArrowDown className="h-3 w-3" /></button>
-                    <span className="flex-1">{r.title ?? a?.title}{!r.assessment && <span className="ml-1 text-xs text-amber-700">(tính chất là gợi ý)</span>}</span>
-                    <button className="btn-ghost btn-xs" onClick={() => onInspect(r.articleId)}>Biên tập</button>
-                    <button className="btn-danger btn-xs" onClick={() => onPatch(r.articleId, { included: false })}>Bỏ</button>
+                  <div key={r.articleId} className="mb-1 rounded border border-slate-200 p-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <button className="btn-ghost btn-xs" onClick={() => move(i, -1)} aria-label="Lên"><ArrowUp className="h-3 w-3" /></button>
+                      <button className="btn-ghost btn-xs" onClick={() => move(i, 1)} aria-label="Xuống"><ArrowDown className="h-3 w-3" /></button>
+                      <span className="flex-1">{r.title ?? a?.title}{!r.assessment && <span className="ml-1 text-xs text-amber-700">(tính chất là gợi ý)</span>}</span>
+                      <button className="btn-ghost btn-xs" onClick={() => onInspect(r.articleId)}>Biên tập</button>
+                      <button className="btn-danger btn-xs" onClick={() => onPatch(r.articleId, { included: false })}>Bỏ</button>
+                    </div>
+                    <details className="mt-1" open={nMerged > 0 || !!a?.duplicateGroupId}>
+                      <summary className="cursor-pointer text-xs text-slate-600">Nguồn: {[...new Set(pubs)].join('  |  ')}{a?.duplicateGroupId && nMerged === 0 ? ' · có bài có thể cùng sự kiện' : ''}</summary>
+                      <MergePanel primaryId={r.articleId} arts={arts} reviews={reviews} onMerge={onMerge} onSplit={onSplit} />
+                    </details>
                   </div>
                 );
               })}

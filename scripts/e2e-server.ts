@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server/app.js';
-import { A, B, fixtureTransport, publicResolver } from '../tests/fixtures/siteA.js';
+import { A, B, D, fixtureTransport, publicResolver } from '../tests/fixtures/siteA.js';
 
 const root = mkdtempSync(path.join(tmpdir(), 'hcm-e2e-'));
 mkdirSync(path.join(root, 'config'), { recursive: true });
@@ -14,6 +14,7 @@ writeFileSync(
     sources: [
       { id: 'fixture-a', name: 'Báo mẫu thử A', baseUrl: A, rssUrls: [`${A}/rss/thoi-su.rss`], sitemapUrls: [`${A}/sitemap-news.xml`], sectionUrls: [`${A}/thoi-su.htm`] },
       { id: 'fixture-b', name: 'Báo mẫu thử B', baseUrl: B, rssUrls: [`${B}/rss/home.rss`], sectionUrls: [], discoveryMethods: ['rss'] },
+      { id: 'fixture-d', name: 'Báo mẫu thử D', baseUrl: D, rssUrls: [`${D}/rss/do-thi.rss`], sectionUrls: [], discoveryMethods: ['rss'] },
     ].map((s) => ({ enabled: true, priority: 10, fetchMode: 'direct', discoveryMethods: ['rss', 'sitemap', 'section'], searchUrls: [], verifiedRoutes: [], crawlLimits: { maxListingPages: 10, maxDepth: 2, maxArticleFetches: 50, followPagination: true }, maxConcurrency: 2, pauseMs: 0, articleUrlPattern: '', excludeUrlPattern: '', notes: '', origin: 'user', ...s })),
   }),
 );

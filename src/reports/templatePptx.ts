@@ -267,13 +267,35 @@ export function estimateLines(texts: string[], widthIn: number, pt = 14): number
   const charsPerLine = Math.max(8, Math.floor((widthIn * 72) / (pt * 0.5)));
   return texts.reduce((s, t) => s + Math.max(1, Math.ceil(t.length / charsPerLine)), 0);
 }
+function boxCapacity(xml: string, id: number, indentIn: number) {
+  const f = xfrm(getShape(xml, id)!);
+  return { lines: Math.floor(f.cy / EMU / ((14 * 1.2 + 6) / 72)), widthIn: f.cx / EMU - indentIn }; // + paragraph spacing
+}
 function fitWarn(xml: string, id: number, texts: string[], where: string, notes: string[], indentIn = 0.35) {
-  const sp = getShape(xml, id);
-  if (!sp) return;
-  const f = xfrm(sp);
-  const capacity = Math.floor(f.cy / EMU / ((14 * 1.2 + 6) / 72)); // + paragraph spacing
-  const need = estimateLines(texts, f.cx / EMU - indentIn);
-  if (need > capacity) notes.push(`${where}: cần ~${need} dòng, khung chứa ~${capacity} dòng – rút gọn "nhãn ngắn" để tránh tràn khung.`);
+  if (!getShape(xml, id)) return;
+  const cap = boxCapacity(xml, id, indentIn);
+  const need = estimateLines(texts, cap.widthIn);
+  if (need > cap.lines) notes.push(`${where}: cần ~${need} dòng, khung chứa ~${cap.lines} dòng – rút gọn "nhãn ngắn" để tránh tràn khung.`);
+}
+/**
+ * Summary list (cover / recommendations) that never overflows its box: shows as many labels as fit and ends with
+ * "… và N tin khác". Full stories are always on their own pages; font size is never changed.
+ */
+function fittedList(xml: string, id: number, stories: ReportStory[], where: string, notes: string[]): Run[][] {
+  if (!stories.length) return lines('(không có tin)');
+  const cap = boxCapacity(xml, id, 0.35);
+  const all = stories.map((s) => s.shortLabel);
+  if (estimateLines(all, cap.widthIn) <= cap.lines) return lines(...all);
+  const shown: string[] = [];
+  for (const l of all) {
+    const rest = all.length - shown.length - 1;
+    const tail = rest > 0 ? [`… và ${rest} tin khác`] : [];
+    if (estimateLines([...shown, l, ...tail], cap.widthIn) > cap.lines) break;
+    shown.push(l);
+  }
+  const hidden = all.length - shown.length;
+  notes.push(`${where}: khung chỉ đủ ${shown.length}/${all.length} nhãn – đã ghi "… và ${hidden} tin khác" (rút gọn "nhãn ngắn" để hiện đủ).`);
+  return lines(...shown, `… và ${hidden} tin khác`);
 }
 
 function listLines(stories: ReportStory[], max = 7): Run[][] {
@@ -322,8 +344,8 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
     c.xml = editShape(c.xml, m.summaryHeader, (sp) => setParagraphs(sp, lines(`TÓM TẮT BÌA – ${input.stories.length} TIN`)));
     for (const [g, k] of [['needs_attention', 'tt'], ['positive', 'tc'], ['neutral', 'tl']] as const) {
       c.xml = editShape(c.xml, m[k].count, (sp) => setParagraphs(sp, lines(GROUP_LABEL[g], `${by(g).length} tin`)));
-      c.xml = editShape(c.xml, m[k].list, (sp) => setParagraphs(sp, listLines(by(g)), () => 0));
-      fitWarn(c.xml, m[k].list, by(g).map((s) => s.shortLabel), `Bìa – nhóm ${GROUP_LABEL[g]}`, notes);
+      const fitted = fittedList(c.xml, m[k].list, by(g), `Bìa – nhóm ${GROUP_LABEL[g]}`, notes);
+      c.xml = editShape(c.xml, m[k].list, (sp) => setParagraphs(sp, fitted, () => 0));
     }
     c.xml = editShape(c.xml, m.date, (sp) => setParagraphs(sp, lines(`Thành phố Hồ Chí Minh, ngày ${d} tháng ${mo} năm ${y}`)));
     const coverImg = input.coverImageKey ? input.images.get(input.coverImageKey) : null;
@@ -403,11 +425,9 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
     const groupLines: string[] = [];
     for (const s of tt) groupLines.push(s.shortLabel, (s.proposal || 'Đầu mối đề xuất, chờ rà soát.').replace(/^Đề xuất:\s*/, ''));
     c.xml = editShape(c.xml, m.groups, (sp) => setParagraphs(sp, groupLines.length ? lines(...groupLines) : lines('Không có tin Tồn tại cần khắc phục trong khung giờ này.'), (i) => i % 2));
-    c.xml = editShape(c.xml, m.tt, (sp) => setParagraphs(sp, listLines(tt), () => 0));
-    c.xml = editShape(c.xml, m.tc, (sp) => setParagraphs(sp, listLines(tc), () => 0));
-    c.xml = editShape(c.xml, m.tl, (sp) => setParagraphs(sp, listLines(tl), () => 0));
     for (const [id, list, g] of [[m.tt, tt, 'needs_attention'], [m.tc, tc, 'positive'], [m.tl, tl, 'neutral']] as const) {
-      fitWarn(c.xml, id, list.map((s) => s.shortLabel), `Kiến nghị – nhóm ${GROUP_LABEL[g]}`, notes);
+      const fitted = fittedList(c.xml, id, list, `Kiến nghị – nhóm ${GROUP_LABEL[g]}`, notes);
+      c.xml = editShape(c.xml, id, (sp) => setParagraphs(sp, fitted, () => 0));
     }
     fitWarn(c.xml, m.groups, groupLines, 'Kiến nghị – danh sách đầu mối', notes, 0);
     c.xml = editShape(c.xml, m.footer, (sp) => setParagraphs(sp, lines(`VĂN PHÒNG SỞ  ${dateLabel}`)));

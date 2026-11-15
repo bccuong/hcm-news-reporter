@@ -413,7 +413,7 @@ function QualityPanel({ s, up }: { s: Settings; up: Up }) {
 /* ---------------- Report ---------------- */
 function ReportPanel({ s, up }: { s: Settings; up: Up }) {
   const toast = useToast();
-  const [caps, setCaps] = useState<{ pdf: boolean; soffice: string | null } | null>(null);
+  const [caps, setCaps] = useState<{ pdf: boolean; soffice: string | null; powerpoint?: string | null } | null>(null);
   useEffect(() => {
     api.capabilities().then(setCaps).catch(() => setCaps(null));
   }, []);
@@ -461,9 +461,16 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
         <Field label="Mẫu tên tệp" help="{date} = ngày báo cáo, {from}/{to} = giờ khung (HHmm)" error={!s.report.filenamePattern.includes('{date}') ? 'Nên có {date} để tránh trùng tên' : null}>
           <input className="input font-mono text-xs" value={s.report.filenamePattern} onChange={(e) => up('report', { filenamePattern: e.target.value })} />
         </Field>
-        <Select label="Bộ chuyển PDF" value={s.report.pdfRenderer} onChange={(v) => up('report', { pdfRenderer: v })} options={[['auto', 'Tự tìm LibreOffice'], ['libreoffice', 'LibreOffice (đường dẫn bên dưới)'], ['none', 'Không xuất PDF']]} />
+        <Select label="Bộ chuyển PDF" value={s.report.pdfRenderer} onChange={(v) => up('report', { pdfRenderer: v })} options={[['auto', 'Tự động: Microsoft PowerPoint, nếu không có thì LibreOffice'], ['powerpoint', 'Chỉ Microsoft PowerPoint'], ['libreoffice', 'Chỉ LibreOffice'], ['none', 'Không xuất PDF']]} help="PowerPoint cho kết quả giống hệt khi mở bằng Office; ứng dụng mở tệp ở chế độ chỉ đọc, không đóng các bản trình chiếu khác của bạn." />
+        <Field label="Đường dẫn POWERPNT.EXE (tùy chọn)"><input className="input font-mono text-xs" placeholder="C:\Program Files (x86)\Microsoft Office\root\Office16\POWERPNT.EXE" value={s.report.powerPointPath} onChange={(e) => up('report', { powerPointPath: e.target.value })} /></Field>
         <Field label="Đường dẫn soffice.exe (tùy chọn)"><input className="input font-mono text-xs" placeholder="C:\Program Files\LibreOffice\program\soffice.exe" value={s.report.libreOfficePath} onChange={(e) => up('report', { libreOfficePath: e.target.value })} /></Field>
-        <p className="text-xs">{caps ? (caps.pdf ? `Tìm thấy LibreOffice: ${caps.soffice}` : 'Chưa tìm thấy LibreOffice – xuất PDF sẽ báo không khả dụng. Cài LibreOffice (miễn phí) để bật PDF.') : 'Không kiểm tra được bộ chuyển PDF.'}</p>
+        <p className="text-xs">
+          {caps
+            ? caps.pdf
+              ? [caps.powerpoint && `Microsoft PowerPoint: ${caps.powerpoint}`, caps.soffice && `LibreOffice: ${caps.soffice}`].filter(Boolean).join(' · ')
+              : 'Chưa tìm thấy PowerPoint hay LibreOffice – xuất PDF sẽ báo không khả dụng.'
+            : 'Không kiểm tra được bộ chuyển PDF.'}
+        </p>
       </Section>
     </div>
   );

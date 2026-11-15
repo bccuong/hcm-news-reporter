@@ -22,7 +22,9 @@ describe.skipIf(!has)('original template adapter (RPT-01/02/03 structural)', () 
   const images = new Map<string, TemplateImage>([['img1', { bytes: PNG, ext: 'png', width: 2, height: 1, credit: 'Báo mẫu', sourceUrl: 'https://fixture-a.example.vn/x' }]]);
   const input = {
     organization: 'SỞ XÂY DỰNG THÀNH PHỐ HỒ CHÍ MINH – VĂN PHÒNG SỞ', reportDate: '2026-11-09', images, coverImageKey: 'img1', tcFeatureKey: null,
-    stories: [story(1, 'needs_attention', true), story(2, 'needs_attention'), story(3, 'needs_attention', true), story(4, 'positive', true), ...[5, 6, 7, 8].map((i) => story(i, 'neutral'))],
+    stories: [
+      { ...story(1, 'needs_attention', true), sources: [...story(1, 'needs_attention').sources, { name: 'Báo mẫu D', url: 'https://fixture-d.example.vn/bai-1-1851101101.htm', publishedAt: '2026-11-08T20:15:00+07:00' }] },
+      story(2, 'needs_attention'), story(3, 'needs_attention', true), story(4, 'positive', true), ...[5, 6, 7, 8].map((i) => story(i, 'neutral'))],
   };
 
   it('builds dynamic slide count, valid XML, no stale sample content, real hyperlinks', async () => {
@@ -42,6 +44,10 @@ describe.skipIf(!has)('original template adapter (RPT-01/02/03 structural)', () 
     expect(allText).toContain('ngày 09 tháng 11 năm 2026');
     expect(allText).toContain('TỒN TẠI (2/2)');
     expect(allText).toContain('https://fixture-a.example.vn/bai-1-1851101001.htm');
+    // multi-source line: both publishers hyperlinked in the same "Nguồn:" paragraph
+    const s2 = await zip.file('ppt/slides/slide2.xml')!.async('string');
+    expect(s2).toMatch(/Nguồn: <\/a:t>[\s\S]*?Báo mẫu<\/a:t>[\s\S]*?  \|  <\/a:t>[\s\S]*?Báo mẫu D<\/a:t>/);
+    expect(allText).toContain('https://fixture-d.example.vn/bai-1-1851101101.htm');
     expect(allText).toContain('&lt;&gt;&quot;'); // escaped special characters
     const media = Object.keys(zip.files).filter((f) => f.startsWith('ppt/media/') && !zip.files[f]!.dir);
     expect(media.some((m) => /hcm_photo_\d+\.png$/.test(m))).toBe(true);
@@ -49,6 +55,16 @@ describe.skipIf(!has)('original template adapter (RPT-01/02/03 structural)', () 
     const pres = await zip.file('ppt/presentation.xml')!.async('string');
     expect(pres).toContain('<p:sldSz cx="7556500" cy="10693400"/>'); // A4 portrait preserved
     expect((pres.match(/<p:sldId /g) ?? []).length).toBe(7);
+  });
+
+  it('cover/recommendation summary lists never overflow: "… và N tin khác" + note', async () => {
+    const many = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({ ...story(i, 'neutral'), shortLabel: `[Mẫu thử] Nhãn khá dài số ${i} về dự án nhà ở` }));
+    const out = await buildFromTemplate(readFileSync(TEMPLATE), { ...input, stories: many });
+    const zip = await JSZip.loadAsync(out.bytes);
+    const cover = await zip.file('ppt/slides/slide1.xml')!.async('string');
+    expect(cover).toMatch(/… và \d+ tin khác/);
+    expect(out.notes.join(' ')).toMatch(/Bìa – nhóm TIN TRUNG LẬP: khung chỉ đủ \d+\/8 nhãn/);
+    expect(out.slideCount).toBe(1 + 3 + 1); // cover, 3 TL pages (3+3+2), kiến nghị – no story dropped
   });
 
   it('text-only when no usable photo (RPT-02): frame removed, never substituted', async () => {

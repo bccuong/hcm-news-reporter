@@ -206,8 +206,9 @@ export const SettingsSchema = z.object({
       filenamePattern: z.string().default('HCM_Diem_tin_{date}_{from}-{to}'),
       storiesPerPage: z.number().int().min(1).max(4).default(2),
       overflowPolicy: z.enum(['new_slide', 'warn_only']).default('new_slide'),
-      pdfRenderer: z.enum(['auto', 'libreoffice', 'none']).default('auto'),
+      pdfRenderer: z.enum(['auto', 'powerpoint', 'libreoffice', 'none']).default('auto'),
       libreOfficePath: z.string().default(''),
+      powerPointPath: z.string().default(''),
       contactEmail: z.string().default(''),
     })
     .default({}),

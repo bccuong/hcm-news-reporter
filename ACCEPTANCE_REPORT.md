@@ -1,4 +1,13 @@
-# ACCEPTANCE_REPORT — Evidence log (2026-11-15, session 2 update)
+# ACCEPTANCE_REPORT — Evidence log (2026-11-15, session 3 update)
+
+## Session 3 changes in status
+| ID | New status | Evidence |
+|---|---|---|
+| DIS-06 | **PASS** | `tests/assemble.test.ts`, `tests/server.test.ts` (fixture A+D clustered, merged, manifest has both sources), Playwright merge→export→manifest→split; real-data render check with Thanh Niên+VnExpress / Thanh Niên+SGGP |
+| RPT-01 | **PASS (PowerPoint)** | Exported PPTX opened in Microsoft PowerPoint (COM, no repair) and exported to PDF by PowerPoint; visually inspected |
+| PDF parity | **PASS** | PowerPoint PDF and LibreOffice PDF of the same PPTX match page-by-page |
+
+# Session 2 update
 
 ## Session 2 changes in status
 | ID | New status | Evidence |

@@ -7,12 +7,13 @@ import { runCollection } from '../src/collector/run.js';
 import { defaultSettings } from '../src/domain/defaults.js';
 import { SourceSchema } from '../src/domain/schemas.js';
 import { makePaths, Stores } from '../src/storage/stores.js';
-import { A, B, WINDOW, fixtureTransport, publicResolver } from '../tests/fixtures/siteA.js';
+import { A, B, D, WINDOW, fixtureTransport, publicResolver } from '../tests/fixtures/siteA.js';
 
 const stores = new Stores(makePaths(mkdtempSync(path.join(tmpdir(), 'hcm-demo-'))), '');
 const sources = [
   SourceSchema.parse({ id: 'fixture-a', name: 'Báo mẫu thử A (fixture)', baseUrl: A, rssUrls: [`${A}/rss/thoi-su.rss`], sitemapUrls: [`${A}/sitemap-news.xml`], sectionUrls: [`${A}/thoi-su.htm`] }),
   SourceSchema.parse({ id: 'fixture-b', name: 'Báo mẫu thử B (luôn lỗi)', baseUrl: B, rssUrls: [`${B}/rss/home.rss`], discoveryMethods: ['rss'] }),
+  SourceSchema.parse({ id: 'fixture-d', name: 'Báo mẫu thử D (cùng sự kiện)', baseUrl: D, rssUrls: [`${D}/rss/do-thi.rss`], discoveryMethods: ['rss'] }),
 ];
 const http = new HttpClient({ transport: fixtureTransport(), resolver: publicResolver, maxConcurrent: 4, perHost: 2, timeoutMs: 5000, maxRetries: 1, backoffBaseMs: 1, userAgent: 'demo', sleep: async () => {} });
 const manifest = await runCollection({ runId: 'run_demo_fixture', window: WINDOW, trigger: 'fixture', settings: defaultSettings(), sources, stores, http });

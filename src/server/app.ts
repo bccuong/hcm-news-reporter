@@ -18,7 +18,8 @@ import { lastCompletedWindow, validateWindow, vnDate, type ReportWindow } from '
 import { checkPublicUrl } from '../domain/url.js';
 import { assembleStories } from '../reports/assemble.js';
 import { buildReportPptx, checkFit } from '../reports/pptx.js';
-import { safeJoin, writeFileAtomic, writeJsonAtomic } from '../storage/files.js';
+import { fileURLToPath } from 'node:url';
+import { safeJoin, serialized, writeFileAtomic, writeJsonAtomic } from '../storage/files.js';
 import { makePaths, Stores } from '../storage/stores.js';
 
 export interface AppOptions {
@@ -32,6 +33,7 @@ export interface AppOptions {
 }
 
 const WindowSchema = z.object({ from: z.string(), to: z.string() });
+const POWERPOINT_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'scripts', 'pptx-to-pdf-powerpoint.ps1');
 
 export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; stores: Stores; token: string }> {
   const paths = makePaths(o.root);
@@ -277,14 +279,41 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
 
   /* ---------- export ---------- */
   const findSoffice = (s: Settings): string | null => {
-    if (s.report.pdfRenderer === 'none') return null;
+    if (s.report.pdfRenderer === 'none' || s.report.pdfRenderer === 'powerpoint') return null;
     const c = [s.report.libreOfficePath, 'C:\\Program Files\\LibreOffice\\program\\soffice.exe', 'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe', '/usr/bin/soffice', '/Applications/LibreOffice.app/Contents/MacOS/soffice'].filter(Boolean);
     return c.find((p) => existsSync(p)) ?? null;
+  };
+  const findPowerPoint = (s: Settings): string | null => {
+    if (process.platform !== 'win32' || s.report.pdfRenderer === 'none' || s.report.pdfRenderer === 'libreoffice') return null;
+    const c = [s.report.powerPointPath, 'C:\\Program Files (x86)\\Microsoft Office\\root\\Office16\\POWERPNT.EXE', 'C:\\Program Files\\Microsoft Office\\root\\Office16\\POWERPNT.EXE'].filter(Boolean);
+    return c.find((p) => existsSync(p)) ?? null;
+  };
+  /** PDF: Microsoft PowerPoint (COM, highest fidelity on Windows) first, then LibreOffice. */
+  const convertPdf = async (s: Settings, dir: string, pptxName: string): Promise<{ status: string; renderer: string | null }> => {
+    const pdfPath = path.join(dir, pptxName.replace(/\.pptx$/, '.pdf'));
+    if (findPowerPoint(s)) {
+      const r = await serialized('powerpoint', () =>
+        new Promise<string>((res) =>
+          execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', POWERPOINT_SCRIPT, '-In', path.join(dir, pptxName), '-Out', pdfPath], { timeout: 180_000, windowsHide: true }, (err, stdout) =>
+            res(err ? `failed: ${String(stdout || err.message).trim()}` : String(stdout).trim()),
+          ),
+        ),
+      );
+      if (r.startsWith('OK') && existsSync(pdfPath)) return { status: 'ok', renderer: `Microsoft PowerPoint (${r})` };
+      if (s.report.pdfRenderer === 'powerpoint') return { status: `failed: PowerPoint – ${r}`, renderer: null };
+    }
+    const soffice = findSoffice(s);
+    if (!soffice) return { status: 'unavailable: chưa có Microsoft PowerPoint hoặc LibreOffice (chọn đường dẫn trong Cài đặt › Báo cáo)', renderer: null };
+    const r = await new Promise<string>((res) =>
+      execFile(soffice, ['--headless', '--convert-to', 'pdf', '--outdir', dir, path.join(dir, pptxName)], { timeout: 120_000 }, (err) => res(err ? `failed: ${err.message}` : 'ok')),
+    );
+    return { status: r, renderer: r === 'ok' ? 'LibreOffice' : null };
   };
   app.get('/api/capabilities', async () => {
     const s = await stores.getSettings();
     const soffice = findSoffice(s);
-    return { pdf: !!soffice, soffice, templateFile: s.report.templateFile || null, templateFidelity: false };
+    const powerpoint = findPowerPoint(s);
+    return { pdf: !!(soffice || powerpoint), soffice, powerpoint, templateFile: s.report.templateFile || null, templateFidelity: !!s.report.templateFile };
   });
   app.post('/api/runs/:id/export', async (req) => {
     const id = (req.params as { id: string }).id;
@@ -308,15 +337,18 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
       for (const st of stories) {
         if (!st.imageUrl || st.group === 'neutral') continue;
         const art = articles.find((a) => a.id === st.articleId);
-        const cand = art?.imageCandidates.find((i) => i.url === st.imageUrl);
+        // the photo may come from a merged article: credit THAT publisher, link THAT article
+        const owner = [st.articleId, ...st.mergedArticleIds].map((id) => articles.find((a) => a.id === id)).find((a) => a?.imageCandidates.some((i) => i.url === st.imageUrl));
+        const cand = owner?.imageCandidates.find((i) => i.url === st.imageUrl);
         if (settings.editorial.photoPolicy === 'strict_verified_only' && cand?.rightsStatus !== 'verified') {
           imageNotes.push(`${st.id}: ảnh chưa xác minh quyền – để trống theo chính sách`);
           continue;
         }
         const img = await fetchImage(http, st.imageUrl, settings.editorial.minImageWidth);
         if (img) {
-          const credit = cand?.credit ? `${cand.credit}/${st.sources[0]?.name}` : st.sources[0]?.name;
-          images.set(st.imageUrl, { ...img, credit, sourceUrl: st.sources[0]?.url ?? st.imageUrl });
+          const pub = owner?.sourceName ?? st.sources[0]?.name;
+          const credit = cand?.credit ? `${cand.credit}/${pub}` : pub;
+          images.set(st.imageUrl, { ...img, credit, sourceUrl: owner?.canonicalUrl ?? owner?.originalUrl ?? st.sources[0]?.url ?? st.imageUrl });
           st.imageKey = st.imageUrl;
           st.image = { data: `data:image/${img.ext};base64,${Buffer.from(img.bytes).toString('base64')}`, caption: cand?.caption, credit };
         } else imageNotes.push(`${st.id}: không tải được ảnh gốc hợp lệ (jpeg/png, đủ kích thước) – dùng bố cục chữ`);
@@ -372,26 +404,21 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     await writeFileAtomic(path.join(dir, pptxName), pptx);
     const files = [pptxName];
     let pdfStatus = 'not_requested';
+    let pdfRenderer: string | null = null;
     if (b.formats.includes('pdf')) {
-      const soffice = findSoffice(settings);
-      if (!soffice) pdfStatus = 'unavailable: chưa cài LibreOffice (cài LibreOffice rồi chọn đường dẫn trong Cài đặt › Báo cáo)';
-      else {
-        pdfStatus = await new Promise<string>((res) =>
-          execFile(soffice, ['--headless', '--convert-to', 'pdf', '--outdir', dir, path.join(dir, pptxName)], { timeout: 120_000 }, (err) =>
-            res(err ? `failed: ${err.message}` : 'ok'),
-          ),
-        );
-        if (pdfStatus === 'ok') files.push(pptxName.replace(/\.pptx$/, '.pdf'));
-      }
+      const r = await convertPdf(settings, dir, pptxName);
+      pdfStatus = r.status;
+      pdfRenderer = r.renderer;
+      if (pdfStatus === 'ok') files.push(pptxName.replace(/\.pptx$/, '.pdf'));
     }
     const manifest = {
       exportId: `${date}/${pptxName}`, runId: id, window: m.window, createdAt: new Date().toISOString(), template: templateUsed,
-      stories: stories.map((s) => ({ id: s.id, articleId: s.articleId, group: s.group, title: s.title, sources: s.sources, image: s.imageUrl, imageEmbedded: !!s.imageKey })),
-      warnings: [...asm.warnings, ...fit.map((f) => f.message), ...imageNotes], pdfStatus, files,
+      stories: stories.map((s) => ({ id: s.id, articleId: s.articleId, mergedArticleIds: s.mergedArticleIds, group: s.group, title: s.title, sources: s.sources, image: s.imageUrl, imageEmbedded: !!s.imageKey })),
+      warnings: [...asm.warnings, ...fit.map((f) => f.message), ...imageNotes], pdfStatus, pdfRenderer, files,
     };
     await writeJsonAtomic(path.join(dir, `${base}_${stamp}_manifest.json`), manifest);
     files.push(`${base}_${stamp}_manifest.json`);
-    return { ok: true, files: files.map((f) => `${date}/${f}`), pdfStatus, warnings: manifest.warnings };
+    return { ok: true, files: files.map((f) => `${date}/${f}`), pdfStatus, pdfRenderer, warnings: manifest.warnings };
   });
   app.post('/api/templates', async (req) => {
     const b = z.object({ name: z.string().regex(/^[\p{L}\p{N} ._()-]+\.pptx$/u, 'Chỉ nhận tệp .pptx'), base64: z.string().max(40_000_000) }).parse(req.body);

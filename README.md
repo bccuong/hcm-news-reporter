@@ -5,11 +5,13 @@
 - **Demo trực tuyến (dữ liệu mẫu thử, không phải tin thật):** https://bccuong.github.io/hcm-news-reporter/
 - Mọi cấu hình (nguồn tin, RSS/sitemap/chuyên mục, từ khóa, quy tắc AND/OR/NOT, địa bàn, khung giờ, giới hạn quét, mẫu báo cáo…) **chỉnh trong giao diện Cài đặt**. Không cần sửa JSON.
 
-> **Trạng thái:** MVP đang phát triển. Xem [PROGRESS.md](PROGRESS.md) và [ACCEPTANCE_REPORT.md](ACCEPTANCE_REPORT.md). PPTX hiện là **bản DEMO** (A4 dọc, đúng thứ tự trang của mẫu Sở) – **chưa** ghép vào tệp mẫu PPTX gốc; mỗi trang có nhãn "BẢN DEMO".
+> **Trạng thái:** MVP. Xem [PROGRESS.md](PROGRESS.md) và [ACCEPTANCE_REPORT.md](ACCEPTANCE_REPORT.md). Xuất PPTX theo **đúng mẫu gốc của Sở** (khi đã tải mẫu) và PDF; đã kiểm tra bằng Microsoft PowerPoint và LibreOffice. Tin cùng sự kiện từ nhiều báo được gộp thành một tin nhiều nguồn.
 
 ## Chạy trên Windows
 
-Yêu cầu: [Node.js LTS](https://nodejs.org) (≥ 20). Tùy chọn: [LibreOffice](https://www.libreoffice.org) để xuất PDF.
+Yêu cầu: [Node.js LTS](https://nodejs.org) (≥ 20). Xuất PDF: tự dùng **Microsoft PowerPoint** nếu máy có Office, nếu không thì [LibreOffice](https://www.libreoffice.org).
+
+Mẫu PPTX của Sở: tải trong **Cài đặt › Báo cáo & mẫu** (ứng dụng lưu bản sao, không sửa tệp gốc). Khi chưa tải mẫu, báo cáo dùng bố cục DEMO có nhãn rõ ràng.
 
 ```powershell
 git clone https://github.com/bccuong/hcm-news-reporter.git

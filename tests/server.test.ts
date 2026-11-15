@@ -1,9 +1,9 @@
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/server/app.js';
-import { A, WINDOW, fixtureTransport, publicResolver, U } from './fixtures/siteA.js';
+import { A, D, WINDOW, fixtureTransport, publicResolver, U, UD } from './fixtures/siteA.js';
 
 const H = { host: '127.0.0.1:5178' };
 async function boot(root: string) {
@@ -60,7 +60,12 @@ describe('local API', () => {
     const app = await boot(root);
     await app.inject({
       method: 'PUT', url: '/api/sources', headers: auth,
-      payload: { sources: [{ id: 'fixture-a', name: 'Fixture A', baseUrl: A, rssUrls: [`${A}/rss/thoi-su.rss`], sitemapUrls: [`${A}/sitemap-news.xml`], sectionUrls: [`${A}/thoi-su.htm`] }] },
+      payload: {
+        sources: [
+          { id: 'fixture-a', name: 'Fixture A', baseUrl: A, rssUrls: [`${A}/rss/thoi-su.rss`], sitemapUrls: [`${A}/sitemap-news.xml`], sectionUrls: [`${A}/thoi-su.htm`] },
+          { id: 'fixture-d', name: 'Fixture D', baseUrl: D, rssUrls: [`${D}/rss/do-thi.rss`], sectionUrls: [], discoveryMethods: ['rss'] },
+        ],
+      },
     });
     const start = await app.inject({ method: 'POST', url: '/api/runs', headers: auth, payload: { window: WINDOW } });
     const { runId } = start.json();
@@ -74,6 +79,7 @@ describe('local API', () => {
     // auto-trigger for same window is refused (once per window) when enabled
     const s = (await app.inject({ method: 'GET', url: '/api/settings', headers: H })).json();
     s.startup.autoCollectLastCompletedWindow = true;
+    s.report.pdfRenderer = 'none'; // keep the unit test from launching Office/LibreOffice
     await app.inject({ method: 'PUT', url: '/api/settings', headers: auth, payload: { settings: s } });
     expect((await app.inject({ method: 'POST', url: '/api/runs', headers: auth, payload: { window: WINDOW, trigger: 'auto' } })).json().skipped).toBe('ALREADY_COLLECTED');
 
@@ -88,8 +94,18 @@ describe('local API', () => {
     const blocked = (await app.inject({ method: 'POST', url: `/api/runs/${runId}/export`, headers: auth, payload: { formats: ['pptx'] } })).json();
     expect(blocked.blockers.join(' ')).toContain('giờ đăng chưa xác minh');
     await app.inject({ method: 'PATCH', url: `/api/runs/${runId}/reviews/${nodate.id}`, headers: auth, payload: { included: false } });
+    // DIS-06: the same flood reported by D is clustered with A's story, merged as a second source
+    const floodD = arts.find((a: any) => a.originalUrl === UD.flood);
+    expect(floodD.duplicateGroupId).toBeTruthy();
+    expect(floodD.duplicateGroupId).toBe(flood.duplicateGroupId);
+    await app.inject({ method: 'PATCH', url: `/api/runs/${runId}/reviews/${floodD.id}`, headers: auth, payload: { groupId: flood.id, included: false } });
     const ok = (await app.inject({ method: 'POST', url: `/api/runs/${runId}/export`, headers: auth, payload: { formats: ['pptx', 'pdf'] } })).json();
     expect(ok.ok).toBe(true);
+    const manifestFile = ok.files.find((f: string) => f.endsWith('_manifest.json'));
+    const manifest = JSON.parse(readFileSync(path.join(root, 'exports', manifestFile), 'utf8'));
+    expect(manifest.stories).toHaveLength(1);
+    expect(manifest.stories[0].sources.map((s: any) => s.name)).toEqual(['Fixture A', 'Fixture D']);
+    expect(manifest.stories[0].mergedArticleIds).toEqual([floodD.id]);
     const pptx = ok.files.find((f: string) => f.endsWith('.pptx'));
     expect(existsSync(path.join(root, 'exports', pptx))).toBe(true);
     const dl = await app.inject({ method: 'GET', url: `/api/exports/${pptx}`, headers: H });
