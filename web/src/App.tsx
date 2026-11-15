@@ -159,6 +159,7 @@ export function App() {
     try {
       const r = await api.patchReview(run.runId, articleId, p);
       setReviews((x) => ({ ...x, [articleId]: r }));
+      return true;
     } catch (e) {
       setReviews((x) => {
         const n = { ...x };
@@ -167,6 +168,7 @@ export function App() {
         return n;
       });
       toast('err', `Không lưu được: ${(e as Error).message}`);
+      return false;
     }
   };
 
@@ -178,16 +180,31 @@ export function App() {
     if (!api.shared || !runId || !api.shared.session()) return setVotes({});
     api.shared.votes(runId).then(setVotes).catch((e) => toast('err', (e as Error).message));
   }, [runId, toast]);
-  useEffect(() => reloadVotes(), [reloadVotes, reviewer]);
-  /** in shared mode, labelling requires a reviewer session; votes refresh after saving */
+  useEffect(() => {
+    reloadVotes();
+    // other reviewers' votes: refresh every 2 minutes (Cloudflare KV listings are eventually consistent, ~60 s)
+    const t = setInterval(reloadVotes, 120_000);
+    return () => clearInterval(t);
+  }, [reloadVotes, reviewer]);
+  /** in shared mode, labelling requires a reviewer session; the reviewer's own vote is shown immediately */
   const guardedPatch = async (articleId: string, p: Partial<ReviewDecision>) => {
     const reviewKeys = ['relevanceLabel', 'primaryCategory', 'assessment', 'reviewNote'];
-    if (api.shared && !api.shared.session() && reviewKeys.some((k) => k in p)) {
+    const s = api.shared?.session();
+    if (api.shared && !s && reviewKeys.some((k) => k in p)) {
       setLoginOpen(true);
       return;
     }
-    await patch(articleId, p);
-    if (api.shared && reviewKeys.some((k) => k in p)) reloadVotes();
+    const before = reviews[articleId];
+    const ok = await patch(articleId, p);
+    if (ok && s && reviewKeys.some((k) => k in p)) {
+      const cur = { ...(before ?? {}), ...p } as Partial<ReviewDecision>;
+      const own: Vote = { r: s.name, l: cur.relevanceLabel ?? null, c: (cur.primaryCategory as string | null) ?? null, a: cur.assessment ?? null, n: (cur.reviewNote ?? '').slice(0, 200), t: new Date().toISOString() };
+      setVotes((v) => {
+        const others = (v[articleId] ?? []).filter((x) => x.r !== s.name);
+        const empty = !own.l && !own.c && !own.a && !own.n;
+        return { ...v, [articleId]: empty ? others : [...others, own] };
+      });
+    }
   };
 
   const merge = async (secondaryId: string, targetId: string) => {
