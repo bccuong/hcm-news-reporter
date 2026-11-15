@@ -7,7 +7,16 @@
 - Last session: 2026-11-15 (session 8) – last commit `6293e33` (shared team review), all tests green locally
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 8 stopped on a user action)
+## ▶ RESUME HERE (session 9 – shared review is LIVE)
+- Review worker deployed: https://hcm-news-review.bccuong.workers.dev (health 200; real access code accepted, wrong code 401; export token OK). GitHub variable `REVIEW_API_URL` + secret `EXPORT_TOKEN` set.
+- Real-site check (2026-11-15 ~19:50): login with the real code on https://bccuong.github.io/hcm-news-reporter/, vote on a real article shown immediately, no console errors; test votes removed (store = 0 labels).
+- Fixes found by the real check: secrets set via a shell pipe had a trailing newline (worker now trims); KV list() is eventually consistent (UI shows own vote immediately, refreshes team votes every 2 min).
+- `labels.yml` ran manually: success, `labels/labels.json` created (0 labels).
+- The access code is NOT in the repo; it was saved for the user in the local file `review-secrets.txt` (session scratchpad, user opens it themselves – printing it from a tool was blocked). If lost, set a new one. Rotate: `cd cloud/review-worker; npx wrangler@3.112.0 secret put ACCESS_CODE` (pipe the value from Node or type it; worker trims whitespace).
+
+**Next single action:** after reviewers have labelled a few days, `git pull` then `npx tsx scripts/eval-shared-labels.ts` → tune rules/keywords from MISSED / FALSE READY / sector & assessment fixes / notes, add regression cases to `tests/relevance.test.ts`, push.
+
+## (history) Session 8 stopped on a user action
 Goal of the user: ONE web version on GitHub; experienced reviewers open a link, log in (name + shared access code), label collected articles; labels are gathered centrally so Claude can make the collector more accurate.
 
 Done and pushed: Cloudflare Worker code `cloud/review-worker/` (KV namespace created, id in `wrangler.toml`; secrets `ACCESS_CODE` + `EXPORT_TOKEN` already uploaded to the Worker), web login/votes UI, nightly `labels.yml`, analysis script. Read `cloud/README.md`.
