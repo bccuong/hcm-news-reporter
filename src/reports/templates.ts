@@ -30,10 +30,10 @@ export const TEMPLATES: TemplateInfo[] = [
     id: SKILL_TEMPLATE_ID, name: 'Mẫu Sở Xây dựng TP.HCM (từ Skill)', kind: 'original-pptx', orientation: 'portrait', file: 'skill-so-xay-dung.pptx',
     description: 'Mẫu PowerPoint gốc của Sở trong Skill: Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị, giữ nguyên định dạng.',
   },
-  { id: 'hanh-chinh', name: 'Hành chính trang trọng', kind: 'style', style: 'hanh-chinh', orientation: 'portrait', description: 'A4 dọc, chữ có chân, viền kép, tông đỏ sẫm – hợp văn bản gửi lãnh đạo.' },
-  { id: 'ban-tin', name: 'Bản tin hiện đại', kind: 'style', style: 'ban-tin', orientation: 'landscape', description: '16:9, bìa số liệu lớn, mỗi trang hai thẻ tin có ảnh – hợp trình chiếu.' },
-  { id: 'toi-gian', name: 'Tối giản', kind: 'style', style: 'toi-gian', orientation: 'portrait', description: 'A4 dọc, đen trắng, nhiều khoảng trắng – dễ in, dễ đọc.' },
-  { id: 'anh-lon', name: 'Ảnh lớn', kind: 'style', style: 'anh-lon', orientation: 'landscape', description: '16:9, mỗi tin một trang, ảnh báo gốc chiếm nửa trang.' },
+  { id: 'hanh-chinh', name: 'Hành chính trang trọng', kind: 'style', style: 'hanh-chinh', orientation: 'portrait', description: 'A4 dọc, chữ có chân, viền kép, tông đỏ sẫm; bìa có số liệu + tiêu điểm, tin xếp liền mạch kèm ảnh – hợp văn bản gửi lãnh đạo.' },
+  { id: 'ban-tin', name: 'Bản tin hiện đại', kind: 'style', style: 'ban-tin', orientation: 'landscape', description: '16:9, bìa tối có số liệu, tin chảy hai cột liền mạch (ảnh + tóm tắt + đề xuất) – hợp trình chiếu.' },
+  { id: 'toi-gian', name: 'Tối giản', kind: 'style', style: 'toi-gian', orientation: 'portrait', description: 'A4 dọc, trắng đen gọn, tin xếp liền mạch, ít trang – dễ in, dễ đọc.' },
+  { id: 'anh-lon', name: 'Ảnh lớn', kind: 'style', style: 'anh-lon', orientation: 'landscape', description: '16:9, mỗi tin có ảnh được một trang ảnh lớn; tin không ảnh và tin trung lập gom hai cột.' },
 ];
 
 export function templateById(id: string | undefined | null): TemplateInfo {

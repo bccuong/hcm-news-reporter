@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13r – Word export from the Department .docx template; 2026-11-16)
+## ▶ RESUME HERE (session 13s – 4 PPTX designs reworked; 2026-11-16)
+- User: the 4 app designs were sparse/disconnected. Rewrote src/reports/styles.ts: measured flow layout (no fixed 2 stories/page), cover with counts + headlines + photo, continuous groups with inline headings, 2 columns on 16:9, balanced last page, Đề xuất boxes, Kiến nghị table + totals; Ảnh lớn = photo page only for stories with a real photo. Template descriptions updated (src/reports/templates.ts).
+- Chose original designs over third-party free templates (licence/attribution on public repo).
+- Tests: typecheck, vitest 130/130, playwright 11/11, live 8/8; visual QA via PowerPoint PNG export (5/4/5/7 slides for 11 stories, no overlap).
+- Next: check the new designs on a real collection with real photos (long titles/sapo) and tune glyph widths if any text overflows.
+
+## (history) Session 13r – Word export from the Department .docx template; 2026-11-16)
 - User supplied "Tổng hợp Điểm tin Báo chí sáng ngày 16.11.2026.docx" and asked for a .docx export ticked by default like .pptx.
 - Template published as `web/public/templates/so-xay-dung.docx` (personal names removed from docProps; content = public news). `src/reports/templateDocx.ts` (`buildDocxFromTemplate`, Node + browser): keeps letterhead table, styles, numbering, header/footer, closing note, signature; rebuilds the body by cloning the template's own paragraphs (group heading, story heading with its ☹/😐 Wingdings symbol, summary, hyperlink, "Đề xuất" bold-underlined); dates the letterhead + title ("NGÀY dd/mm/yyyy", no "SÁNG"); one real hyperlink per source; contact e-mail from settings; the template's STATIC chart picture of another day is replaced by a real Word chart (literal data) of this report's counts; unused sample hyperlinks + picture removed; structural mismatch → BLOCKED (`DocxTemplateMismatchError`).
 - Export: formats pptx | docx | pdf (local server writes the .docx next to the .pptx; the web builds it in the browser and downloads it; PowerPoint is skipped when only Word is ticked). `report.outputFormats` default ["pptx","docx"]; saved configs with the old ["pptx"] get "docx" once (`outputFormatsRev`). Checked visually (LibreOffice PNG) and opened in Word (2 pages, 1 chart, 5 links).
