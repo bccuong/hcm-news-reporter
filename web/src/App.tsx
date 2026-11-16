@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Undo2, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, Wifi, WifiOff, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
@@ -332,8 +332,12 @@ export function App() {
     return !!c && (['date_unverified', 'parsed_partial'].includes(c.state) || (c.state === 'ready_for_review' && !!c.reasonCode));
   };
   // the editor can move a story from Cần kiểm tra to Bài sẵn sàng (and back)
-  const ready = arts.filter((a) => (candByArticle.get(a.id)?.state === 'ready_for_review' && !candByArticle.get(a.id)?.reasonCode) || (inReviewQueue(a) && !!reviews[a.id]?.promotedToReady));
-  const reviewQueue = arts.filter((a) => inReviewQueue(a) && !reviews[a.id]?.promotedToReady);
+  const readyPool = arts.filter((a) => (candByArticle.get(a.id)?.state === 'ready_for_review' && !candByArticle.get(a.id)?.reasonCode) || (inReviewQueue(a) && !!reviews[a.id]?.promotedToReady));
+  const reviewPool = arts.filter((a) => inReviewQueue(a) && !reviews[a.id]?.promotedToReady);
+  // stories the editor removed ("Loại") leave the lists; each tab lists its own under "Đã loại" to restore
+  const isOut = (a: Article) => !!reviews[a.id]?.excludedByEditor;
+  const ready = readyPool.filter((a) => !isOut(a));
+  const reviewQueue = reviewPool.filter((a) => !isOut(a));
   const selected = Object.values(reviews).filter((r) => r.included).length;
 
   return (
@@ -516,8 +520,8 @@ export function App() {
                 </button>
               ))}
             </nav>
-            {tab === 'articles' && <ArticleList list={ready} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} votes={votes} />}
-            {tab === 'review' && <ArticleList list={reviewQueue} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} reviewMode votes={votes} />}
+            {tab === 'articles' && <ArticleList list={ready} excluded={readyPool.filter(isOut)} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} votes={votes} />}
+            {tab === 'review' && <ArticleList list={reviewQueue} excluded={reviewPool.filter(isOut)} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} reviewMode votes={votes} />}
             {tab === 'ledger' && <Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} reviews={reviews} onPatch={patch} />}
             {tab === 'coverage' && <Coverage run={run} cands={cands} reviewsKey={JSON.stringify(Object.values(reviews).map((x) => [x.articleId, x.relevanceLabel, x.included, x.groupId]))} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
             {tab === 'export' && settings && <ExportPanel run={run} arts={artById} reviews={reviews} settings={settings} onPatch={patch} onInspect={setInspect} onMerge={merge} onSplit={split} />}
@@ -613,7 +617,7 @@ function Metric({ label, value, tone }: { label: string; value: number; tone?: '
   );
 }
 
-function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, reviewMode, votes }: { list: Article[]; reviews: Record<string, ReviewDecision>; cands: Map<string, Candidate>; settings: Settings | null; onInspect: (id: string) => void; onPatch: (id: string, p: Partial<ReviewDecision>) => void | Promise<unknown>; reviewMode?: boolean; votes?: Record<string, Vote[]> }) {
+function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect, onPatch, reviewMode, votes }: { list: Article[]; excluded?: Article[]; reviews: Record<string, ReviewDecision>; cands: Map<string, Candidate>; settings: Settings | null; onInspect: (id: string) => void; onPatch: (id: string, p: Partial<ReviewDecision>) => void | Promise<unknown>; reviewMode?: boolean; votes?: Record<string, Vote[]> }) {
   const [q, setQ] = useState('');
   const [bulk, setBulk] = useState<string | null>(null);
   const [cat, setCat] = useState<string>('all');
@@ -681,6 +685,16 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
               <ArrowRight className="h-3.5 w-3.5" /> Chuyển {nSel > 0 ? `${nSel} bài đã chọn` : 'tất cả'} sang Bài sẵn sàng
             </button>
           )}
+          {nSel > 0 && (
+            <button
+              className={`btn-danger btn-xs ${reviewMode ? '' : 'ml-auto'}`}
+              disabled={!!bulk}
+              title="Loại các bài đã chọn khỏi danh sách và báo cáo (khôi phục ở mục Đã loại bên dưới)"
+              onClick={() => void runBulk('Đang loại…', selectable.filter((a) => reviews[a.id]?.included).map((a) => a.id), () => ({ excludedByEditor: true, included: false }))}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Loại {nSel} bài đã chọn
+            </button>
+          )}
           {bulk && <span className="text-xs text-slate-500">{bulk}</span>}
         </div>
       )}
@@ -731,6 +745,9 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
                     <ArrowRight className="h-3.5 w-3.5" /> Sẵn sàng
                   </button>
                 )}
+                <button className="btn-ghost btn-xs text-red-700" onClick={() => onPatch(a.id, { excludedByEditor: true, included: false })} title="Loại bài này khỏi danh sách và báo cáo (khôi phục ở mục Đã loại bên dưới)" aria-label={`Loại bài: ${a.title}`}>
+                  <Trash2 className="h-3.5 w-3.5" /> Loại
+                </button>
                 {!reviewMode && r?.promotedToReady && (
                   <button className="btn-ghost btn-xs" onClick={() => onPatch(a.id, { promotedToReady: false })} title="Trả bài về Cần kiểm tra" aria-label={`Trả về Cần kiểm tra: ${a.title}`}>
                     <Undo2 className="h-3.5 w-3.5" /> Trả về
@@ -741,6 +758,23 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
           );
         })}
       </div>
+      {excluded.length > 0 && (
+        <details className="mt-3 rounded border border-slate-200 bg-white p-2" data-testid="excluded-list">
+          <summary className="cursor-pointer text-sm text-slate-600">Đã loại ({excluded.length}) – xem và khôi phục</summary>
+          <div className="mt-2 space-y-1">
+            {excluded.map((a) => (
+              <div key={a.id} className="flex items-center gap-2 border-b border-slate-100 py-1 text-sm">
+                <span className="text-xs text-slate-500">{a.sourceName}</span>
+                <span className="min-w-0 flex-1 truncate">{reviews[a.id]?.title ?? a.title}</span>
+                {reviews[a.id]?.relevanceLabel === 'irrelevant' && <span className="chip border-red-300 bg-red-50 text-red-800">không liên quan</span>}
+                <button className="btn-ghost btn-xs" onClick={() => onPatch(a.id, reviews[a.id]?.relevanceLabel === 'irrelevant' ? { excludedByEditor: false, relevanceLabel: null } : { excludedByEditor: false })} aria-label={`Khôi phục: ${a.title}`}>
+                  <Undo2 className="h-3.5 w-3.5" /> Khôi phục
+                </button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -816,8 +850,8 @@ function RelevanceButtons({ r, onPatch, title, votes }: { r?: ReviewDecision; on
           className={`btn btn-xs ${l === 'irrelevant' ? 'border-red-600 bg-red-600 text-white' : 'btn-ghost'}`}
           aria-pressed={l === 'irrelevant'}
           aria-label={`Không liên quan: ${title}`}
-          title="Đánh giá cho bộ lọc: bài này không thuộc phạm vi điểm tin (đồng thời bỏ khỏi báo cáo)"
-          onClick={() => onPatch(l === 'irrelevant' ? { relevanceLabel: null } : { relevanceLabel: 'irrelevant', included: false })}
+          title="Đánh giá cho bộ lọc: bài này không thuộc phạm vi điểm tin – đồng thời loại khỏi danh sách và báo cáo (khôi phục ở mục Đã loại)"
+          onClick={() => onPatch(l === 'irrelevant' ? { relevanceLabel: null } : { relevanceLabel: 'irrelevant', included: false, excludedByEditor: true })}
         >
           ✗ Không
         </button>

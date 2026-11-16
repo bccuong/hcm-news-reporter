@@ -7,7 +7,10 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13f – bulk select, move review → ready; 2026-11-16)
+## ▶ RESUME HERE (session 13g – remove ("Loại") stories, restore; 2026-11-16)
+- User: a way to remove a story from Bài sẵn sàng. Added review field `excludedByEditor`: per-story "Loại" (both tabs, no login needed), bulk "Loại n bài đã chọn", section "Đã loại (n)" under each list with "Khôi phục". "✗ Không" (not relevant) now also removes the story (label kept for filter quality; restore clears the label). Removed stories leave the report too. Collected data is never deleted. Test "Remove (\"Loại\")…" (app.spec.ts), screenshot `docs/screenshots/excluded.png`. Fixed test flakiness: wait for the new run to start and finish before reading tab counts. Tests: typecheck, vitest 99/99, playwright 11/11, live E2E 5/5.
+
+## (history) Session 13f – bulk select, move review → ready; 2026-11-16)
 - User: no select/unselect all for the report; how to move a story from "Cần kiểm tra" to "Bài sẵn sàng"? Done in both article lists (`ArticleList`, web/src/App.tsx): bar "Chọn tất cả (n đang hiển thị)" (tri-state, follows search + sector filter, skips merged secondaries) and "Bỏ chọn tất cả"; in Cần kiểm tra a per-story "→ Sẵn sàng" button and "Chuyển tất cả / n bài đã chọn sang Bài sẵn sàng"; moved stories show "từ Cần kiểm tra" and "↩ Trả về". Stored as review field `promotedToReady` (local API + browser store). Export checks still apply (unverified publication time must be confirmed). Test "Bulk select / unselect all…" (app.spec.ts), screenshot `docs/screenshots/bulk-select.png`. Tests: typecheck, vitest 99/99, playwright 10/10, live E2E 5/5.
 
 ## (history) Session 13e – Settings as one profile tree; 2026-11-16)

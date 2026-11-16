@@ -458,6 +458,8 @@ export interface ReviewDecision {
   reviewNote?: string;
   /** editor moved the story from "Cần kiểm tra" to "Bài sẵn sàng" (export checks such as an unverified time still apply) */
   promotedToReady?: boolean;
+  /** editor removed the story from the lists ("Loại"; restorable under "Đã loại") – never deletes collected data */
+  excludedByEditor?: boolean;
   updatedAt: string;
   changes: Array<{ at: string; field: string; from: unknown; to: unknown }>;
 }

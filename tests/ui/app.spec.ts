@@ -155,7 +155,10 @@ test('Editor feedback: label ready / excluded stories → filter quality card (p
   // flood was selected for the report in the previous test → counts as relevant implicitly
   await expect(page.getByText('đã chọn vào báo cáo = liên quan').first()).toBeVisible();
   await page.getByRole('button', { name: /^Không liên quan: \[Mẫu thử\] Khánh thành nhà ga metro/ }).click();
-  await expect(page.getByRole('button', { name: /^Không liên quan: \[Mẫu thử\] Khánh thành nhà ga metro/ })).toHaveAttribute('aria-pressed', 'true');
+  // "✗ Không" also removes the story from the list: it is listed under "Đã loại" with its label
+  await page.getByTestId('excluded-list').locator('summary').click();
+  await expect(page.getByTestId('excluded-list')).toContainText('Khánh thành nhà ga metro');
+  await expect(page.getByTestId('excluded-list')).toContainText('không liên quan');
   // a story the filter excluded, rescued by the editor from the ledger
   await page.getByRole('button', { name: /Sổ ứng viên/ }).click();
   const row = page.locator('tr', { hasText: 'mau-thu-ha-noi-mo-rong-duong-vanh-dai' });
@@ -254,6 +257,9 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
   await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
+  // counts of THIS run: wait for it to start, then to finish (until then the previous run's numbers are shown)
+  await page.getByText('đang chạy', { exact: true }).waitFor({ timeout: 10_000 }).catch(() => undefined);
+  await expect(page.getByText('đang chạy', { exact: true })).toHaveCount(0, { timeout: 30_000 });
   const num = async (re: RegExp) => Number(/\((\d+)\)/.exec((await page.getByRole('button', { name: re }).innerText()))![1]);
   const ready0 = await num(/^Bài sẵn sàng/);
   const review0 = await num(/^Cần kiểm tra/);
@@ -292,4 +298,55 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
   await page.getByTestId('bulk-bar').getByRole('button', { name: /Chuyển tất cả sang Bài sẵn sàng/ }).click();
   await expect(page.getByRole('button', { name: /^Cần kiểm tra/ })).toHaveText('Cần kiểm tra (0)');
   await expect(page.getByRole('button', { name: /^Bài sẵn sàng/ })).toHaveText(`Bài sẵn sàng (${ready0 + review0})`);
+});
+
+test('Remove ("Loại") a story from Bài sẵn sàng, restore it; bulk remove selected; "✗ Không" also removes', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
+  await page.getByLabel('Từ (gồm)').fill('2026-11-08T17:00');
+  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
+  await page.getByRole('button', { name: 'Thu thập' }).click();
+  await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
+  // counts of THIS run: wait for it to start, then to finish (until then the previous run's numbers are shown)
+  await page.getByText('đang chạy', { exact: true }).waitFor({ timeout: 10_000 }).catch(() => undefined);
+  await expect(page.getByText('đang chạy', { exact: true })).toHaveCount(0, { timeout: 30_000 });
+  const readyTab = page.getByRole('button', { name: /^Bài sẵn sàng/ });
+  const n0 = Number(/\((\d+)\)/.exec(await readyTab.innerText())![1]);
+  expect(n0).toBeGreaterThanOrEqual(2);
+  await readyTab.click();
+
+  // one story, already selected for the report: removed from the list AND the report
+  const story = page.locator('article').filter({ hasText: 'khiến nhiều tuyến đường ở phường Hiệp Bình' });
+  await story.getByLabel(/Chọn bài/).check();
+  await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText('Xuất báo cáo (1)');
+  await story.getByRole('button', { name: /^Loại bài:/ }).click();
+  await expect(readyTab).toHaveText(`Bài sẵn sàng (${n0 - 1})`);
+  await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText('Xuất báo cáo (0)');
+  const out = page.getByTestId('excluded-list');
+  await out.locator('summary').click();
+  await expect(out).toContainText('Đã loại (1)');
+  await expect(out).toContainText('khiến nhiều tuyến đường ở phường Hiệp Bình');
+  await page.screenshot({ path: 'docs/screenshots/excluded.png' });
+  // persists after reload, then restore
+  await page.reload();
+  await expect(readyTab).toHaveText(`Bài sẵn sàng (${n0 - 1})`);
+  await readyTab.click();
+  await page.getByTestId('excluded-list').locator('summary').click();
+  await page.getByRole('button', { name: /^Khôi phục: .*khiến nhiều tuyến đường ở phường Hiệp Bình/ }).click();
+  await expect(readyTab).toHaveText(`Bài sẵn sàng (${n0})`);
+  await expect(page.getByTestId('excluded-list')).toHaveCount(0);
+
+  // bulk: select all, remove the selected ones
+  await page.getByTestId('bulk-bar').getByLabel('Chọn tất cả bài đang hiển thị').click();
+  await expect(page.getByTestId('bulk-bar')).toContainText(`đã chọn ${n0}`);
+  await page.getByTestId('bulk-bar').getByRole('button', { name: `Loại ${n0} bài đã chọn` }).click();
+  await expect(readyTab).toHaveText('Bài sẵn sàng (0)');
+  await expect(page.getByTestId('excluded-list')).toContainText(`Đã loại (${n0})`);
+  await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText('Xuất báo cáo (0)');
+  // restore one and mark it "✗ Không" (not relevant): it leaves the list again, labelled
+  await page.getByTestId('excluded-list').locator('summary').click();
+  await page.getByRole('button', { name: /^Khôi phục: .*khiến nhiều tuyến đường ở phường Hiệp Bình/ }).click();
+  await page.locator('article').filter({ hasText: 'khiến nhiều tuyến đường ở phường Hiệp Bình' }).getByRole('button', { name: /^Không liên quan:/ }).click();
+  await expect(readyTab).toHaveText('Bài sẵn sàng (0)');
+  await expect(page.getByTestId('excluded-list')).toContainText('không liên quan');
 });
