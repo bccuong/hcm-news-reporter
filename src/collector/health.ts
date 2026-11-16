@@ -55,9 +55,10 @@ export function assessHealth(current: ReturnType<typeof measureHealth>, history:
     }
     if (baseline.mainContainer && baseline.mainContainer !== '(none)') {
       // share among the articles whose container is known (= fetched − parse failures for a fresh run)
+      // needs evidence: at least MIN_SAMPLE articles with a known container (an hourly run that only carried articles over has none)
       const known = Object.values(current.containers).reduce((s, n) => s + n, 0);
       const stillUsed = (current.containers[baseline.mainContainer] ?? 0) / Math.max(1, known);
-      if (current.mainContainer !== baseline.mainContainer && stillUsed < 0.5) {
+      if (known >= MIN_SAMPLE && current.mainContainer !== baseline.mainContainer && stillUsed < 0.5) {
         reasons.push(`Khung nội dung bài đổi từ "${baseline.mainContainer}" sang "${current.mainContainer ?? 'không xác định'}" – báo có thể đã đổi giao diện`);
       }
     }

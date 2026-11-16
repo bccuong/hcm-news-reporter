@@ -57,5 +57,10 @@ describe('DIS-08 adapter degraded detection', () => {
     const hist = [{ ...base, status: 'ok' as const, reasons: [], baseline: { runs: 0, failRate: null, mainContainer: null } }];
     expect(assessHealth({ ...base, failRate: 0.3 }, hist).status).toBe('ok'); // +0.2 is within tolerance
     expect(assessHealth({ ...base, failRate: 0.4 }, hist).status).toBe('degraded');
+    // container drift needs evidence: an hourly run that only carried articles over (no container known) is not "changed layout"
+    const histC = [{ ...base, status: 'ok' as const, reasons: [], baseline: { runs: 0, failRate: null, mainContainer: null } }];
+    expect(assessHealth({ ...base, mainContainer: null, containerShare: 0, containers: {} }, histC).status).toBe('ok');
+    expect(assessHealth({ ...base, mainContainer: 'main', containers: { main: 2 } }, histC).status).toBe('ok'); // 2 < MIN_SAMPLE
+    expect(assessHealth({ ...base, mainContainer: 'main', containers: { main: 10 } }, histC).status).toBe('degraded'); // real change still caught
   });
 });
