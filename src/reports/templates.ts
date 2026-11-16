@@ -27,8 +27,8 @@ export const UPLOAD_TEMPLATE_ID = 'upload';
 
 export const TEMPLATES: TemplateInfo[] = [
   {
-    id: SKILL_TEMPLATE_ID, name: 'Mẫu Sở Xây dựng TP.HCM (từ Skill)', kind: 'original-pptx', orientation: 'portrait', file: 'skill-so-xay-dung.pptx',
-    description: 'Mẫu PowerPoint gốc của Sở trong Skill: Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị, giữ nguyên định dạng.',
+    id: SKILL_TEMPLATE_ID, name: 'Mẫu Sở Xây dựng TP.HCM', kind: 'original-pptx', orientation: 'portrait', file: 'skill-so-xay-dung.pptx',
+    description: 'Mẫu PowerPoint gốc của Sở: Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị, giữ nguyên định dạng.',
   },
   { id: 'hanh-chinh', name: 'Hành chính trang trọng', kind: 'style', style: 'hanh-chinh', orientation: 'portrait', description: 'A4 dọc, chữ có chân, viền kép, tông đỏ sẫm; bìa có số liệu + tiêu điểm, tin xếp liền mạch kèm ảnh – hợp văn bản gửi lãnh đạo.' },
   { id: 'ban-tin', name: 'Bản tin hiện đại', kind: 'style', style: 'ban-tin', orientation: 'landscape', description: '16:9, bìa tối có số liệu, tin chảy hai cột liền mạch (ảnh + tóm tắt + đề xuất) – hợp trình chiếu.' },

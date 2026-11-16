@@ -7,6 +7,18 @@ const httpUrl = z
   .url('URL không hợp lệ')
   .refine((u) => /^https?:\/\//i.test(u), 'Chỉ chấp nhận http(s)');
 
+/**
+ * Configurations saved before 16/11/2026 carry notes such as "(từ Skill)" – the Skill is only where the first defaults
+ * came from, not something users need to see: removed when read.
+ */
+export function withoutSkillNote(s: string): string {
+  return s
+    .replace(/Tuyến thu thập lấy từ Skill gốc \(đã thử ([^)]*?) theo ghi chú Skill\)/g, 'Tuyến thu thập mặc định (đã thử $1)')
+    .replace(/\(mặc định từ Skill\)/g, '(mặc định)')
+    .replace(/\s*\((?:từ|trong) Skill\)/g, '')
+    .replace(/ trong Skill(?=[:,.]|$)/g, '');
+}
+
 export const DiscoveryMethod = z.enum(['rss', 'sitemap', 'section', 'search']);
 export type DiscoveryMethod = z.infer<typeof DiscoveryMethod>;
 
@@ -39,7 +51,7 @@ export const SourceSchema = z.object({
   pauseMs: z.number().int().min(0).max(30000).default(200),
   articleUrlPattern: z.string().default(''),
   excludeUrlPattern: z.string().default(''),
-  notes: z.string().default(''),
+  notes: z.string().default('').transform(withoutSkillNote),
   origin: z.enum(['skill', 'user', 'import']).default('user'),
 });
 export type Source = z.infer<typeof SourceSchema>;
@@ -85,7 +97,7 @@ export const RuleNodeSchema: z.ZodType<RuleNode> = z.lazy(() =>
 
 export const RulePresetSchema = z.object({
   id: z.string(),
-  name: z.string().min(1),
+  name: z.string().min(1).transform(withoutSkillNote),
   root: RuleNodeSchema,
   /** Optional: only applies to these sources (per-source override). Empty = all */
   sourceIds: z.array(z.string()).default([]),
@@ -346,7 +358,7 @@ export const ProfileIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'M�
 export const ProfileMetaSchema = z.object({
   id: ProfileIdSchema,
   name: z.string().trim().min(1).max(60),
-  description: z.string().max(300).default(''),
+  description: z.string().max(300).default('').transform(withoutSkillNote),
   /** web: hourly automatic collection for this profile (the default TP.HCM profile is on) */
   autoCollect: z.boolean().default(false),
   clonedFrom: z.string().nullable().default(null),

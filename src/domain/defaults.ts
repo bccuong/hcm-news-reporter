@@ -68,7 +68,7 @@ export function sourceFromUrl(url: string, opts: Partial<Source> = {}): Source {
     excludeUrlPattern: known?.exclude ?? '',
     maxConcurrency: known?.conc ?? 2,
     pauseMs: known?.pause ?? 200,
-    notes: known ? 'Tuyến thu thập lấy từ Skill gốc (đã thử 15/11/2026 theo ghi chú Skill).' : 'Nguồn mới – cần dò cấu trúc và kiểm tra.',
+    notes: known ? 'Tuyến thu thập mặc định (đã thử 15/11/2026).' : 'Nguồn mới – cần dò cấu trúc và kiểm tra.',
     origin: 'skill',
     ...opts,
   });
@@ -119,7 +119,7 @@ const rid = (p: string) => `${p}_${++n}`;
 export function defaultRulePreset(): { id: string; name: string; root: RuleGroup; sourceIds: string[] } {
   return {
     id: 'preset_nganh_xay_dung',
-    name: 'Ngành xây dựng TP.HCM (mặc định từ Skill)',
+    name: 'Ngành xây dựng TP.HCM (mặc định)',
     sourceIds: [],
     root: {
       kind: 'group',

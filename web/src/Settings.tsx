@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Download, FileUp, History, Plus, RotateCcw, 
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings } from '../../src/domain/defaults';
 import { detectLocation } from '../../src/domain/location';
-import { SettingsSchema, type LocationArea, type RuleGroup, type Settings, type Source } from '../../src/domain/schemas';
+import { SettingsSchema, withoutSkillNote, type LocationArea, type RuleGroup, type Settings, type Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
 import { uid } from '../../src/domain/text';
 import { api, type HistoryEntry, type PreviewResult, type ProfilesState, type TemplateOption } from './api';
@@ -399,7 +399,7 @@ function LocationPanel({ s, up }: { s: Settings; up: Up }) {
       </Section>
       <Section
         title={`Địa danh & bí danh (${areas.length})`}
-        help="Nguồn: danh sách đơn vị hành chính trong Skill (NQ 1685/NQ-UBTVQH15). Tên dễ nhầm cần tiền tố phường/xã."
+        help="Nguồn: danh sách đơn vị hành chính (NQ 1685/NQ-UBTVQH15). Tên dễ nhầm cần tiền tố phường/xã."
         actions={<button className="btn-ghost btn-xs" onClick={() => setAreas([{ id: uid('loc'), name: 'Địa danh mới', kind: 'custom', aliases: [], requirePrefix: false }, ...areas])}><Plus className="h-3 w-3" /> Thêm địa danh</button>}
       >
         <div className="flex gap-2">
@@ -566,7 +566,7 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
   };
   return (
     <div>
-      <Section title={`Mẫu báo cáo có sẵn (${tpls.length})`} help="Mẫu Sở Xây dựng TP.HCM (từ Skill) có sẵn trong ứng dụng – không cần tải gì. Tích mẫu mặc định; khi xuất vẫn tích được mẫu khác cho từng lần.">
+      <Section title={`Mẫu báo cáo có sẵn (${tpls.length})`} help="Mẫu Sở Xây dựng TP.HCM có sẵn trong ứng dụng – không cần tải gì. Tích mẫu mặc định; khi xuất vẫn tích được mẫu khác cho từng lần.">
         <div className="space-y-1.5" role="radiogroup" aria-label="Mẫu mặc định khi xuất" data-testid="default-template-picker">
           {tpls.map((x) => (
             <label key={x.id} className={`flex cursor-pointer items-start gap-2 rounded border p-2 text-sm ${x.id === s.report.templateId ? 'border-teal-600 bg-teal-50' : 'border-slate-200 hover:bg-slate-50'}`}>
@@ -839,7 +839,7 @@ function ProfilesPanel({ dirty, view, onCreate, onChanged }: { dirty: boolean; v
                       {p.id === st.activeId && <span className="chip ml-2 border-teal-300 bg-teal-50 text-teal-900">đang dùng</span>}
                       {api.mode !== 'local' && p.autoCollect && <span className="chip ml-1 border-green-300 bg-green-50 text-green-800">tự động mỗi giờ</span>}
                       {p.clonedFrom && <span className="ml-1 text-xs text-slate-500">· sao chép từ {st.profiles.find((x) => x.id === p.clonedFrom)?.name ?? p.clonedFrom}</span>}
-                      {p.description && <div className="text-xs text-slate-500">{p.description}</div>}
+                      {p.description && <div className="text-xs text-slate-500">{withoutSkillNote(p.description)}</div>}
                     </>
                   )}
                 </td>

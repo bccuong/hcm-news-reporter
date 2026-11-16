@@ -86,7 +86,7 @@ export class Stores {
       }
       const idx: ProfilesIndex = {
         schemaVersion: 1, activeId: id,
-        profiles: [{ id, name: 'TP.HCM', description: 'Cấu hình mặc định: ngành xây dựng TP.HCM (từ Skill)', autoCollect: true, clonedFrom: null, createdAt: now, updatedAt: now }],
+        profiles: [{ id, name: 'TP.HCM', description: 'Cấu hình mặc định: ngành xây dựng TP.HCM', autoCollect: true, clonedFrom: null, createdAt: now, updatedAt: now }],
       };
       await writeJsonAtomic(this.profilesFile, idx);
       return idx;

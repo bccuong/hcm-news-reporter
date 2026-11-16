@@ -43,7 +43,7 @@ export function SourcesPanel({ sources, setSources }: { sources: Source[]; setSo
           <Plus className="h-4 w-4" /> Thêm nguồn
         </button>
         <button className="btn-ghost" onClick={() => setImportOpen(true)}>
-          <Upload className="h-4 w-4" /> Nhập websites.txt từ Skill
+          <Upload className="h-4 w-4" /> Nhập danh sách nguồn (websites.txt)
         </button>
       </div>
       {wizard && <AddSourceWizard existing={sources} onClose={() => setWizard(false)} onAdd={(s) => { setSources([...sources, s]); setWizard(false); setEditing(s.id); }} />}
@@ -59,7 +59,7 @@ export function SourcesPanel({ sources, setSources }: { sources: Source[]; setSo
                 </div>
                 <div className="text-xs text-slate-500">
                   {s.fetchMode === 'manual_only' ? <span className="text-amber-700">Chỉ nhập link thủ công · </span> : null}
-                  RSS {s.rssUrls.length} · Sitemap {s.sitemapUrls.length} · Chuyên mục {s.sectionUrls.length} · tối đa {s.crawlLimits.maxListingPages} trang / {s.crawlLimits.perRunArticles ?? 'giới hạn chung'} bài mỗi lượt · nguồn gốc: {s.origin}
+                  RSS {s.rssUrls.length} · Sitemap {s.sitemapUrls.length} · Chuyên mục {s.sectionUrls.length} · tối đa {s.crawlLimits.maxListingPages} trang / {s.crawlLimits.perRunArticles ?? 'giới hạn chung'} bài mỗi lượt · nguồn gốc: {s.origin === 'skill' ? 'mặc định' : s.origin === 'import' ? 'nhập từ tệp' : 'tự thêm'}
                 </div>
               </div>
               <button className="btn-ghost btn-xs" disabled={busy === s.id} onClick={() => test(s)}>

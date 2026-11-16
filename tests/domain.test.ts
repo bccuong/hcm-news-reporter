@@ -165,3 +165,19 @@ describe('RSS dates with a two-digit year (Thanh Niên, 16/11/2026)', () => {
     expect(parsePublisherDate('Mon, 16 Nov 2026 14:20:00 +0700')).toBe('2026-11-16T14:20:00+07:00');
   });
 });
+
+describe('no "Skill" notes shown to users', async () => {
+  const { SettingsSchema, SourceSchema, ProfileMetaSchema } = await import('../src/domain/schemas.js');
+  const { TEMPLATES } = await import('../src/reports/templates.js');
+  it('configurations saved before are cleaned when read; defaults and template names carry none', () => {
+    const src = SourceSchema.parse({ id: 'tn', name: 'Thanh Niên', baseUrl: 'https://thanhnien.vn', notes: 'Tuyến thu thập lấy từ Skill gốc (đã thử 15/11/2026 theo ghi chú Skill).' });
+    expect(src.notes).toBe('Tuyến thu thập mặc định (đã thử 15/11/2026).');
+    const s = SettingsSchema.parse(defaultSettings());
+    expect(JSON.stringify(s)).not.toMatch(/Skill/);
+    const old = defaultSettings() as any;
+    old.rules.presets[0].name = 'Ngành xây dựng TP.HCM (mặc định từ Skill)';
+    expect(SettingsSchema.parse(old).rules.presets[0]!.name).toBe('Ngành xây dựng TP.HCM (mặc định)');
+    expect(ProfileMetaSchema.parse({ id: 'hcm', name: 'TP.HCM', description: 'Cấu hình mặc định: ngành xây dựng TP.HCM (từ Skill)', createdAt: '', updatedAt: '' }).description).toBe('Cấu hình mặc định: ngành xây dựng TP.HCM');
+    for (const t of TEMPLATES) expect(`${t.name} ${t.description}`).not.toMatch(/Skill/);
+  });
+});
