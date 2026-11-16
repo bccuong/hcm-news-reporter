@@ -7,7 +7,12 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13g – remove ("Loại") stories, restore; 2026-11-16)
+## ▶ RESUME HERE (session 13h – action row under each story; source-strip caption; 2026-11-16)
+- User: buttons below each story instead of the right column → one row (Xem chi tiết · Bài gốc · ✓ Liên quan · ✗ Không · team votes · → Sẵn sàng / ↩ Trả về … Loại at the far right), `data-testid="story-actions"`.
+- User: "per-publisher stats don't reset after each collection?" – they belong to the viewed period and its last run; period 2026-11-16 was frozen at 10:00, so its 09:59 numbers (incl. the false "bóc tách suy giảm" for Thanh Niên/SGGP, fixed in 6578f69 after that run) stay. Added a caption before the source chips: "Từng báo – kỳ … · lượt cuối … · đang diễn ra / kỳ đã chốt". Offered (not done): clean re-collection of 16/11 via web "Thu thập" (custom period).
+- Tests: typecheck, vitest 99/99, playwright 11/11, live E2E 5/5.
+
+## (history) Session 13g – remove ("Loại") stories, restore; 2026-11-16)
 - User: a way to remove a story from Bài sẵn sàng. Added review field `excludedByEditor`: per-story "Loại" (both tabs, no login needed), bulk "Loại n bài đã chọn", section "Đã loại (n)" under each list with "Khôi phục". "✗ Không" (not relevant) now also removes the story (label kept for filter quality; restore clears the label). Removed stories leave the report too. Collected data is never deleted. Test "Remove (\"Loại\")…" (app.spec.ts), screenshot `docs/screenshots/excluded.png`. Fixed test flakiness: wait for the new run to start and finish before reading tab counts. Tests: typecheck, vitest 99/99, playwright 11/11, live E2E 5/5.
 
 ## (history) Session 13f – bulk select, move review → ready; 2026-11-16)

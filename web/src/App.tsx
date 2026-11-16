@@ -488,7 +488,13 @@ export function App() {
 
         {/* source strip */}
         {run && (
-          <section className="flex flex-wrap gap-2">
+          <section className="flex flex-wrap items-center gap-2">
+            {/* the numbers belong to the period being viewed and its LAST run (they do not reset between periods' runs) */}
+            <span className="text-xs text-slate-500" data-testid="source-strip-caption">
+              Từng báo – kỳ {formatVn(run.window.from)} → {formatVn(run.window.to)}
+              {run.finishedAt ? ` · lượt cuối ${formatVn(run.finishedAt)}` : ''}
+              {run.notes?.some((x) => x.startsWith('Kỳ đang diễn ra')) ? ' · đang diễn ra, cập nhật mỗi giờ' : api.mode === 'live' && !run.active ? ' · kỳ đã chốt' : ''}:
+            </span>
             {run.sources.map((s) => (
               <span key={s.sourceId} className={`chip ${s.status === 'ok' ? 'border-green-300 bg-green-50 text-green-800' : s.status === 'partial' ? 'border-amber-300 bg-amber-50 text-amber-800' : s.status === 'failed' ? 'border-red-300 bg-red-50 text-red-800' : s.status === 'running' ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>
                 <b>{s.sourceName}</b> · {SRC_STATUS[s.status] ?? s.status} · {s.candidates} link{s.limitReached ? ' · chạm giới hạn' : ''}
@@ -735,24 +741,24 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                 <h3 className="font-semibold leading-snug">{r?.title ?? a.title}</h3>
                 <p className="line-clamp-2 text-sm text-slate-600">{r?.summary ?? a.sapo}</p>
                 {reviewMode && c?.reasonDetail && <p className="mt-1 text-xs text-amber-800">Lý do: {c.reasonDetail}</p>}
-              </div>
-              <div className="flex shrink-0 flex-col gap-1">
-                <button className="btn-ghost btn-xs" onClick={() => onInspect(a.id)}><FileText className="h-3.5 w-3.5" /> Xem chi tiết</button>
-                <a className="btn-ghost btn-xs" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Bài gốc</a>
-                <RelevanceButtons r={r} onPatch={(p) => onPatch(a.id, p)} title={a.title} votes={votes?.[a.id]} />
-                {reviewMode && (
-                  <button className="btn-teal btn-xs" onClick={() => onPatch(a.id, { promotedToReady: true })} title="Chuyển bài này sang Bài sẵn sàng" aria-label={`Chuyển sang Bài sẵn sàng: ${a.title}`}>
-                    <ArrowRight className="h-3.5 w-3.5" /> Sẵn sàng
+                <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-slate-100 pt-2" data-testid="story-actions">
+                  <button className="btn-ghost btn-xs" onClick={() => onInspect(a.id)}><FileText className="h-3.5 w-3.5" /> Xem chi tiết</button>
+                  <a className="btn-ghost btn-xs" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Bài gốc</a>
+                  <RelevanceButtons r={r} onPatch={(p) => onPatch(a.id, p)} title={a.title} votes={votes?.[a.id]} />
+                  {reviewMode && (
+                    <button className="btn-teal btn-xs" onClick={() => onPatch(a.id, { promotedToReady: true })} title="Chuyển bài này sang Bài sẵn sàng" aria-label={`Chuyển sang Bài sẵn sàng: ${a.title}`}>
+                      <ArrowRight className="h-3.5 w-3.5" /> Sẵn sàng
+                    </button>
+                  )}
+                  {!reviewMode && r?.promotedToReady && (
+                    <button className="btn-ghost btn-xs" onClick={() => onPatch(a.id, { promotedToReady: false })} title="Trả bài về Cần kiểm tra" aria-label={`Trả về Cần kiểm tra: ${a.title}`}>
+                      <Undo2 className="h-3.5 w-3.5" /> Trả về
+                    </button>
+                  )}
+                  <button className="btn-ghost btn-xs ml-auto text-red-700" onClick={() => onPatch(a.id, { excludedByEditor: true, included: false })} title="Loại bài này khỏi danh sách và báo cáo (khôi phục ở mục Đã loại bên dưới)" aria-label={`Loại bài: ${a.title}`}>
+                    <Trash2 className="h-3.5 w-3.5" /> Loại
                   </button>
-                )}
-                <button className="btn-ghost btn-xs text-red-700" onClick={() => onPatch(a.id, { excludedByEditor: true, included: false })} title="Loại bài này khỏi danh sách và báo cáo (khôi phục ở mục Đã loại bên dưới)" aria-label={`Loại bài: ${a.title}`}>
-                  <Trash2 className="h-3.5 w-3.5" /> Loại
-                </button>
-                {!reviewMode && r?.promotedToReady && (
-                  <button className="btn-ghost btn-xs" onClick={() => onPatch(a.id, { promotedToReady: false })} title="Trả bài về Cần kiểm tra" aria-label={`Trả về Cần kiểm tra: ${a.title}`}>
-                    <Undo2 className="h-3.5 w-3.5" /> Trả về
-                  </button>
-                )}
+                </div>
               </div>
             </article>
           );
@@ -830,9 +836,9 @@ function RelevanceButtons({ r, onPatch, title, votes }: { r?: ReviewDecision; on
   const yes = votes?.filter((v) => v.l === 'relevant') ?? [];
   const no = votes?.filter((v) => v.l === 'irrelevant') ?? [];
   return (
-    <div className="flex flex-col gap-0.5" data-testid="relevance-buttons">
+    <div className="flex flex-wrap items-center gap-1" data-testid="relevance-buttons">
       {votes && votes.length > 0 && (
-        <span className="text-[10px] text-slate-600" title={votes.map((v) => `${v.r}: ${v.l === 'relevant' ? 'liên quan' : v.l === 'irrelevant' ? 'không' : '—'}${v.n ? ` (${v.n})` : ''}`).join('\n')}>
+        <span className="order-last text-[11px] text-slate-600" title={votes.map((v) => `${v.r}: ${v.l === 'relevant' ? 'liên quan' : v.l === 'irrelevant' ? 'không' : '—'}${v.n ? ` (${v.n})` : ''}`).join('\n')}>
           Nhóm duyệt: <b className="text-green-700">✓{yes.length}</b> <b className="text-red-700">✗{no.length}</b>
         </span>
       )}
@@ -856,7 +862,7 @@ function RelevanceButtons({ r, onPatch, title, votes }: { r?: ReviewDecision; on
           ✗ Không
         </button>
       </div>
-      {implicit && <span className="text-[10px] text-green-700">đã chọn vào báo cáo = liên quan</span>}
+      {implicit && <span className="text-[11px] text-green-700">đã chọn vào báo cáo = liên quan</span>}
     </div>
   );
 }
