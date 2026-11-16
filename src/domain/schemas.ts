@@ -294,15 +294,24 @@ export const SettingsSchema = z.object({
       assignmentFallback: z.string().max(300).default('giao các phòng, đơn vị tham mưu theo chức năng, nhiệm vụ.'),
     })
     .default({}),
-  report: z
-    .object({
+  report: z.preprocess(
+    (v) => {
+      // Word export (16/11/2026): a saved config from before it, with the old default ["pptx"], gets "docx" ticked once
+      if (!v || typeof v !== 'object') return v;
+      const o = v as Record<string, unknown>;
+      if (o.outputFormatsRev === undefined && Array.isArray(o.outputFormats) && o.outputFormats.join() === 'pptx') return { ...o, outputFormats: ['pptx', 'docx'], outputFormatsRev: 2 };
+      return o;
+    },
+    z.object({
       organization: z.string().default('SỞ XÂY DỰNG THÀNH PHỐ HỒ CHÍ MINH – VĂN PHÒNG SỞ'),
       /** subtitle under the app name, e.g. "Điểm tin báo chí ngành xây dựng TP.HCM" */
       subtitle: z.string().max(120).default('Điểm tin báo chí ngành xây dựng TP.HCM'),
       /** default report template (built-in id, see src/reports/templates.ts); the export dialog can pick another */
       templateId: z.string().default('skill-so-xay-dung'),
       templateFile: z.string().default(''),
-      outputFormats: z.array(z.enum(['pptx', 'pdf'])).default(['pptx']),
+      /** files produced by "Xuất báo cáo": PowerPoint, Word (Department .docx template), PDF of the PowerPoint */
+      outputFormats: z.array(z.enum(['pptx', 'docx', 'pdf'])).default(['pptx', 'docx']),
+      outputFormatsRev: z.number().int().default(2),
       filenamePattern: z.string().default('HCM_Diem_tin_{date}_{from}-{to}'),
       storiesPerPage: z.number().int().min(1).max(4).default(2),
       overflowPolicy: z.enum(['new_slide', 'warn_only']).default('new_slide'),
@@ -310,8 +319,8 @@ export const SettingsSchema = z.object({
       libreOfficePath: z.string().default(''),
       powerPointPath: z.string().default(''),
       contactEmail: z.string().default(''),
-    })
-    .default({}),
+    }),
+  ).default({}),
   performance: z
     .object({
       httpCacheMinutes: z.number().int().min(0).max(1440).default(30),

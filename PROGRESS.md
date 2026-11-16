@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13q – open the latest collection; Từ/Đến follow the picked run; 2026-11-16)
+## ▶ RESUME HERE (session 13r – Word export from the Department .docx template; 2026-11-16)
+- User supplied "Tổng hợp Điểm tin Báo chí sáng ngày 16.11.2026.docx" and asked for a .docx export ticked by default like .pptx.
+- Template published as `web/public/templates/so-xay-dung.docx` (personal names removed from docProps; content = public news). `src/reports/templateDocx.ts` (`buildDocxFromTemplate`, Node + browser): keeps letterhead table, styles, numbering, header/footer, closing note, signature; rebuilds the body by cloning the template's own paragraphs (group heading, story heading with its ☹/😐 Wingdings symbol, summary, hyperlink, "Đề xuất" bold-underlined); dates the letterhead + title ("NGÀY dd/mm/yyyy", no "SÁNG"); one real hyperlink per source; contact e-mail from settings; the template's STATIC chart picture of another day is replaced by a real Word chart (literal data) of this report's counts; unused sample hyperlinks + picture removed; structural mismatch → BLOCKED (`DocxTemplateMismatchError`).
+- Export: formats pptx | docx | pdf (local server writes the .docx next to the .pptx; the web builds it in the browser and downloads it; PowerPoint is skipped when only Word is ticked). `report.outputFormats` default ["pptx","docx"]; saved configs with the old ["pptx"] get "docx" once (`outputFormatsRev`). Checked visually (LibreOffice PNG) and opened in Word (2 pages, 1 chart, 5 links).
+- Tests: typecheck, vitest 130/130 (tests/docx.test.ts), playwright 11/11 (.docx produced with both merged sources), live E2E 8/8 (.docx downloaded with the story).
+- Next: rework the 4 original PPTX designs (user: slides sparse / disconnected).
+
+## (history) Session 13q – open the latest collection; Từ/Đến follow the picked run; 2026-11-16)
 - User: F5 selected "Hôm nay" instead of the most recent collection; Từ/Đến should follow the run picked in "Lượt đã lưu".
 - Done (web/src/App.tsx): startup opens `latestRun()` (latest finish time); the default window preset only applies when there is no collection yet (Settings label updated). An effect on the shown run fills Từ/Đến from its window and highlights the matching preset (Kỳ gần nhất / Hôm nay / Hôm qua / Tùy chỉnh) – for the picker, startup and finished collections.
 - Tests: typecheck, vitest 127/127, playwright 11/11, live E2E 8/8 (new: "F5 opens the most recent collection…").

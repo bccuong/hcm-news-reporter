@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { buildDocxFromTemplate, DocxTemplateMismatchError } from '../reports/templateDocx.js';
 import { buildFromTemplate, imageSize, TemplateMismatchError, type TemplateImage } from '../reports/templatePptx.js';
 import { EventEmitter } from 'node:events';
 import { existsSync, promises as fs } from 'node:fs';
@@ -20,7 +21,7 @@ import { checkPublicUrl } from '../domain/url.js';
 import { assembleStories } from '../reports/assemble.js';
 import { buildReportPptx, checkFit } from '../reports/pptx.js';
 import { buildStyledPptx } from '../reports/styles.js';
-import { templateById, TEMPLATES, UPLOAD_TEMPLATE_ID } from '../reports/templates.js';
+import { templateById, TEMPLATES, UPLOAD_TEMPLATE_ID, DOCX_TEMPLATE_FILE } from '../reports/templates.js';
 import { fileURLToPath } from 'node:url';
 import { safeJoin, serialized, writeFileAtomic, writeJsonAtomic } from '../storage/files.js';
 import { makePaths, Stores } from '../storage/stores.js';
@@ -375,7 +376,7 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
   });
   app.post('/api/runs/:id/export', async (req) => {
     const id = (req.params as { id: string }).id;
-    const b = z.object({ formats: z.array(z.enum(['pptx', 'pdf'])).min(1), dryRun: z.boolean().default(false), templateId: z.string().max(60).optional() }).parse(req.body);
+    const b = z.object({ formats: z.array(z.enum(['pptx', 'docx', 'pdf'])).min(1), dryRun: z.boolean().default(false), templateId: z.string().max(60).optional() }).parse(req.body);
     const m = await stores.getManifest(id);
     if (!m) throw Object.assign(new Error('RUN_NOT_FOUND'), { statusCode: 404 });
     // report settings (organization, template…) of the profile the run was collected with
@@ -474,9 +475,31 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
         organization: settings.report.organization, window: m.window, reportDateLabel: `${d}/${mo}/${y}`, stories,
         storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, isDemoTemplate: true,
       });
-    }    const pptxName = `${base}_${stamp}.pptx`;
-    await writeFileAtomic(path.join(dir, pptxName), pptx);
-    const files = [pptxName];
+    }
+    const pptxName = `${base}_${stamp}.pptx`;
+    const files: string[] = [];
+    // PowerPoint is written when asked for (or needed for its PDF)
+    if (b.formats.includes('pptx') || b.formats.includes('pdf')) {
+      await writeFileAtomic(path.join(dir, pptxName), pptx);
+      if (b.formats.includes('pptx')) files.push(pptxName);
+    }
+    // Word: the Department's .docx template filled with the same stories (no photos, like the original)
+    if (b.formats.includes('docx')) {
+      const tplDocx = templatesFile(DOCX_TEMPLATE_FILE);
+      if (!tplDocx) imageNotes.push('Không tìm thấy mẫu Word (so-xay-dung.docx) – không xuất .docx.');
+      else {
+        try {
+          const r = await buildDocxFromTemplate(await fs.readFile(tplDocx), { reportDate: date, stories, contactEmail: settings.report.contactEmail });
+          imageNotes.push(...r.notes);
+          const docxName = `${base}_${stamp}.docx`;
+          await writeFileAtomic(path.join(dir, docxName), r.bytes);
+          files.push(docxName);
+        } catch (e) {
+          if (!(e instanceof DocxTemplateMismatchError)) throw e;
+          throw Object.assign(new Error(`BLOCKED – mẫu Word không khớp cấu trúc đã khảo sát: ${e.message}`), { statusCode: 422 });
+        }
+      }
+    }
     let pdfStatus = 'not_requested';
     let pdfRenderer: string | null = null;
     if (b.formats.includes('pdf')) {
@@ -506,11 +529,11 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
   });
   app.get('/api/exports/*', async (req, reply) => {
     const rel = (req.params as { '*': string })['*'];
-    if (!/^\d{4}-\d{2}-\d{2}\/[\w.-]+\.(pptx|pdf|json)$/.test(rel)) return reply.code(400).send({ error: 'INVALID_EXPORT_PATH' });
+    if (!/^\d{4}-\d{2}-\d{2}\/[\w.-]+\.(pptx|docx|pdf|json)$/.test(rel)) return reply.code(400).send({ error: 'INVALID_EXPORT_PATH' });
     const [d, f] = rel.split('/') as [string, string];
     const full = safeJoin(paths.exports, d, f);
     const buf = await fs.readFile(full);
-    const type = f.endsWith('.pptx') ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation' : f.endsWith('.pdf') ? 'application/pdf' : 'application/json';
+    const type = f.endsWith('.pptx') ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation' : f.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : f.endsWith('.pdf') ? 'application/pdf' : 'application/json';
     return reply.header('Content-Type', type).header('Content-Disposition', `attachment; filename="${f}"`).send(buf);
   });
 

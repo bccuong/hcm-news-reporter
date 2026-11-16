@@ -5,7 +5,7 @@ import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
-import { api, type CollectRun, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
+import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
 
@@ -1368,7 +1368,7 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
 function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge, onSplit }: { run: RunInfo; arts: Map<string, Article>; reviews: Record<string, ReviewDecision>; settings: Settings; onPatch: (id: string, p: Partial<ReviewDecision>) => void; onInspect: (id: string) => void; onMerge: (s: string, p: string) => void; onSplit: (s: string) => void }) {
   const toast = useToast();
   const [res, setRes] = useState<ExportResult | null>(null);
-  const [formats, setFormats] = useState<Array<'pptx' | 'pdf'>>(settings.report.outputFormats);
+  const [formats, setFormats] = useState<ExportFormat[]>(settings.report.outputFormats);
   const [busy, setBusy] = useState(false);
   // report template: Department template from the Skill (default), 4 original designs, or the uploaded one
   const [tpls, setTpls] = useState<TemplateOption[]>([]);
@@ -1457,7 +1457,7 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
           })}
         </fieldset>
         <div className="flex gap-4">
-          {(['pptx', 'pdf'] as const).map((f) => (
+          {(['pptx', 'docx', 'pdf'] as const).map((f) => (
             <label key={f} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={formats.includes(f)} onChange={(e) => setFormats(e.target.checked ? [...formats, f] : formats.filter((x) => x !== f))} /> .{f}</label>
           ))}
         </div>

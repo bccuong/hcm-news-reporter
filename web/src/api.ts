@@ -56,7 +56,7 @@ export interface Api {
   capabilities(): Promise<{ pdf: boolean; soffice: string | null; templateFile: string | null; templateFidelity: boolean }>;
   /** report templates selectable at export + the default one (Cài đặt › Báo cáo & mẫu) */
   templates(): Promise<{ defaultId: string; templates: TemplateOption[] }>;
-  exportRun(id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean, templateId?: string): Promise<ExportResult>;
+  exportRun(id: string, formats: ExportFormat[], dryRun: boolean, templateId?: string): Promise<ExportResult>;
   exportUrl(file: string): string;
   uploadTemplate(name: string, base64: string): Promise<{ templateFile: string }>;
   subscribe(runId: string, cb: (e: { type: string; counts?: Record<string, number> }) => void): () => void;
@@ -72,6 +72,8 @@ function pickShared(p: Partial<ReviewDecision>): Partial<ReviewDecision> {
   for (const k of SHARED_REVIEW_FIELDS) if (k in p && (p as Record<string, unknown>)[k] !== undefined) out[k] = (p as Record<string, unknown>)[k];
   return out as Partial<ReviewDecision>;
 }
+
+export type ExportFormat = 'pptx' | 'docx' | 'pdf';
 
 export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: string | null; a: string | null; n: string; t: string }
 export interface CollectRun { id: number; status: string; conclusion: string | null; createdAt: string; updatedAt: string; event: string; kind?: 'auto' | 'request' | 'deploy'; title: string; url: string }
@@ -157,7 +159,7 @@ class LocalApi implements Api {
   patchReview = (id: string, articleId: string, patch: Partial<ReviewDecision>) => this.req<ReviewDecision>('PATCH', `/api/runs/${id}/reviews/${articleId}`, patch);
   capabilities = () => this.req<any>('GET', '/api/capabilities');
   templates = () => this.req<{ defaultId: string; templates: TemplateOption[] }>('GET', '/api/templates');
-  exportRun = (id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean, templateId?: string) => this.req<ExportResult>('POST', `/api/runs/${id}/export`, { formats, dryRun, templateId });
+  exportRun = (id: string, formats: ExportFormat[], dryRun: boolean, templateId?: string) => this.req<ExportResult>('POST', `/api/runs/${id}/export`, { formats, dryRun, templateId });
   exportUrl = (file: string) => `/api/exports/${file}`;
   uploadTemplate = (name: string, base64: string) => this.req<{ templateFile: string }>('POST', '/api/templates', { name, base64 });
   relevanceQuality = () => this.req<RelevanceQuality>('GET', '/api/quality/relevance');
@@ -731,7 +733,7 @@ class DemoApi implements Api {
       ],
     };
   }
-  async exportRun(id: string, formats: Array<'pptx' | 'pdf'>, dryRun: boolean, templateId?: string): Promise<ExportResult> {
+  async exportRun(id: string, formats: ExportFormat[], dryRun: boolean, templateId?: string): Promise<ExportResult> {
     const { assembleStories } = await import('../../src/reports/assemble');
     const { checkFit } = await import('../../src/reports/pptx');
     const { buildFromTemplate, TemplateMismatchError } = await import('../../src/reports/templatePptx');
@@ -744,7 +746,8 @@ class DemoApi implements Api {
     const images = new Map<string, { bytes: Uint8Array; ext: 'jpeg' | 'png'; width: number; height: number; credit?: string; sourceUrl: string }>();
     const stories = asm.stories.map((s) => ({ ...s, imageKey: null as string | null }));
     let tcFeatureKey: string | null = null;
-    if (settings.editorial.photoPolicy !== 'link_only') {
+    const wantPptx = formats.includes('pptx') || formats.includes('pdf');
+    if (wantPptx && settings.editorial.photoPolicy !== 'link_only') {
       if (!this.shared?.session()) warn.push('Chưa đăng nhập người duyệt – không tải được ảnh báo gốc, các tin dùng bố cục chữ.');
       else
         for (const st of stories) {
@@ -779,8 +782,8 @@ class DemoApi implements Api {
     const [y, mo, d] = date.split('-');
     const hhmm = (iso: string) => iso.slice(11, 16).replace(':', '');
     const base = settings.report.filenamePattern.replace('{date}', date).replace('{from}', hhmm(w.from)).replace('{to}', hhmm(w.to)).replace(/[^\w.-]+/g, '_');
-    let bytes: Uint8Array;
-    let name: string;
+    let bytes: Uint8Array = new Uint8Array();
+    let name = `${base}.pptx`;
     // template chosen in the export panel: the Department's template from the Skill (published with the site),
     // one of the app's original designs, or the template kept in this browser
     const chosen = templateId ?? settings.report.templateId;
@@ -792,7 +795,9 @@ class DemoApi implements Api {
       return r.bytes;
     };
     try {
-      if (!info) {
+      if (!wantPptx) {
+        // Word only: the PowerPoint is not built
+      } else if (!info) {
         const up = store.get<string>('tplName') ? await idbGet<Uint8Array>('template') : undefined;
         if (!up) return { ok: false, blockers: ['Trình duyệt này chưa có mẫu tải lên (Cài đặt › Báo cáo & mẫu › Tải mẫu .pptx)'], warnings: warn };
         bytes = await fill(up);
@@ -813,14 +818,40 @@ class DemoApi implements Api {
     } catch (e) {
       if (!(e instanceof TemplateMismatchError)) throw e;
       return { ok: false, blockers: [`BLOCKED – mẫu PPTX không khớp cấu trúc đã khảo sát: ${e.message}`], warnings: warn };
-    }    const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }
+    const save = (data: Uint8Array, fileName: string, type: string) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([data as Uint8Array<ArrayBuffer>], { type }));
+      a.download = fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    };
+    const files: string[] = [];
+    if (wantPptx) {
+      save(bytes, name, 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+      files.push(name);
+    }
+    // Word: the Department's .docx template (published with the site), same stories, built in this browser
+    if (formats.includes('docx')) {
+      const { buildDocxFromTemplate, DocxTemplateMismatchError } = await import('../../src/reports/templateDocx');
+      const { DOCX_TEMPLATE_FILE } = await import('../../src/reports/templates');
+      const r = await fetch(`${import.meta.env.BASE_URL}templates/${DOCX_TEMPLATE_FILE}`);
+      if (!r.ok) warn.push(`Không tải được mẫu Word (HTTP ${r.status}) – không xuất .docx`);
+      else {
+        try {
+          const out = await buildDocxFromTemplate(new Uint8Array(await r.arrayBuffer()), { reportDate: `${y}-${mo}-${d}`, stories, contactEmail: settings.report.contactEmail });
+          warn.push(...out.notes);
+          const docxName = name.replace(/(_[\w-]+)?\.pptx$/, '.docx');
+          save(out.bytes, docxName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+          files.push(docxName);
+        } catch (e) {
+          if (!(e instanceof DocxTemplateMismatchError)) throw e;
+          return { ok: false, blockers: [`BLOCKED – mẫu Word không khớp cấu trúc đã khảo sát: ${e.message}`], warnings: warn };
+        }
+      }
+    }
     return {
-      ok: true, files: [name], warnings: warn,
+      ok: true, files, warnings: warn,
       pdfStatus: formats.includes('pdf') ? 'unavailable: trình duyệt không tự chuyển PDF – mở tệp .pptx bằng PowerPoint › Lưu thành PDF (hoặc dùng bản local để xuất PDF tự động)' : 'not_requested',
     };
   }

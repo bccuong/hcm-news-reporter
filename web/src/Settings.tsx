@@ -223,7 +223,7 @@ const SEARCH_INDEX: Record<string, string[]> = {
   categories: ['lĩnh vực', 'phân loại', 'đất đai', 'giao thông'],
   time: ['giờ', 'khung', '17:00', '08:00', 'tự động'],
   quality: ['ảnh', 'bảng', 'chú thích', 'ngưỡng', 'bóc tách', 'bản quyền'],
-  report: ['pptx', 'pdf', 'mẫu', 'libreoffice', 'tên tệp'],
+  report: ['pptx', 'docx', 'word', 'pdf', 'mẫu', 'libreoffice', 'tên tệp'],
   performance: ['đồng thời', 'timeout', 'thử lại', 'cache', 'robots'],
   backup: ['khôi phục', 'sao lưu', 'lịch sử', 'nhập', 'xuất'],
 };
@@ -627,7 +627,7 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
       </Section>
       <Section title="Xuất tệp">
         <div className="flex gap-4">
-          {(['pptx', 'pdf'] as const).map((f) => (
+          {(['pptx', 'docx', 'pdf'] as const).map((f) => (
             <label key={f} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={s.report.outputFormats.includes(f)} onChange={(e) => up('report', { outputFormats: e.target.checked ? [...s.report.outputFormats, f] : s.report.outputFormats.filter((x) => x !== f) })} /> .{f}</label>
           ))}
         </div>

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import JSZip from 'jszip';
 
 /** Click-through UI tests: every assertion goes through real controls, then a page reload proves persistence. */
 
@@ -151,6 +152,15 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
   await expect(page.getByText('Đã tạo:')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('a[href$=".pptx"]')).toHaveCount(1);
+  // Word (Department .docx template) ticked by default, produced next to the PowerPoint, both merged sources linked
+  await expect(page.getByRole('checkbox', { name: '.docx' })).toBeChecked();
+  const docxHref = await page.locator('a[href$=".docx"]').getAttribute('href');
+  const docx = await JSZip.loadAsync(await (await page.request.get(docxHref!)).body());
+  const docXml = await docx.file('word/document.xml')!.async('string');
+  expect(docXml).toContain('Mưa lớn tối 8.11');
+  const docRels = await docx.file('word/_rels/document.xml.rels')!.async('string');
+  expect(docRels).toContain('fixture-a.example.vn');
+  expect(docRels).toContain('fixture-d.example.vn');
   const manifestHref = await page.locator('a[href$="_manifest.json"]').getAttribute('href');
   const manifest = await (await page.request.get(manifestHref!)).json();
   expect(manifest.stories).toHaveLength(1);

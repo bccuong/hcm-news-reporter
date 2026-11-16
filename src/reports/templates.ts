@@ -21,6 +21,8 @@ export interface TemplateInfo {
 }
 
 export const SKILL_TEMPLATE_ID = 'skill-so-xay-dung';
+/** the Department's Word report ("Tổng hợp Điểm tin Báo chí", supplied 16/11/2026), under web/public/templates/ */
+export const DOCX_TEMPLATE_FILE = 'so-xay-dung.docx';
 export const UPLOAD_TEMPLATE_ID = 'upload';
 
 export const TEMPLATES: TemplateInfo[] = [

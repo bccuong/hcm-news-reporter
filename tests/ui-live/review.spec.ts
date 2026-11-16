@@ -165,14 +165,16 @@ test('web = local: photos, full article text, shared settings used by the server
   await page.getByRole('button', { name: /Xuất báo cáo \(1\)/ }).click();
   // capture the generated file in the page (a real browser download makes Playwright+Edge throw at teardown)
   await page.evaluate(() => {
-    const w = window as unknown as { __dl?: { name: string; b64: string } };
+    // one export now downloads the .pptx AND the .docx: __dl = the PowerPoint, __docx = the Word file
+    const w = window as unknown as { __dl?: { name: string; b64: string }; __docx?: { name: string; b64: string } };
     HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
       const name = this.download;
       void fetch(this.href).then((r) => r.arrayBuffer()).then((buf) => {
         let s = '';
         const u = new Uint8Array(buf);
         for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
-        w.__dl = { name, b64: btoa(s) };
+        if (name.endsWith('.docx')) w.__docx = { name, b64: btoa(s) };
+        else w.__dl = { name, b64: btoa(s) };
       });
     };
   });
@@ -195,6 +197,15 @@ test('web = local: photos, full article text, shared settings used by the server
   };
   expect(media.length).toBeGreaterThan(0);
   expect(await hasPhoto(zip)).toBe(true);
+  // Word, ticked by default: the Department's .docx template with the same story
+  await expect(page.getByRole('checkbox', { name: '.docx' })).toBeChecked();
+  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __docx?: unknown }).__docx), { timeout: 30_000 }).toBe(true);
+  const word = await page.evaluate(() => (window as unknown as { __docx: { name: string; b64: string } }).__docx);
+  expect(word.name).toMatch(/\.docx$/);
+  const wordXml = await (await JSZip.loadAsync(Buffer.from(word.b64, 'base64'))).file('word/document.xml')!.async('string');
+  expect(wordXml).toContain('Mưa lớn tối 8.11');
+  expect(wordXml).toContain('TỒN TẠI CẦN KHẮC PHỤC');
+  expect(wordXml).not.toContain('SÁNG');
   await page.screenshot({ path: 'docs/screenshots/web-export-template.png' });
 
   // another template, chosen at export: one of the app's original designs
