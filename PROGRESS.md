@@ -8,7 +8,7 @@
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
 ## ▶ RESUME HERE (session 13e – Settings as one profile tree; 2026-11-16)
-- User: profile list and its details should sit together, simpler to configure. Settings nav is now ONE tree: "Cấu hình" → every profile; the open one expanded with Tổng quan (rename / copy / delete), Nguồn tin, Từ khóa & quy tắc, Địa điểm, Lĩnh vực, Thời gian, Chất lượng, Báo cáo & mẫu, Hiệu năng, Sao lưu & lịch sử; other profiles one click away (switch → reload → Settings reopen on the same section via sessionStorage ); "+ Tạo cấu hình mới" at the bottom. Screenshot . Tests: typecheck, vitest 99/99, playwright 9/9, live E2E 5/5.
+- User: profile list and its details should sit together, simpler to configure. Settings nav is now ONE tree: "Cấu hình" → every profile; the open one expanded with Tổng quan (rename / copy / delete), Nguồn tin, Từ khóa & quy tắc, Địa điểm, Lĩnh vực, Thời gian, Chất lượng, Báo cáo & mẫu, Hiệu năng, Sao lưu & lịch sử; other profiles one click away (switch → reload → Settings reopen on the same section via sessionStorage key `reopenSettings`); "+ Tạo cấu hình mới" at the bottom. Screenshot `docs/screenshots/profiles-tree.png`. Tests: typecheck, vitest 99/99, playwright 9/9, live E2E 5/5.
 
 ## (history) Session 13d – "Chính sách, pháp quy" must be construction/transport; 2026-11-16)
 - User: "Chính sách, pháp quy" picks wrong stories – must relate to construction and transport. Cause: its keywords (nghị định, luật, quyết định…) alone counted as sector evidence (e.g. "TP.HCM quy định mới về trường tiên tiến" = education → ready); and TRAFFIC "cầu" matched "yêu cầu"/"toàn cầu", so almost every story also looked like transport.
