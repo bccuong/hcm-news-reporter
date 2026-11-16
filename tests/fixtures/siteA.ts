@@ -27,7 +27,7 @@ export const U = {
   sport: `${A}/the-thao/mau-thu-bong-da-cuoi-tuan-1851101011.htm`,
 };
 
-function page(o: {
+export function page(o: {
   title: string; sapo: string; pub?: string; mod?: string; visible?: string; canonical?: string; body: string; jsonLdBody?: string; next?: string; og?: string;
 }) {
   const ld = o.pub || o.jsonLdBody
@@ -47,7 +47,7 @@ ${ld}${o.next ? `<link rel="next" href="${o.next}">` : ''}</head>
 </div><footer>© Fixture</footer></body></html>`;
 }
 
-const P = (n: number, topic: string) =>
+export const P = (n: number, topic: string) =>
   Array.from({ length: n }, (_, i) => `<p>Đoạn ${i + 1} về ${topic}: nội dung mẫu thử dùng để kiểm tra bóc tách đầy đủ, có số liệu ${i + 1}.250 tỷ đồng và mốc ngày ${i + 1}/11/2026 để đối chiếu.</p>`).join('\n');
 
 export const GROUND_TRUTH = {

@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13n – 24-hour time fields; 2026-11-16)
+## ▶ RESUME HERE (session 13o – why every publisher hit its limit; 2026-11-16)
+- User: in the on-demand run 08:01 → 14:00 16/11 Thanh Niên, VnExpress, Dân trí all "chạm giới hạn tải". Live analysis showed two real causes (not a limit too low):
+  1. **Bug:** Thanh Niên RSS pubDate uses a two-digit year ("Mon, 16 Nov 26 14:20:00 +0700") → `parsePublisherDate` returned null → all 151 RSS links undated → every story downloaded to learn its date. Fixed (RFC 822 two-digit year → 20yy); test in tests/domain.test.ts.
+  2. Undated links from deep listing pages (up to 30 pages per section) – e.g. VnExpress spent 144/150 downloads on them. Now undated links are read newest publisher id first and, after `collection.undatedStopAfterOld` (default 8, Cài đặt › Hiệu năng; 0 = off) consecutive stories verified older than the window, the remaining undated links with smaller ids are recorded outside_window / OLDER_THAN_CHECKED without download ("Thử lại" still fetches). Test "links without any date" in tests/collector.test.ts.
+- Tests: typecheck, vitest 117/117, playwright 11/11, live E2E 7/7.
+
+## (history) Session 13n – 24-hour time fields; 2026-11-16)
 - User: the window pickers showed AM/PM (browser datetime-local follows the OS locale). Replaced by `DateTime24` (web/src/App.tsx): native date picker + hour 00–23 + minute 00–59 selects, same "YYYY-MM-DDTHH:mm" value. Tests use `setWindowField()`; UI-06 checks 24 hour options. Tests: typecheck, vitest 114/114, playwright 11/11, live E2E 7/7.
 
 ## (history) Session 13m – per-publisher article limit; VnExpress 150; 2026-11-16)

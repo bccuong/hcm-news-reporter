@@ -174,8 +174,9 @@ export function parsePublisherDate(raw: string | null | undefined): string | nul
     return toVnIso(fromVnParts({ year: +m[5]!, month: +m[4]!, day: +m[3]!, hour: +m[1]!, minute: +m[2]! }));
   }
   // RFC 822 (RSS pubDate)
-  if (/^[A-Za-z]{3},?\s+\d{1,2}\s+[A-Za-z]{3}\s+\d{4}/.test(s)) {
-    let t = s;
+  if (/^[A-Za-z]{3},?\s+\d{1,2}\s+[A-Za-z]{3}\s+\d{2}(?:\d{2})?\s/.test(s)) {
+    // RFC 822 allows a two-digit year (Thanh Niên: "Mon, 16 Nov 26 14:20:00 +0700") → 20yy (RFC 2822 §4.3: 00–49 = 20xx)
+    let t = s.replace(/^([A-Za-z]{3},?\s+\d{1,2}\s+[A-Za-z]{3}\s+)(\d{2})(\s)/, (_, a: string, yy: string, b: string) => `${a}${Number(yy) < 50 ? 2000 + Number(yy) : 1900 + Number(yy)}${b}`);
     // Some VN feeds emit "+0700" or "GMT+7"
     t = t.replace(/GMT\+7$/i, '+0700');
     const dt = new Date(t);

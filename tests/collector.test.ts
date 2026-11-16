@@ -8,7 +8,7 @@ import { reconcile, runCollection } from '../src/collector/run.js';
 import { defaultSettings, sourceFromUrl } from '../src/domain/defaults.js';
 import { SourceSchema, type Source } from '../src/domain/schemas.js';
 import { makePaths, Stores } from '../src/storage/stores.js';
-import { A, B, C, EXPECTED, GROUND_TRUTH, U, WINDOW, fixtureTransport, publicResolver, siteARoutes } from './fixtures/siteA.js';
+import { A, B, C, EXPECTED, GROUND_TRUTH, P, U, WINDOW, fixtureTransport, page, publicResolver, siteARoutes } from './fixtures/siteA.js';
 
 function fixtureSources(): Source[] {
   const a = SourceSchema.parse({
@@ -280,5 +280,42 @@ describe('carried-over articles are not evidence of adapter drift', () => {
     expect(a.extractionCompleteness).toBe('auto_checks_passed');
     expect(a.extractionWarnings).toEqual([]);
     expect('extractionContainer' in JSON.parse(JSON.stringify(toPublicArticle(a)))).toBe(false);
+  });
+});
+
+describe('links without any date (deep listing pages)', () => {
+  const U2 = 'https://fixture-u.example.vn';
+  const ids = Array.from({ length: 30 }, (_, i) => 9000030 - i); // listing order: newest first
+  const routes: Record<string, { status: number; body: string }> = {
+    [`${U2}/tin.htm`]: { status: 200, body: `<html><body><div class="list">${ids.map((id) => `<h3><a href="/tin/bai-mau-thu-so-${id}.htm">Bài ${id}</a></h3>`).join('')}</div></body></html>` },
+  };
+  for (const [i, id] of ids.entries()) {
+    const pub = i < 3 ? '2026-11-08T20:00:00+07:00' : '2026-10-20T10:00:00+07:00'; // 3 in the window, the rest weeks old
+    routes[`${U2}/tin/bai-mau-thu-so-${id}.htm`] = { status: 200, body: page({ title: `Bài ${id} về TP.HCM`, sapo: 'Sapo.', pub, visible: '', body: P(4, 'giao thông') }) };
+  }
+  const run = async (stopAfter: number) => {
+    const log: string[] = [];
+    const root = mkdtempSync(path.join(tmpdir(), 'hcm-'));
+    const stores = new Stores(makePaths(root), 'https://example.org');
+    const settings = defaultSettings();
+    settings.collection.undatedStopAfterOld = stopAfter;
+    const http = new HttpClient({ transport: fixtureTransport(routes, log), resolver: publicResolver, maxConcurrent: 4, perHost: 2, timeoutMs: 5000, maxRetries: 1, backoffBaseMs: 1, userAgent: 't', sleep: async () => {} });
+    const src = SourceSchema.parse({ id: 'fixture-u', name: 'Fixture U', baseUrl: U2, rssUrls: [], sitemapUrls: [], sectionUrls: [`${U2}/tin.htm`], discoveryMethods: ['section'], crawlLimits: { maxListingPages: 1, maxDepth: 0 } });
+    await runCollection({ runId: `run_u_${stopAfter}`, window: WINDOW, trigger: 'fixture', settings, sources: [src], stores, http });
+    return { cands: (await stores.getCandidates(`run_u_${stopAfter}`)).filter((c) => /bai-mau-thu-so-/.test(c.url)), log };
+  };
+  it('newest id first; after N consecutive verified-older stories the older undated links are recorded, not downloaded', async () => {
+    const { cands, log } = await run(8);
+    expect(cands).toHaveLength(30);
+    expect(cands.filter((c) => c.attempts > 0)).toHaveLength(3 + 8); // the 3 in-window stories + 8 older ones
+    const skipped = cands.filter((c) => c.reasonCode === 'OLDER_THAN_CHECKED');
+    expect(skipped).toHaveLength(19);
+    expect(skipped.every((c) => c.state === 'outside_window' && c.attempts === 0)).toBe(true);
+    expect(cands.some((c) => c.state === 'retry_pending')).toBe(false); // nothing left "chờ tải" → no false limit warning
+    expect(log.some((u) => u.endsWith('-9000001.htm'))).toBe(false);
+  });
+  it('0 = off: every undated link is downloaded', async () => {
+    const { cands } = await run(0);
+    expect(cands.filter((c) => c.attempts > 0)).toHaveLength(30);
   });
 });

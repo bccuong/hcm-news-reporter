@@ -297,6 +297,13 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
     const cap = src.crawlLimits.perRunArticles ?? Math.min(src.crawlLimits.maxArticleFetches, settings.collection.maxArticlesPerSource);
     const winFrom = new Date(ctx.window.from).getTime();
     const winTo = new Date(ctx.window.to).getTime();
+    // undated links: newest publisher id first; a streak of verified-older ones ends the walk down the listings
+    const pubId = (u: string) => Number(/(\d{6,})(?:\.\w+)?(?:[?#].*)?$/.exec(u)?.[1] ?? 0);
+    const undated = (c: Candidate) => !c.discoveredVia.some((d) => d.feedPublishedAt) && !urlDateHint(c.url);
+    const stopAfter = settings.collection.undatedStopAfterOld ?? 0;
+    const olderThan = winFrom - settings.reportWindow.lookbackMarginHours * 3600_000;
+    let oldStreak = 0;
+    let oldIdFloor = Infinity;
     /** fetch order under a limit: dated inside the window (newest first) → undated → dated outside */
     const rank = (c: Candidate): [number, number] => {
       const fd = c.discoveredVia.map((d) => d.feedPublishedAt).find(Boolean);
@@ -351,6 +358,10 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
         const primary = ledger.byId.get(sameAs)!;
         primary.discoveredVia.push(...c.discoveredVia);
         ledger.set(c, 'duplicate', 'DUPLICATE_CANONICAL', `Đã có bài từ link khác trỏ tới cùng trang: ${primary.url}`);
+        continue;
+      }
+      if (!ctx.retryCandidateIds && stopAfter > 0 && oldStreak >= stopAfter && undated(c) && pubId(c.url) > 0 && pubId(c.url) < oldIdFloor) {
+        ledger.set(c, 'outside_window', 'OLDER_THAN_CHECKED', `Không có ngày đăng; mã bài ${pubId(c.url)} nhỏ hơn ${stopAfter} bài liên tiếp đã xác minh là cũ hơn khung giờ – bấm "Thử lại" để tải kiểm tra`);
         continue;
       }
       if (fetches >= cap) {
@@ -437,6 +448,12 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
       await stores.appendArticles(ctx.runId, [article]);
 
       ledger.set(c, ...stateFor(article, _verdict, ctx.window));
+      if (undated(c) && pubId(c.url) > 0 && article.publishedAt && article.dateConfidence === 'verified') {
+        if (Date.parse(article.publishedAt) < olderThan) {
+          oldStreak++;
+          oldIdFloor = Math.min(oldIdFloor, pubId(c.url));
+        } else oldStreak = 0;
+      }
       if (fetches % 10 === 0) await checkpoint();
     }
     const failed = mine.filter((c) => ['fetch_failed', 'blocked'].includes(c.state)).length;

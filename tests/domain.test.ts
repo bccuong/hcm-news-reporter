@@ -157,3 +157,11 @@ describe('Skill websites.txt import (UI-09)', () => {
     expect(r.comments.length).toBeGreaterThan(0);
   });
 });
+
+describe('RSS dates with a two-digit year (Thanh Niên, 16/11/2026)', () => {
+  it('"Mon, 16 Nov 26 14:20:00 +0700" is 16/11/2026 14:20', () => {
+    expect(parsePublisherDate('Mon, 16 Nov 26 14:20:00 +0700')).toBe('2026-11-16T14:20:00+07:00');
+    expect(parsePublisherDate('Sun, 15 Nov 26 19:30:00 GMT')).toBe('2026-11-16T02:30:00+07:00');
+    expect(parsePublisherDate('Mon, 16 Nov 2026 14:20:00 +0700')).toBe('2026-11-16T14:20:00+07:00');
+  });
+});

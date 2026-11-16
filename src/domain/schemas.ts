@@ -197,6 +197,12 @@ export const SettingsSchema = z.object({
     .object({
       /** articles downloaded per publisher per run (all sources); a source may set a LOWER limit of its own */
       maxArticlesPerSource: z.number().int().min(1).max(2000).default(50),
+      /**
+       * links without any date (deep listing pages) are read newest publisher id first; after this many consecutive ones
+       * verified OLDER than the window, the remaining undated links with smaller ids are recorded as outside the window
+       * without download (reason OLDER_THAN_CHECKED, "Thử lại" still fetches them). 0 = off.
+       */
+      undatedStopAfterOld: z.number().int().min(0).max(100).default(8),
       maxConcurrentRequests: z.number().int().min(1).max(16).default(5),
       maxRequestsPerHost: z.number().int().min(1).max(8).default(2),
       timeoutMs: z.number().int().min(2000).max(120000).default(15000),
