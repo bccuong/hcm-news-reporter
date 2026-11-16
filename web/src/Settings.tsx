@@ -1,4 +1,4 @@
-import { Download, FileUp, History, Plus, RotateCcw, Save, Search, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileUp, History, Plus, RotateCcw, Save, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings } from '../../src/domain/defaults';
 import { detectLocation } from '../../src/domain/location';
@@ -11,7 +11,7 @@ import { SourcesPanel } from './SourcesPanel';
 import { ChipEditor, Field, NumberField, Section, Select, Toggle, useToast } from './ui';
 
 const NAV = [
-  ['profiles', 'Cấu hình (profile)'],
+  ['profiles', 'Tổng quan'],
   ['sources', 'Nguồn tin'],
   ['rules', 'Từ khóa & quy tắc'],
   ['location', 'Địa điểm'],
@@ -22,7 +22,7 @@ const NAV = [
   ['performance', 'Hiệu năng'],
   ['backup', 'Sao lưu & lịch sử'],
 ] as const;
-type NavKey = (typeof NAV)[number][0];
+type NavKey = (typeof NAV)[number][0] | 'newProfile';
 
 export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { open: boolean; onClose: () => void; onSaved: (s: Settings, src: Source[]) => void; initialSection?: NavKey }) {
   const toast = useToast();
@@ -33,10 +33,11 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
   const [filter, setFilter] = useState('');
   const [saving, setSaving] = useState(false);
 
-  /** name of the profile every section except "Cấu hình (profile)" edits */
-  const [profName, setProfName] = useState('');
+  /** all profiles; every section edits the open (active) one */
+  const [profs, setProfs] = useState<ProfilesState | null>(null);
+  const profName = profs ? (profs.profiles.find((x) => x.id === profs.activeId)?.name ?? profs.activeId) : '';
   const load = async () => {
-    api.profiles().then((p) => setProfName(p.profiles.find((x) => x.id === p.activeId)?.name ?? p.activeId)).catch(() => setProfName(''));
+    api.profiles().then(setProfs).catch(() => setProfs(null));
     const [a, b] = await Promise.all([api.getSettings(), api.getSources()]);
     setSaved({ s: a, src: b });
     setS(structuredClone(a));
@@ -55,6 +56,17 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
   const validation = useMemo(() => (s ? SettingsSchema.safeParse(s) : null), [s]);
   if (!open) return null;
 
+  /** open another profile: it becomes the active one, the page reloads and Settings reopen on the same section */
+  const switchProfile = async (id: string, label: string) => {
+    if ((dirtyS || dirtySrc) && !confirm(`Có thay đổi chưa lưu. Chuyển sang cấu hình "${label}" và bỏ thay đổi?`)) return;
+    try {
+      await api.activateProfile(id);
+      reopenSettingsAfterReload(nav === 'newProfile' ? 'profiles' : nav);
+      window.location.reload();
+    } catch (e) {
+      toast('err', (e as Error).message);
+    }
+  };
   const close = () => {
     if ((dirtyS || dirtySrc) && !confirm('Có thay đổi chưa lưu. Đóng và bỏ thay đổi?')) return;
     onClose();
@@ -104,7 +116,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
           )}
           {(dirtyS || dirtySrc) && <span className="chip border-amber-300 bg-amber-50 text-amber-800">Chưa lưu</span>}
           <span className="flex-1" />
-          <button className="btn-ghost" onClick={resetSection} disabled={nav === 'profiles' || nav === 'sources' || nav === 'backup'}>
+          <button className="btn-ghost" onClick={resetSection} disabled={nav === 'profiles' || nav === 'newProfile' || nav === 'sources' || nav === 'backup'}>
             <RotateCcw className="h-4 w-4" /> Mặc định mục này
           </button>
           <button className="btn-ghost" disabled={!(dirtyS || dirtySrc)} onClick={() => saved && (setS(structuredClone(saved.s)), setSrc(structuredClone(saved.src)))}>
@@ -135,30 +147,48 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
               <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
               <input className="input pl-7 text-xs" placeholder="Tìm cài đặt…" value={filter} onChange={(e) => setFilter(e.target.value)} />
             </div>
-            {/* every section except the profile list belongs to the active profile – shown as one group under its name */}
-            {[
-              { title: 'Tất cả cấu hình', items: navItems.filter(([k]) => k === 'profiles') },
-              { title: `Riêng cấu hình «${profName || '…'}»`, items: navItems.filter(([k]) => k !== 'profiles') },
-            ].map((g) =>
-              g.items.length ? (
-                <div key={g.title} className="mb-2" data-testid={g.items[0]![0] === 'profiles' ? 'nav-all-profiles' : 'nav-this-profile'}>
-                  <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{g.title}</div>
-                  <div className={g.items[0]![0] === 'profiles' ? '' : 'border-l-2 border-navy-100 pl-1'}>
-                    {g.items.map(([k, l]) => (
+            {/* one tree: every profile, the open one expanded with ALL its sections (overview, sources, rules, …) */}
+            <div className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cấu hình</div>
+            {(profs?.profiles ?? [{ id: '', name: profName || '…' }]).map((p) =>
+              !profs || p.id === profs.activeId ? (
+                <div key={p.id || 'active'} className="mb-1" data-testid="nav-this-profile">
+                  <div className="flex items-center gap-1 px-2 py-1.5 text-sm font-semibold text-navy-800">
+                    <ChevronDown className="h-4 w-4 shrink-0" /> <span className="truncate">{p.name}</span>
+                    <span className="chip ml-auto border-teal-300 bg-teal-50 px-1.5 text-[10px] text-teal-900">đang mở</span>
+                  </div>
+                  <div className="ml-3 border-l-2 border-navy-100 pl-1">
+                    {navItems.map(([k, l]) => (
                       <button key={k} onClick={() => setNav(k)} className={`mb-0.5 block w-full rounded px-2 py-1.5 text-left text-sm ${nav === k ? 'bg-navy-700 text-white' : 'hover:bg-slate-100'}`}>
                         {l}
                       </button>
                     ))}
+                    {navItems.length === 0 && <p className="px-2 py-1 text-xs text-slate-500">Không có mục khớp "{filter}"</p>}
                   </div>
                 </div>
-              ) : null,
+              ) : (
+                <button
+                  key={p.id}
+                  onClick={() => switchProfile(p.id, p.name)}
+                  className="mb-0.5 flex w-full items-center gap-1 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100"
+                  title={`Mở cấu hình "${p.name}" để xem và sửa`}
+                  data-testid={`nav-profile-${p.id}`}
+                >
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /> <span className="truncate">{p.name}</span>
+                </button>
+              ),
             )}
+            <button
+              onClick={() => setNav('newProfile')}
+              className={`mt-1 flex w-full items-center gap-1 rounded px-2 py-1.5 text-left text-sm ${nav === 'newProfile' ? 'bg-navy-700 text-white' : 'text-teal-700 hover:bg-slate-100'}`}
+            >
+              <Plus className="h-4 w-4" /> Tạo cấu hình mới
+            </button>
           </nav>
           <main className="min-w-0 flex-1 overflow-auto p-4">
             {!s ? (
               <p>Đang tải…</p>
-            ) : nav === 'profiles' ? (
-              <ProfilesPanel dirty={dirtyS || dirtySrc} />
+            ) : nav === 'profiles' || nav === 'newProfile' ? (
+              <ProfilesPanel dirty={dirtyS || dirtySrc} view={nav === 'profiles' ? 'overview' : 'create'} onCreate={() => setNav('newProfile')} onChanged={() => api.profiles().then(setProfs).catch(() => undefined)} />
             ) : nav === 'sources' ? (
               <SourcesPanel sources={src} setSources={setSrc} />
             ) : nav === 'rules' ? (
@@ -661,12 +691,22 @@ function BackupPanel({ onRestored }: { onRestored: () => void }) {
 }
 
 /* ---------------- Profiles (cấu hình theo địa bàn) ---------------- */
-function ProfilesPanel({ dirty }: { dirty: boolean }) {
+/** the page reloads after a profile change: App reopens Settings on this section */
+function reopenSettingsAfterReload(section: string) {
+  try {
+    sessionStorage.setItem('reopenSettings', section);
+  } catch {
+    /* private mode: Settings simply stay closed */
+  }
+}
+
+/** overview = the open profile (rename, copy, delete); create = new profile form */
+function ProfilesPanel({ dirty, view, onCreate, onChanged }: { dirty: boolean; view: 'overview' | 'create'; onCreate: () => void; onChanged: () => void }) {
   const toast = useToast();
   const [st, setSt] = useState<ProfilesState | null>(null);
-  const reload = () => api.profiles().then(setSt).catch((e) => toast('err', (e as Error).message));
+  const reload = (changed = true) => (changed && onChanged(), api.profiles().then(setSt).catch((e) => toast('err', (e as Error).message)));
   useEffect(() => {
-    reload();
+    reload(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [mode, setMode] = useState<'region' | 'clone'>('region');
@@ -682,6 +722,7 @@ function ProfilesPanel({ dirty }: { dirty: boolean }) {
   const activate = async (id: string) => {
     if (dirty && !confirm('Có thay đổi cài đặt chưa lưu. Chuyển cấu hình và bỏ thay đổi?')) return;
     await api.activateProfile(id);
+    reopenSettingsAfterReload('profiles');
     window.location.reload();
   };
   const create = async () => {
@@ -720,7 +761,7 @@ function ProfilesPanel({ dirty }: { dirty: boolean }) {
     if (!confirm(`Xóa cấu hình "${label}"? Dữ liệu đã thu thập của cấu hình này không hiện trong danh sách nữa.`)) return;
     try {
       await api.deleteProfile(id);
-      if (id === st?.activeId) return window.location.reload();
+      if (id === st?.activeId) return reopenSettingsAfterReload('profiles'), window.location.reload();
       reload();
       toast('ok', `Đã xóa cấu hình "${label}"`);
     } catch (e) {
@@ -730,13 +771,14 @@ function ProfilesPanel({ dirty }: { dirty: boolean }) {
 
   return (
     <div>
+      {view === 'overview' && (
       <Section
-        title="Cấu hình theo địa bàn (profile)"
-        help="Mỗi cấu hình là một bộ đầy đủ: nguồn báo, từ khóa & quy tắc, địa danh, lĩnh vực, báo cáo… Mặc định là TP.HCM. Muốn thu thập cho Hà Nội, Đà Nẵng hay bất kỳ đâu: tạo cấu hình mới hoặc sao chép một cấu hình có sẵn rồi chỉnh. Các mục Cài đặt khác luôn áp dụng cho cấu hình đang dùng."
+        title="Tổng quan cấu hình"
+        help="Mỗi cấu hình là một bộ đầy đủ: nguồn báo, từ khóa & quy tắc, địa danh, lĩnh vực, báo cáo… – các mục nằm ngay dưới tên cấu hình ở cột trái. Cấu hình khác: bấm tên của nó ở cột trái. Thêm Hà Nội, Đà Nẵng…: bấm + Tạo cấu hình mới."
       >
         <table className="w-full text-sm" data-testid="profiles-table">
           <tbody>
-            {st?.profiles.map((p) => (
+            {st?.profiles.filter((p) => p.id === st.activeId).map((p) => (
               <tr key={p.id} className="border-b border-slate-100">
                 <td className="py-2 pr-2">
                   {renaming?.id === p.id ? (
@@ -757,7 +799,7 @@ function ProfilesPanel({ dirty }: { dirty: boolean }) {
                 </td>
                 <td className="whitespace-nowrap py-2 text-right">
                   {p.id !== st.activeId && <button className="btn-teal btn-xs" onClick={() => activate(p.id)}>Dùng cấu hình này</button>}
-                  <button className="btn-ghost btn-xs" onClick={() => (setMode('clone'), setCloneFrom(p.id), setName(`${p.name} (bản sao)`))}>Sao chép</button>
+                  <button className="btn-ghost btn-xs" onClick={() => (setMode('clone'), setCloneFrom(p.id), setName(`${p.name} (bản sao)`), onCreate())}>Sao chép thành cấu hình mới</button>
                   <button className="btn-ghost btn-xs" onClick={() => setRenaming({ id: p.id, name: p.name })}>Đổi tên</button>
                   {st.profiles.length > 1 && <button className="btn-danger btn-xs" onClick={() => remove(p.id, p.name)}>Xóa</button>}
                 </td>
@@ -765,7 +807,10 @@ function ProfilesPanel({ dirty }: { dirty: boolean }) {
             ))}
           </tbody>
         </table>
+        {st && st.profiles.length > 1 && <p className="mt-2 text-xs text-slate-500">Còn {st.profiles.length - 1} cấu hình khác: {st.profiles.filter((p) => p.id !== st.activeId).map((p) => p.name).join(', ')} – bấm tên ở cột trái để mở.</p>}
       </Section>
+      )}
+      {view === 'create' && (
       <Section title="Tạo cấu hình mới">
         <div className="flex gap-4 text-sm">
           <label className="flex items-center gap-1"><input type="radio" checked={mode === 'region'} onChange={() => setMode('region')} /> Địa bàn mới (từ cấu hình chuẩn)</label>
@@ -789,6 +834,7 @@ function ProfilesPanel({ dirty }: { dirty: boolean }) {
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={useNow} onChange={(e) => setUseNow(e.target.checked)} /> Dùng cấu hình mới ngay sau khi tạo</label>
         <button className="btn-primary w-fit" disabled={busy} onClick={create}><Plus className="h-4 w-4" /> Tạo cấu hình</button>
       </Section>
+      )}
     </div>
   );
 }

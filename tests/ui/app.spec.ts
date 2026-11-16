@@ -198,40 +198,52 @@ test('DIS-08: publisher redesign → coverage tab shows degraded adapter, articl
 
 test('Profiles: create Hà Nội from the defaults, its own settings and runs, clone TP.HCM, switch back', async ({ page }) => {
   page.on('dialog', (d) => d.accept());
-  await openSettings(page, 'Cấu hình (profile)');
+  await openSettings(page, 'Tổng quan');
   const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  // one tree: the open profile with all its sections underneath
+  const tree = dlg.getByTestId('nav-this-profile');
+  await expect(tree).toContainText('TP.HCM');
+  for (const l of ['Tổng quan', 'Nguồn tin', 'Từ khóa & quy tắc', 'Địa điểm', 'Lĩnh vực']) await expect(tree.getByRole('button', { name: l, exact: true })).toBeVisible();
   await expect(dlg.getByTestId('profiles-table')).toContainText('TP.HCM');
   await expect(dlg.getByTestId('profiles-table')).toContainText('đang dùng');
-  // new region from the standard configuration, used right away (page reloads)
+  // new region from the standard configuration, used right away (page reloads, Settings reopen on its overview)
+  await dlg.getByRole('button', { name: 'Tạo cấu hình mới', exact: true }).click();
   await dlg.getByLabel('Tên cấu hình').fill('Hà Nội');
   await dlg.getByLabel('Tên địa bàn').fill('Hà Nội');
   await dlg.getByLabel('Cách viết khác của địa bàn (cách nhau bằng dấu phẩy)').fill('TP Hà Nội, Thủ đô');
-  await dlg.getByRole('button', { name: 'Tạo cấu hình' }).click();
+  await dlg.getByRole('button', { name: 'Tạo cấu hình', exact: true }).click();
   await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('ha-noi');
-  await expect(page.getByLabel('Lượt đã lưu')).toHaveCount(0); // TP.HCM runs are not listed under Hà Nội
-  // its settings: region Hà Nội, subtitle, location filter
-  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  await expect(dlg.getByTestId('nav-this-profile')).toContainText('Hà Nội');
+  await expect(dlg.getByTestId('profiles-table')).toContainText('Hà Nội');
+  await expect(dlg.getByTestId('nav-profile-hcm')).toContainText('TP.HCM'); // the other profile, one click away
+  // its settings: region Hà Nội, location filter
   await dlg.getByRole('button', { name: 'Địa điểm', exact: true }).click();
   await expect(dlg.getByLabel('Tên địa bàn (hiển thị trong ứng dụng và báo cáo)')).toHaveValue('Hà Nội');
   await dlg.getByLabel('Câu thử địa bàn').fill('Ùn tắc kéo dài ở Thủ đô sáng nay');
   await expect(dlg.getByText('Kết quả: Hà Nội')).toBeVisible();
+  await page.screenshot({ path: 'docs/screenshots/profiles-tree.png' });
   await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
+  await expect(page.getByLabel('Lượt đã lưu')).toHaveCount(0); // TP.HCM runs are not listed under Hà Nội
   await expect(page.getByTestId('app-subtitle')).toHaveText('Điểm tin báo chí ngành xây dựng Hà Nội');
   await page.screenshot({ path: 'docs/screenshots/profile-ha-noi.png' });
 
-  // clone TP.HCM without switching, then switch back with the header picker
+  // switch from the tree: TP.HCM opens on the same section
   await page.getByRole('button', { name: 'Cài đặt' }).click();
-  await dlg.getByRole('button', { name: 'Cấu hình (profile)', exact: true }).click();
-  await dlg.getByRole('row').filter({ hasText: 'TP.HCM' }).getByRole('button', { name: 'Sao chép' }).click();
+  await dlg.getByRole('button', { name: 'Địa điểm', exact: true }).click();
+  await dlg.getByTestId('nav-profile-hcm').click();
+  await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('hcm');
+  await expect(dlg.getByTestId('nav-this-profile')).toContainText('TP.HCM');
+  await expect(dlg.getByLabel('Tên địa bàn (hiển thị trong ứng dụng và báo cáo)')).toHaveValue('TP.HCM');
+
+  // clone TP.HCM without switching: it appears in the tree
+  await dlg.getByRole('button', { name: 'Tổng quan', exact: true }).click();
+  await dlg.getByRole('button', { name: 'Sao chép thành cấu hình mới' }).click();
   await expect(dlg.getByLabel('Tên cấu hình')).toHaveValue('TP.HCM (bản sao)');
   await dlg.getByLabel('Dùng cấu hình mới ngay sau khi tạo').uncheck();
-  await dlg.getByRole('button', { name: 'Tạo cấu hình' }).click();
-  await expect(dlg.getByTestId('profiles-table')).toContainText('TP.HCM (bản sao)');
-  await expect(dlg.getByTestId('profiles-table')).toContainText('sao chép từ TP.HCM');
+  await dlg.getByRole('button', { name: 'Tạo cấu hình', exact: true }).click();
+  await expect(dlg.getByRole('navigation')).toContainText('TP.HCM (bản sao)');
   await page.screenshot({ path: 'docs/screenshots/profiles-settings.png' });
   await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
-  await page.getByLabel('Cấu hình (profile)').selectOption('hcm');
-  await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('hcm');
   await expect(page.getByTestId('app-subtitle')).toHaveText('Điểm tin báo chí ngành xây dựng TP.HCM');
   await expect(page.getByLabel('Lượt đã lưu')).toBeVisible(); // TP.HCM's runs are back
 });

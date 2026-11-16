@@ -17,7 +17,17 @@ export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
   const [online, setOnline] = useState(navigator.onLine);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // after switching profile inside Settings the page reloads: reopen Settings on the same section
+  const [reopenSection] = useState<string | null>(() => {
+    try {
+      const v = sessionStorage.getItem('reopenSettings');
+      sessionStorage.removeItem('reopenSettings');
+      return v;
+    } catch {
+      return null;
+    }
+  });
+  const [settingsOpen, setSettingsOpen] = useState(!!reopenSection);
   const [runs, setRuns] = useState<RunInfo[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<RunInfo | null>(null);
@@ -530,6 +540,7 @@ export function App() {
       <SettingsDrawer
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        initialSection={(reopenSection ?? undefined) as Parameters<typeof SettingsDrawer>[0]['initialSection']}
         onSaved={(s, src) => {
           setSettings(s);
           setSources(src);

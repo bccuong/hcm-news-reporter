@@ -206,11 +206,15 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ho
   await login(page, 'Người duyệt F', 'HCM-TEST-CODE');
   await page.getByRole('button', { name: 'Cài đặt' }).click();
   const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
-  await dlg.getByRole('button', { name: 'Cấu hình (profile)', exact: true }).click();
+  await dlg.getByRole('button', { name: 'Tạo cấu hình mới', exact: true }).click();
   await dlg.getByLabel('Tên cấu hình').fill('Đà Nẵng');
   await dlg.getByLabel('Tên địa bàn').fill('Đà Nẵng');
-  await dlg.getByRole('button', { name: 'Tạo cấu hình' }).click();
+  await dlg.getByRole('button', { name: 'Tạo cấu hình', exact: true }).click();
   await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('da-nang');
+  // Settings reopen on the new profile's overview after the reload
+  await expect(dlg.getByTestId('nav-this-profile')).toContainText('Đà Nẵng');
+  await expect(dlg.getByTestId('nav-profile-hcm')).toBeVisible();
+  await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
   const cfg = (await (await request.get('http://127.0.0.1:5181/config?profile=da-nang')).json()).config;
   expect(cfg.settings.location.regionName).toBe('Đà Nẵng');
   expect(cfg.by).toBe('Người duyệt F');
@@ -230,7 +234,7 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ho
   const dlg2 = page.getByRole('dialog', { name: 'Cài đặt' });
   await expect(dlg2.getByTestId('settings-profile')).toContainText('Đà Nẵng');
   const own = dlg2.getByTestId('nav-this-profile');
-  await expect(own).toContainText('Riêng cấu hình «Đà Nẵng»');
+  await expect(own).toContainText('Đà Nẵng');
   for (const l of ['Nguồn tin', 'Từ khóa & quy tắc', 'Địa điểm', 'Lĩnh vực']) await expect(own.getByRole('button', { name: l, exact: true })).toBeVisible();
   await own.getByRole('button', { name: 'Lĩnh vực', exact: true }).click();
   // "Chính sách, pháp quy" counts only with a construction/transport sector in the title/sapo – a UI setting, not a file
