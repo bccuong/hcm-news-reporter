@@ -328,6 +328,15 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
           continue;
         }
       }
+      // this URL is already the canonical page of a story extracted from another link (e.g. a feed link redirecting to it):
+      // recorded as a duplicate of that story instead of a pending gap, and no fetch is spent on it ("Thử lại" still fetches)
+      const sameAs = !ctx.retryCandidateIds ? canonicalSeen.get(normalizeUrl(c.url) ?? c.url) : undefined;
+      if (sameAs && sameAs !== c.id && ledger.byId.get(sameAs)?.articleId) {
+        const primary = ledger.byId.get(sameAs)!;
+        primary.discoveredVia.push(...c.discoveredVia);
+        ledger.set(c, 'duplicate', 'DUPLICATE_CANONICAL', `Đã có bài từ link khác trỏ tới cùng trang: ${primary.url}`);
+        continue;
+      }
       if (fetches >= cap) {
         ledger.set(c, 'retry_pending', 'FETCH_LIMIT', `Vượt giới hạn ${cap} bài/báo mỗi lượt (Cài đặt › Hiệu năng) – tăng giới hạn hoặc bấm "Thử lại" để tải tiếp`);
         stats.limitReached = true;

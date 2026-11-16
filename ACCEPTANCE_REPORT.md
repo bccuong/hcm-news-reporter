@@ -4,6 +4,7 @@
 | ID | Status | Evidence |
 |---|---|---|
 | LED-01 / no silent omission (hourly web runs) | **PASS (fixed regression)** | Defect found from team labels: each hourly cloud run started empty, so with the 50/publisher limit stories extracted in an earlier hour fell back to `retry_pending FETCH_LIMIT` or left the RSS feed and vanished from the published period (10 of 17 labelled stories gone). Fix: `seedFromPublished` in `scripts/cloud-collect.ts` resumes the run from the same period's publication (same window + settings hash). `tests/collector.test.ts` "hourly cloud runs continue…" (ids kept, story not re-downloaded, limit spent on new links, fresh run on changed settings/window). Real 2-pass dry run on live sources: pass 1 119 articles → pass 2 166, **0 lost**, retry_pending 548→379, ready 23→30, all adapters ok. |
+| DIS-06 / LED-02 duplicate by canonical | PASS (improved) | A link that is the canonical page of an already extracted story → `duplicate` DUPLICATE_CANONICAL, no fetch, its discovery evidence merged into the story; `tests/collector.test.ts` "a link that is already the canonical page…" (fails without the fix). vitest 90/90, playwright 9/9. |
 | DIS-08 | PASS (adjusted) | Container drift share now counts only articles with a recorded container (carried-over articles from older data have none) – `tests/health.test.ts` green. |
 
 

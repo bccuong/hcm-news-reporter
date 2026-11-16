@@ -215,3 +215,28 @@ describe('hourly cloud runs continue the published period (no story drops out be
     expect(await seedFromPublished(setup().stores, 'run_live_y', day, { ...WINDOW, to: '2026-11-10T09:00:00+07:00' }, h2.settings)).toBeNull();
   });
 });
+
+describe('a link that is already the canonical page of an extracted story', () => {
+  it('is recorded as duplicate without spending a fetch (no false "retry_pending" gap)', async () => {
+    const rss = siteARoutes()[`${A}/rss/thoi-su.rss`]!.body.replace(
+      '</channel>',
+      `<item><title>Bản sao</title><link>${U.dupAlias}</link><pubDate>Sun, 08 Nov 2026 23:00:00 +0700</pubDate></item></channel>`,
+    );
+    const log: string[] = [];
+    const root = mkdtempSync(path.join(tmpdir(), 'hcm-'));
+    const stores = new Stores(makePaths(root), 'https://example.org');
+    const settings = defaultSettings();
+    const http = new HttpClient({ transport: fixtureTransport({ [`${A}/rss/thoi-su.rss`]: { status: 200, body: rss } }, log), resolver: publicResolver, maxConcurrent: 4, perHost: 2, timeoutMs: 5000, maxRetries: 1, backoffBaseMs: 1, userAgent: 't', sleep: async () => {} });
+    await runCollection({ runId: 'run_canon', window: WINDOW, trigger: 'fixture', settings, sources: [fixtureSources()[0]!], stores, http });
+    const cands = await stores.getCandidates('run_canon');
+    const alias = cands.find((c) => c.url === U.dupAlias)!;
+    const metro = cands.find((c) => c.url === U.metro)!;
+    expect(alias.articleId).toBeTruthy(); // fetched first (newest feed date); its canonical is the metro page
+    expect(metro.state).toBe('duplicate');
+    expect(metro.reasonCode).toBe('DUPLICATE_CANONICAL');
+    expect(metro.attempts).toBe(0);
+    expect(log.filter((u) => u === U.metro)).toHaveLength(0);
+    // the metro link's discovery evidence is kept on the story (nothing lost)
+    expect(alias.discoveredVia.some((d) => d.method === 'rss' && d.feedTitle?.includes('Khánh thành'))).toBe(true);
+  });
+});

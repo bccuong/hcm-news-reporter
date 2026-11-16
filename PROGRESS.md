@@ -13,6 +13,9 @@
 - **Fix:** `seedFromPublished()` (scripts/cloud-collect.ts) loads the same period's published ledger + articles into the run store under the same run id when window and settings hash are unchanged → runCollection resumes: extracted stories stay (same ids), the limit is spent on links not fetched yet; manifest note "Tiếp nối lần đăng trước…". `extractionContainer` is now published; health ignores unknown containers.
 - Verified: typecheck, vitest 89/89, real 2-pass dry run (119 → 166 articles, 0 lost, adapters ok). Settings hash is stable across runs on real data (3d4dc3c5 at 00:15 and 06:11).
 - Label evaluation now: 17 labels, 1 reviewer, 6 scored stories, precision/recall 100% → too few to tune rules; 10 labels were on dropped stories (cannot be scored).
+- Also (13b): a link whose URL is already the canonical page of a story extracted from another link (VnExpress "Điểm tin" feed links redirect to the newest edition) is now recorded `duplicate` (DUPLICATE_CANONICAL) without a fetch, instead of a false `retry_pending FETCH_LIMIT` gap (`src/collector/run.ts`; test "a link that is already the canonical page…", verified failing without the fix).
+- Tests (13b): typecheck, vitest 90/90, playwright 9/9. Playwright must be run from PowerShell here – from the Git-Bash tool Edge closes at launch (environment only).
+- `git push` was blocked by the session permission check: the 2 local commits must be pushed by the user (`git push`).
 - Note: the user changed the web config at 2026-11-15 23:30Z, so the first hourly run after deploy is a fresh run (hash differs); later runs of the same period continue.
 - **Next single action:** after the next two hourly runs, check the period's manifest notes contain "Tiếp nối lần đăng trước" and article count did not drop (`curl …/live/hcm/<date>.json`); then, after more team labelling, rerun `npx tsx scripts/eval-shared-labels.ts`.
 
