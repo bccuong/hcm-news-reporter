@@ -520,7 +520,7 @@ export function App() {
         )}
 
         {/* sources of the viewed period: one tile per publisher */}
-        {run && <SourceStrip run={run} arts={arts} ready={ready} onOpen={() => setTab('coverage')} />}
+        {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')} />}
 
         {/* metrics */}
         <section className="grid grid-cols-2 gap-3 md:grid-cols-6">
@@ -629,7 +629,17 @@ function MergePanel({ primaryId, arts, reviews, onMerge, onSplit }: { primaryId:
 }
 
 /** Per-publisher summary of the viewed period (its last run): status, links found, extracted and ready stories, warnings. */
-function SourceStrip({ run, arts, ready, onOpen }: { run: RunInfo; arts: Article[]; ready: Article[]; onOpen: () => void }) {
+/** publisher home page from the source configuration (http/https only) */
+function homeOf(sources: Source[], id: string): string | null {
+  const u = sources.find((x) => x.id === id)?.baseUrl;
+  try {
+    return u && /^https?:$/.test(new URL(u).protocol) ? new URL(u).origin + '/' : null;
+  } catch {
+    return null;
+  }
+}
+
+function SourceStrip({ run, arts, ready, sources, onOpen }: { run: RunInfo; arts: Article[]; ready: Article[]; sources: Source[]; onOpen: () => void }) {
   const live = run.notes?.some((x) => x.startsWith('Kỳ đang diễn ra'));
   const extracted = new Map<string, number>();
   for (const a of arts) extracted.set(a.sourceId, (extracted.get(a.sourceId) ?? 0) + 1);
@@ -662,18 +672,29 @@ function SourceStrip({ run, arts, ready, onOpen }: { run: RunInfo; arts: Article
             s.limitReached && { t: 'chạm giới hạn tải', c: 'text-amber-700', d: 'Còn link chưa tải trong lượt này (Cài đặt › Hiệu năng)' },
             s.status === 'failed' && { t: 'lỗi', c: 'text-red-700', d: s.error ?? '' },
           ].filter(Boolean) as Array<{ t: string; c: string; d: string }>;
+          const home = homeOf(sources, s.sourceId);
           return (
-            <button
+            <div
               key={s.sourceId}
-              onClick={onOpen}
-              title={[`${s.sourceName}: ${SRC_STATUS[s.status] ?? s.status}`, ...warn.map((w) => `${w.t}${w.d ? ` – ${w.d}` : ''}`)].join('\n')}
-              className={`rounded border bg-white px-2.5 py-2 text-left transition hover:border-navy-300 hover:shadow-sm ${warn.length ? 'border-amber-200' : 'border-slate-200'}`}
+              className={`flex flex-col rounded border bg-white transition hover:border-navy-300 hover:shadow-sm ${warn.length ? 'border-amber-200' : 'border-slate-200'}`}
               data-testid={`source-tile-${s.sourceId}`}
             >
-              <div className="flex items-center gap-1.5">
+              {/* the publisher's name opens its home page (new tab); the rest of the tile opens the coverage details */}
+              <div className="flex items-center gap-1.5 px-2.5 pt-2">
                 <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[s.status] ?? 'bg-slate-300'}`} />
-                <span className="truncate text-sm font-semibold text-slate-800">{s.sourceName}</span>
+                {home ? (
+                  <a href={home} target="_blank" rel="noopener noreferrer" className="truncate text-sm font-semibold text-slate-800 hover:text-blue-700 hover:underline" title={`Mở trang chủ ${s.sourceName} (${home})`} data-testid={`source-home-${s.sourceId}`}>
+                    {s.sourceName}
+                  </a>
+                ) : (
+                  <span className="truncate text-sm font-semibold text-slate-800">{s.sourceName}</span>
+                )}
               </div>
+              <button
+                onClick={onOpen}
+                title={[`${s.sourceName}: ${SRC_STATUS[s.status] ?? s.status}`, ...warn.map((w) => `${w.t}${w.d ? ` – ${w.d}` : ''}`), 'Bấm để xem chi tiết độ phủ'].join('\n')}
+                className="flex-1 px-2.5 pb-2 text-left"
+              >
               <div className="mt-1 flex items-baseline gap-1">
                 <span className="text-lg font-bold tabular-nums text-slate-800">{readyBy.get(s.sourceId) ?? 0}</span>
                 <span className="text-[11px] text-slate-500">sẵn sàng</span>
@@ -688,7 +709,8 @@ function SourceStrip({ run, arts, ready, onOpen }: { run: RunInfo; arts: Article
                   <span className={s.status === 'partial' ? 'text-amber-700' : 'text-slate-600'}>{SRC_STATUS[s.status] ?? s.status}</span>
                 )}
               </div>
-            </button>
+              </button>
+            </div>
           );
         })}
       </div>

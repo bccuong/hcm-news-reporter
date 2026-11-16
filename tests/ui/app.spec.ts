@@ -299,6 +299,11 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
   // per-publisher tiles of the viewed period
   await expect(page.getByTestId('source-strip')).toContainText('Nguồn tin trong kỳ');
   await expect(page.getByTestId('source-tile-fixture-a')).toContainText('sẵn sàng');
+  // the publisher's name opens its home page in a new tab (the rest of the tile opens the coverage details)
+  const home = page.getByTestId('source-home-fixture-a');
+  await expect(home).toHaveAttribute('target', '_blank');
+  await expect(home).toHaveAttribute('rel', /noopener/);
+  expect(await home.getAttribute('href')).toBe('https://fixture-a.example.vn/'); // origin of the configured baseUrl
   const bar = page.getByTestId('bulk-bar');
   await bar.getByLabel('Chọn tất cả bài đang hiển thị').click(); // saved story by story, the box follows
   await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(`Xuất báo cáo (${ready0})`);

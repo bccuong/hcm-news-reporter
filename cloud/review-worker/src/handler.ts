@@ -204,7 +204,8 @@ async function saveConfig(env: Env, pid: string, next: SharedConfig) {
     const p = JSON.parse(prev) as SharedConfig;
     // history key sorts by time; metadata lets the web list versions without reading values
     await env.REVIEWS.put(`${histPrefix(pid)}${p.at}`, prev, { metadata: { by: p.by, at: p.at, summary: p.summary.slice(0, 200) } });
-    const old = (await listAll(env.REVIEWS, histPrefix(pid))).map((k) => k.name).sort();
+    // pruning old versions needs list(); when the daily list() quota is used up it waits for the next save
+    const old = (await listAll(env.REVIEWS, histPrefix(pid)).catch(() => [])).map((k) => k.name).sort();
     for (const k of old.slice(0, Math.max(0, old.length - KEEP_HISTORY))) await env.REVIEWS.delete(k);
   }
   await env.REVIEWS.put(configKey(pid), JSON.stringify(next));
@@ -435,7 +436,34 @@ const META_OF = (d: SharedDecision) => {
   const { title, summary, shortLabel, proposal, primaryImageUrl, ...m } = d;
   return { ...m, txt: !!(title || summary || shortLabel || proposal || primaryImageUrl) };
 };
-async function readReviews(env: Env, pid: string, period: string): Promise<Record<string, SharedDecision>> {
+/**
+ * One KV value per period holds every decision (`rva:<profile>:<period>`): a read is ONE get, never a list().
+ * (Cloudflare KV free plan: 1,000 list() per day – a list per page load ran out on 16/11/2026 and broke F5.)
+ * Periods written before this change are merged from the old per-article keys once; while list() is
+ * unavailable the old keys stay pending (`legacy: false`) and are merged on a later read.
+ */
+interface ReviewAgg { v: 2; legacy: boolean; reviews: Record<string, SharedDecision> }
+const rvAggKey = (pid: string, period: string) => `rva:${pid}:${period}`;
+async function loadReviewAgg(env: Env, pid: string, period: string): Promise<{ agg: ReviewAgg; changed: boolean; pending: boolean }> {
+  const raw = await env.REVIEWS.get(rvAggKey(pid, period));
+  const agg: ReviewAgg = raw ? (JSON.parse(raw) as ReviewAgg) : { v: 2, legacy: false, reviews: {} };
+  if (agg.legacy) return { agg, changed: false, pending: false };
+  try {
+    const old = await readLegacyReviews(env, pid, period);
+    // newer decisions (already in the aggregate) win over the old per-article keys
+    for (const [id, d] of Object.entries(old)) if (!agg.reviews[id] || agg.reviews[id]!.at < d.at) agg.reviews[id] = d;
+    agg.legacy = true;
+    return { agg, changed: true, pending: false };
+  } catch {
+    return { agg, changed: false, pending: true };
+  }
+}
+async function readReviews(env: Env, pid: string, period: string): Promise<{ reviews: Record<string, SharedDecision>; pending: boolean }> {
+  const { agg, changed, pending } = await loadReviewAgg(env, pid, period);
+  if (changed) await env.REVIEWS.put(rvAggKey(pid, period), JSON.stringify(agg)).catch(() => undefined);
+  return { reviews: agg.reviews, pending };
+}
+async function readLegacyReviews(env: Env, pid: string, period: string): Promise<Record<string, SharedDecision>> {
   const keys = await listAll(env.REVIEWS, rvPrefix(pid, period));
   const out: Record<string, SharedDecision> = {};
   for (const k of keys) {
@@ -454,7 +482,37 @@ async function readReviews(env: Env, pid: string, period: string): Promise<Recor
   return out;
 }
 
+/** votes of one day, `la:<date>` = { articleId: { reviewerId: Vote } }; old days merged once from l:<date>:* keys */
+interface VoteAgg { v: 2; legacy: boolean; votes: Record<string, Record<string, Vote>> }
+async function loadVoteAgg(env: Env, date: string): Promise<{ agg: VoteAgg; changed: boolean }> {
+  const raw = await env.REVIEWS.get(`la:${date}`);
+  const agg: VoteAgg = raw ? (JSON.parse(raw) as VoteAgg) : { v: 2, legacy: false, votes: {} };
+  if (agg.legacy) return { agg, changed: false };
+  try {
+    for (const k of await listAll(env.REVIEWS, `l:${date}:`)) {
+      const [, , articleId, rid] = k.name.split(':');
+      const byR = (agg.votes[articleId!] ??= {});
+      if (!byR[rid!]) byR[rid!] = k.metadata as Vote;
+    }
+    agg.legacy = true;
+    return { agg, changed: true };
+  } catch {
+    return { agg, changed: false };
+  }
+}
+
+/** an unexpected error (e.g. a Cloudflare quota) still answers with CORS headers, so the page shows the reason instead of "Failed to fetch" */
 export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fetch(i, init)): Promise<Response> {
+  try {
+    return await route(req, env, f);
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    const quota = /limit exceeded/i.test(msg);
+    return json({ error: quota ? 'Máy chủ duyệt chung tạm hết hạn mức Cloudflare trong ngày (mở lại lúc 07:00).' : 'Lỗi máy chủ duyệt chung', detail: msg.slice(0, 200) }, quota ? 503 : 500, cors(req, env));
+  }
+}
+
+async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
   const h = cors(req, env);
   const url = new URL(req.url);
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
@@ -473,7 +531,8 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
     const pid = url.searchParams.get('profile') ?? DEFAULT_PROFILE;
     const period = url.searchParams.get('period') ?? '';
     if (!PROFILE_ID.test(pid) || !PERIOD_ID.test(period)) return json({ error: 'INVALID_PERIOD' }, 400, h);
-    return json({ period, reviews: await readReviews(env, pid, period) }, 200, h);
+    const r = await readReviews(env, pid, period);
+    return json({ period, reviews: r.reviews, ...(r.pending ? { pending: 'Một phần kết quả duyệt cũ đang chờ Cloudflare mở lại hạn mức, sẽ hiện lại sau 07:00.' } : {}) }, 200, h);
   }
 
   // nightly export for the GitHub Action (bearer token, never sent to browsers)
@@ -530,22 +589,21 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
     if (!reviewer) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
     const patch = cleanReviewPatch(b?.patch);
     if (!patch || !Object.keys(patch).length) return json({ error: 'INVALID_PATCH' }, 400, h);
-    const key = `${rvPrefix(pid, period)}${articleId}`;
-    const prev = await env.REVIEWS.get(key);
-    const next: SharedDecision = { ...(prev ? (JSON.parse(prev) as SharedDecision) : { articleId }), ...patch, articleId, by: reviewer, at: new Date().toISOString() };
-    await env.REVIEWS.put(key, JSON.stringify(next), { metadata: META_OF(next) });
+    const { agg } = await loadReviewAgg(env, pid, period);
+    const next: SharedDecision = { ...(agg.reviews[articleId] ?? { articleId }), ...patch, articleId, by: reviewer, at: new Date().toISOString() };
+    for (const k of Object.keys(next) as Array<keyof SharedDecision>) if (next[k] === undefined) delete next[k];
+    agg.reviews[articleId] = next;
+    await env.REVIEWS.put(rvAggKey(pid, period), JSON.stringify(agg));
     return json({ ok: true, review: next }, 200, h);
   }
 
   if (url.pathname === '/labels' && req.method === 'GET') {
     const date = url.searchParams.get('date') ?? '';
     if (!DATE.test(date)) return json({ error: 'INVALID_DATE' }, 400, h);
-    const keys = await listAll(env.REVIEWS, `l:${date}:`);
+    const { agg, changed } = await loadVoteAgg(env, date);
+    if (changed) await env.REVIEWS.put(`la:${date}`, JSON.stringify(agg)).catch(() => undefined);
     const votes: Record<string, Vote[]> = {};
-    for (const k of keys) {
-      const articleId = k.name.split(':')[2]!;
-      (votes[articleId] ??= []).push(k.metadata as Vote);
-    }
+    for (const [articleId, byReviewer] of Object.entries(agg.votes)) votes[articleId] = Object.values(byReviewer);
     return json({ date, votes }, 200, h);
   }
 
@@ -570,12 +628,21 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
       assessment: b.assessment ?? null, note: String(b.note ?? '').slice(0, 1000), at: new Date().toISOString(),
     };
     const key = `l:${rec.reportDate}:${rec.articleId}:${rec.reviewerId}`;
+    const { agg } = await loadVoteAgg(env, rec.reportDate);
+    const saveAgg = () => env.REVIEWS.put(`la:${rec.reportDate}`, JSON.stringify(agg));
     if (!rec.label && !rec.category && !rec.assessment && !rec.note) {
       await env.REVIEWS.delete(key);
+      if (agg.votes[rec.articleId]) {
+        delete agg.votes[rec.articleId]![rec.reviewerId];
+        if (!Object.keys(agg.votes[rec.articleId]!).length) delete agg.votes[rec.articleId];
+      }
+      await saveAgg();
       return json({ ok: true, deleted: true }, 200, h);
     }
     const vote: Vote = { r: rec.reviewer, l: rec.label, c: rec.category, a: rec.assessment, n: rec.note.slice(0, 200), t: rec.at };
     await env.REVIEWS.put(key, JSON.stringify(rec), { metadata: vote });
+    (agg.votes[rec.articleId] ??= {})[rec.reviewerId] = vote;
+    await saveAgg();
     return json({ ok: true, vote }, 200, h);
   }
   return json({ error: 'NOT_FOUND' }, 404, h);

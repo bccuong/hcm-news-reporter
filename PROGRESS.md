@@ -7,7 +7,15 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13t – built-in PDF, one file name, pptx+docx ticked; 2026-11-16)
+## ▶ RESUME HERE (session 13u – F5 "Failed to fetch" = Cloudflare KV list() quota; publisher name → home page; 2026-11-16)
+- Root cause (wrangler tail): "KV list() limit exceeded for the day" – the free plan allows 1,000 list()/day and every page load listed the period's reviews (GET /review) and the day's votes (GET /labels). The worker threw (1101) without CORS headers → browser "Failed to fetch".
+- Fix (cloud/review-worker/src/handler.ts, deployed f0b63bcd): one aggregate KV value per period `rva:<profile>:<period>` and per day `la:<date>` → reads = ONE get, no list(). Old per-article keys are merged once when list() is available (`legacy` flag; while the quota is gone the answer carries `pending` and the merge is retried on a later read). Writes: read-merge-write of the aggregate (labels still keep their per-key record for the nightly /export). Config-history pruning tolerates a failed list(). Any unexpected error now answers JSON WITH CORS headers (503 + reason for quota errors).
+- Known: decisions saved before the fix for the current period reappear after the daily quota reset (00:00 UTC = 07:00 VN). Concurrent edits of the same period by two reviewers within the same instant can overwrite each other (KV has no transactions).
+- UI: the publisher name in "Nguồn tin trong kỳ" opens the source's home page (origin of baseUrl, new tab, noopener); the rest of the tile still opens "Chi tiết độ phủ".
+- Tests: vitest 134/134 (worker: list-free reads under quota, legacy merge, CORS on error), playwright 11/11, live 8/8.
+- Next: after 07:00 check that the earlier "duyệt chung" decisions of 16/11 are back (GET /review without "pending").
+
+## (history) Session 13t – built-in PDF, one file name, pptx+docx ticked; 2026-11-16)
 - User: Word file name = PowerPoint file name; .pptx + .docx ticked by default; "implement luôn library xuất pdf riêng".
 - Names: web no longer appends the design id; the old docx regex cut the name to "HCM.docx". Local + web: <base>.pptx / .docx / .pdf share one stem (local keeps its _stamp on all three).
 - Defaults: the shared web config had saved outputFormats [] → settings rev 3 re-ticks pptx+docx once (later choices kept); 'auto' PDF renderer → 'builtin'.

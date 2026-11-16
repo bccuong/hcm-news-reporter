@@ -3,10 +3,14 @@ import { handle, reviewerId, runKind, scheduledCollect, type Env, type KVLike } 
 
 class MemKV implements KVLike {
   m = new Map<string, { v: string; meta?: unknown }>();
+  lists = 0;
+  listQuotaGone = false;
   async get(k: string) { return this.m.get(k)?.v ?? null; }
   async put(k: string, v: string, o?: { metadata?: unknown }) { this.m.set(k, { v, meta: o?.metadata }); }
   async delete(k: string) { this.m.delete(k); }
   async list(o: { prefix: string }) {
+    this.lists++;
+    if (this.listQuotaGone) throw new Error('KV list() limit exceeded for the day.');
     return { keys: [...this.m.entries()].filter(([k]) => k.startsWith(o.prefix)).map(([name, x]) => ({ name, metadata: x.meta })), list_complete: true };
   }
 }
@@ -45,7 +49,9 @@ describe('shared review worker', () => {
     expect((await post(e, label({ articleId: '../x' }))).status).toBe(400);
     await post(e, label());
     await post(e, label({ label: null }));
-    expect((e.REVIEWS as MemKV).m.size).toBe(0);
+    expect([...(e.REVIEWS as MemKV).m.keys()].filter((k) => k.startsWith('l:'))).toEqual([]);
+    const r = await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e);
+    expect(((await r.json()) as { votes: object }).votes).toEqual({});
   });
   it('export needs the bearer token and returns full records', async () => {
     const e = env();
@@ -246,6 +252,39 @@ describe('shared review worker', () => {
       // other periods and profiles are separate
       expect((await read(e, 'custom-202611161700-202611170800')).reviews).toEqual({});
       expect((await read(e, P, 'ha-noi')).reviews).toEqual({});
+    });
+    it('reads never use KV list() (1,000/day on the free plan): F5 keeps working when the quota is used up', async () => {
+      const e = env();
+      const kv = e.REVIEWS as MemKV;
+      // a period saved the old way (one key per article), before the aggregate existed
+      await kv.put(`rv:hcm:${P}:a_1111abcd1111`, JSON.stringify({ articleId: 'a_1111abcd1111', included: true, by: 'Cũ', at: '2026-11-16T01:00:00.000Z' }), { metadata: { articleId: 'a_1111abcd1111', included: true, by: 'Cũ', at: '2026-11-16T01:00:00.000Z', txt: false } });
+      kv.listQuotaGone = true;
+      let j = (await read(e)) as { reviews: Record<string, unknown>; pending?: string };
+      expect(j.pending).toBeTruthy(); // old keys wait, no crash
+      await rv(e, { profile: 'hcm', period: P, articleId: 'a_2222abcd2222', patch: { included: true }, reviewer: 'Mới' });
+      j = (await read(e)) as typeof j;
+      expect(Object.keys(j.reviews)).toEqual(['a_2222abcd2222']);
+      // quota back: the old decision is merged once, then reads are list-free
+      kv.listQuotaGone = false;
+      j = (await read(e)) as typeof j;
+      expect(Object.keys(j.reviews).sort()).toEqual(['a_1111abcd1111', 'a_2222abcd2222']);
+      expect(j.pending).toBeUndefined();
+      const before = kv.lists;
+      for (let i = 0; i < 5; i++) await read(e);
+      expect(kv.lists).toBe(before);
+      // labels: same, one get per read
+      await post(e, label());
+      const l0 = kv.lists;
+      for (let i = 0; i < 3; i++) await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e);
+      expect(kv.lists).toBe(l0);
+    });
+    it('an unexpected error still answers with CORS headers (the page shows the reason, not "Failed to fetch")', async () => {
+      const e = env();
+      (e.REVIEWS as MemKV).get = async () => { throw new Error('KV get() limit exceeded for the day.'); };
+      const r = await handle(new Request(`https://w.example/review?profile=hcm&period=${P}`, { headers: { origin: ORIGIN } }), e);
+      expect(r.status).toBe(503);
+      expect(r.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+      expect(((await r.json()) as { error: string }).error).toContain('hạn mức');
     });
     it('rejects unknown fields / bad values, bad ids, missing reviewer; null clears', async () => {
       const e = env();
