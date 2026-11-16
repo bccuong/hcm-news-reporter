@@ -208,6 +208,20 @@ function triage(c: Candidate, ctx: RunContext, src: Source): 'fetch' | 'skip' {
   return 'fetch';
 }
 
+/** Ledger state of an extracted article: date gate first ([from, to) on verified time only), then relevance, then completeness. */
+export function stateFor(
+  article: Pick<Article, 'publishedAt' | 'dateConfidence' | 'extractionCompleteness' | 'extractionWarnings'>,
+  verdict: { status: 'relevant' | 'review' | 'irrelevant'; reasonCode: string | null; evidence: string[] },
+  window: { from: string; to: string },
+): [CandidateState, string | null, string | null] {
+  if (!article.publishedAt || article.dateConfidence === 'unknown') return ['date_unverified', 'MISSING_PUBLISHED_AT', 'Không xác minh được giờ đăng – cần kiểm tra'];
+  if (!inWindow(article.publishedAt, window)) return ['outside_window', 'OUTSIDE_DATE_WINDOW', `Giờ đăng ${article.publishedAt} ngoài [${window.from}, ${window.to})`];
+  if (article.dateConfidence === 'inferred') return ['date_unverified', 'PUBLISHED_AT_INFERRED', 'Giờ đăng chỉ suy ra từ văn bản hiển thị/xung đột – cần kiểm tra'];
+  if (verdict.status === 'irrelevant') return ['irrelevant_with_evidence', verdict.reasonCode ?? 'IRRELEVANT', verdict.evidence.slice(0, 3).join('; ')];
+  if (article.extractionCompleteness === 'partial') return ['parsed_partial', 'EXTRACTION_PARTIAL', article.extractionWarnings.join('; ')];
+  return ['ready_for_review', verdict.status === 'review' ? verdict.reasonCode : null, verdict.status === 'review' ? 'Cần kiểm tra mức liên quan' : null];
+}
+
 export async function runCollection(ctx: RunContext): Promise<RunManifest> {
   const { settings, stores } = ctx;
   const prev = await stores.getManifest(ctx.runId).catch(() => null);
@@ -420,20 +434,7 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
       existingArticles.set(article.id, article);
       await stores.appendArticles(ctx.runId, [article]);
 
-      // Date gate first: [from, to) on verified publication time only
-      if (!article.publishedAt || article.dateConfidence === 'unknown') {
-        ledger.set(c, 'date_unverified', 'MISSING_PUBLISHED_AT', 'Không xác minh được giờ đăng – cần kiểm tra');
-      } else if (!inWindow(article.publishedAt, ctx.window)) {
-        ledger.set(c, 'outside_window', 'OUTSIDE_DATE_WINDOW', `Giờ đăng ${article.publishedAt} ngoài [${ctx.window.from}, ${ctx.window.to})`);
-      } else if (article.dateConfidence === 'inferred') {
-        ledger.set(c, 'date_unverified', 'PUBLISHED_AT_INFERRED', 'Giờ đăng chỉ suy ra từ văn bản hiển thị/xung đột – cần kiểm tra');
-      } else if (_verdict.status === 'irrelevant') {
-        ledger.set(c, 'irrelevant_with_evidence', _verdict.reasonCode ?? 'IRRELEVANT', _verdict.evidence.slice(0, 3).join('; '));
-      } else if (article.extractionCompleteness === 'partial') {
-        ledger.set(c, 'parsed_partial', 'EXTRACTION_PARTIAL', article.extractionWarnings.join('; '));
-      } else {
-        ledger.set(c, 'ready_for_review', _verdict.status === 'review' ? _verdict.reasonCode : null, _verdict.status === 'review' ? 'Cần kiểm tra mức liên quan' : null);
-      }
+      ledger.set(c, ...stateFor(article, _verdict, ctx.window));
       if (fetches % 10 === 0) await checkpoint();
     }
     const failed = mine.filter((c) => ['fetch_failed', 'blocked'].includes(c.state)).length;

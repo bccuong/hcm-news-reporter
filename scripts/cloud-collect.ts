@@ -16,7 +16,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HttpClient } from '../src/collector/http.js';
-import { reconcile, runCollection } from '../src/collector/run.js';
+import { reconcile, runCollection, stateFor } from '../src/collector/run.js';
+import { annotateArticle } from '../src/domain/relevance.js';
 import { defaultSettings, defaultSources } from '../src/domain/defaults.js';
 import { DEFAULT_PROFILE_ID, SettingsSchema, SourceSchema, type Article, type Candidate, type ImageCandidate, type RunManifest, type Settings, type Source } from '../src/domain/schemas.js';
 import { hash32 } from '../src/domain/text.js';
@@ -100,23 +101,46 @@ export function fromPublicArticle(p: PublicArticle, runId: string, collectedAt: 
  * and disappear from the published period. Only when the window and settings are unchanged (otherwise: fresh run).
  * Returns the number of carried-over articles, or null when not seeded.
  */
-export async function seedFromPublished(stores: Stores, runId: string, day: PublicDay | undefined, window: { from: string; to: string }, settings: Settings): Promise<number | null> {
+export async function seedFromPublished(
+  stores: Stores, runId: string, day: PublicDay | undefined, window: { from: string; to: string }, settings: Settings,
+): Promise<{ carried: number; reclassified: boolean } | null> {
   if (!day?.manifest || !Array.isArray(day.candidates)) return null;
   if (day.manifest.window.from !== window.from || day.manifest.window.to !== window.to) return null;
-  if (day.manifest.settingsHash !== hash32(JSON.stringify(settings))) return null;
-  const arts = (day.articles ?? []).map((p) => fromPublicArticle(p, runId, day.generatedAt));
-  const have = new Set(arts.map((a) => a.id));
+  const hash = hash32(JSON.stringify(settings));
+  const reclassified = day.manifest.settingsHash !== hash;
+  let arts = (day.articles ?? []).map((p) => fromPublicArticle(p, runId, day.generatedAt));
+  const verdicts = new Map<string, ReturnType<typeof annotateArticle>['_verdict']>();
+  if (reclassified) {
+    // the settings changed (keywords, places, rules…): the stories already read are judged again with the new settings – no download
+    arts = arts.map((a) => {
+      const { _verdict, ...b } = annotateArticle(a, settings);
+      verdicts.set(b.id, _verdict);
+      return { ...b, extractionContainer: undefined };
+    });
+  }
+  const byId = new Map(arts.map((a) => [a.id, a]));
   // extracted-but-unpublished (outside the window) keep their terminal state; their article was never published
-  const cands: Candidate[] = day.candidates.map((c) => ({
-    ...c, runId, history: [], articleId: c.articleId && have.has(c.articleId) ? c.articleId : null,
-    // stale "adapter degraded" flag from the previous run → cleared, re-assessed in this run
-    ...(c.reasonCode === 'ADAPTER_DEGRADED' ? { reasonCode: null, reasonDetail: null } : {}),
-  }));
+  const cands: Candidate[] = day.candidates.map((c) => {
+    const base: Candidate = {
+      ...c, runId, history: [], articleId: c.articleId && byId.has(c.articleId) ? c.articleId : null,
+      // stale "adapter degraded" flag from the previous run → cleared, re-assessed in this run
+      ...(c.reasonCode === 'ADAPTER_DEGRADED' ? { reasonCode: null, reasonDetail: null } : {}),
+    };
+    if (!reclassified) return base;
+    const a = base.articleId ? byId.get(base.articleId) : undefined;
+    if (a) {
+      const [state, reasonCode, reasonDetail] = stateFor(a, verdicts.get(a.id)!, window);
+      return { ...base, state, reasonCode, reasonDetail };
+    }
+    // excluded from the URL alone (section / not an article page) → looked at again with the new settings
+    if (base.state === 'irrelevant_with_evidence') return { ...base, state: 'discovered', reasonCode: null, reasonDetail: null };
+    return base;
+  });
   const { reconciliation: _r, ...m } = day.manifest;
-  await stores.saveManifest({ ...m, runId, sources: [], notes: [], counts: {} });
+  await stores.saveManifest({ ...m, runId, sources: [], notes: [], counts: {}, settingsHash: hash });
   await stores.saveCandidates(runId, cands);
   if (arts.length) await stores.appendArticles(runId, arts);
-  return arts.length;
+  return { carried: arts.length, reclassified };
 }
 
 async function getJson<T>(url: string): Promise<T | null> {
@@ -224,7 +248,7 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
       for (const d of prevDays.values()) if (!d.custom) await stores.saveManifest({ ...d.manifest, runId: `run_hist_${d.reportDate.replace(/-/g, '')}` });
       const runId = `run_live_${job.key.replace(/[^0-9a-z]/gi, '')}`;
       const t0 = Date.now();
-      const carried = job.custom ? null : await seedFromPublished(stores, runId, prevDays.get(job.key), job.window, settings);
+      const carried = await seedFromPublished(stores, runId, prevDays.get(job.key), job.window, settings);
       const m = await runCollection({ runId, window: job.window, trigger: 'auto', settings, sources, stores, http, profileId: profile.id });
       const cands = await stores.getCandidates(runId);
       const arts = await stores.getArticles(runId);
@@ -232,7 +256,7 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
       m.notes.push(`Thu thập trên máy chủ GitHub Actions lúc ${toVnIso(now)} (${((Date.now() - t0) / 1000).toFixed(0)} giây); cấu hình "${profile.name}": ${origin}.`);
       if (job.custom) m.notes.push(`Thu thập theo yêu cầu${requestedBy ? ` của ${requestedBy}` : ''} trên web.`);
       if (job.provisional) m.notes.push('Kỳ đang diễn ra – tạm thời');
-      if (carried != null) m.notes.push(`Tiếp nối lần đăng trước của kỳ này: giữ ${carried} bài đã bóc tách, chỉ tải thêm link chưa tải.`);
+      if (carried) m.notes.push(`Tiếp nối lần đăng trước của kỳ này: giữ ${carried.carried} bài đã bóc tách${carried.reclassified ? ' và phân loại lại theo cài đặt mới' : ''}, chỉ tải thêm link chưa tải.`);
       published.set(job.key, {
         kind: 'hcm-live-day', reportDate: job.reportDate, key: job.key, custom: job.custom, requestedBy: job.custom ? requestedBy : undefined, provisional: job.provisional, generatedAt: toVnIso(new Date()),
         manifest: { ...m, reconciliation: reconcile(cands) },

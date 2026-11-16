@@ -198,7 +198,7 @@ describe('hourly cloud runs continue the published period (no story drops out be
     const log: string[] = [];
     const h2 = setup(log);
     h2.settings = structuredClone(h1.settings); // the stored config (rule ids are per-process counters)
-    expect(await seedFromPublished(h2.stores, 'run_live_x', day, WINDOW, h2.settings)).toBe(day.articles.length);
+    expect(await seedFromPublished(h2.stores, 'run_live_x', day, WINDOW, h2.settings)).toEqual({ carried: day.articles.length, reclassified: false });
     await runCollection({ runId: 'run_live_x', window: WINDOW, trigger: 'auto', settings: h2.settings, sources: src, stores: h2.stores, http: h2.http });
     const c2 = await h2.stores.getCandidates('run_live_x');
     const a2 = await h2.stores.getArticles('run_live_x');
@@ -209,10 +209,18 @@ describe('hourly cloud runs continue the published period (no story drops out be
     // the limit went to another link → coverage grows hour by hour
     expect(c2.filter((c) => c.attempts > 0).length).toBe(c1.filter((c) => c.attempts > 0).length + 2);
 
-    // changed settings or window → fresh run (classification must follow the new rules)
-    const changed = { ...h2.settings, collection: { ...h2.settings.collection, maxArticlesPerSource: 3 } };
-    expect(await seedFromPublished(setup().stores, 'run_live_y', day, WINDOW, changed)).toBeNull();
-    expect(await seedFromPublished(setup().stores, 'run_live_y', day, { ...WINDOW, to: '2026-11-10T09:00:00+07:00' }, h2.settings)).toBeNull();
+    // changed settings → the stories already read are KEPT and judged again with the new settings (no download, nothing lost)
+    const title = a1.find((a) => a.id === first.articleId)!.title;
+    const changed = structuredClone(h2.settings);
+    changed.keywords.excludePhrases = [...changed.keywords.excludePhrases, title];
+    const st = setup();
+    expect(await seedFromPublished(st.stores, 'run_live_y', day, WINDOW, changed)).toEqual({ carried: day.articles.length, reclassified: true });
+    const re = (await st.stores.getCandidates('run_live_y')).find((c) => c.id === first.id)!;
+    expect(re.articleId).toBe(first.articleId);
+    expect([re.state, re.reasonCode]).toEqual(['irrelevant_with_evidence', 'EXCLUDED_PHRASE']);
+    expect((await st.stores.getManifest('run_live_y'))!.settingsHash).not.toBe(m1.settingsHash); // next hour: plain continuation
+    // a different window → fresh run
+    expect(await seedFromPublished(setup().stores, 'run_live_z', day, { ...WINDOW, to: '2026-11-10T09:00:00+07:00' }, h2.settings)).toBeNull();
   });
 });
 
