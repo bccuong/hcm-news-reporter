@@ -104,12 +104,28 @@ export const CATEGORY_FIELD_DEFAULTS: Partial<Record<CategoryCode, { requiresCat
   TRAFFIC: { excludePhrases: ['yêu cầu', 'nhu cầu', 'cung cầu', 'toàn cầu', 'cầu nguyện', 'cầu thị', 'cầu lông', 'cầu cứu', 'cầu hôn', 'cầu mong', 'cầu môn', 'khẩn cầu', 'mưu cầu'] },
   BUILD: { excludePhrases: ['xây dựng Đảng', 'xây dựng chính quyền', 'xây dựng hệ thống chính trị', 'xây dựng gia đình', 'xây dựng văn hóa', 'xây dựng lực lượng', 'xây dựng pháp luật', 'xây dựng nông thôn mới', 'xây dựng đội ngũ', 'xây dựng thương hiệu', 'an toàn giao thông'] },
 };
+/** default keywords added in each revision – applied once to saved lists of an older revision */
+export const KEYWORD_UPGRADES: Record<number, Partial<Record<CategoryCode, string[]>>> = {
+  2: { TRAFFIC: ['đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển'] },
+};
+export const KEYWORDS_REV = 2;
 export const CategorySchema = z.preprocess(
   (v) => {
     if (!v || typeof v !== 'object') return v;
     const o = v as Record<string, unknown>;
     const d = CATEGORY_FIELD_DEFAULTS[o.code as CategoryCode] ?? {};
-    return { ...o, requiresCategories: o.requiresCategories ?? d.requiresCategories ?? [], excludePhrases: o.excludePhrases ?? d.excludePhrases ?? [] };
+    // keyword upgrades: a saved list older than a revision receives that revision's new default keywords once
+    // (approved by the user 16/11/2026); after that the user's own additions/removals are kept as they are
+    let keywords = Array.isArray(o.keywords) ? (o.keywords as string[]) : undefined;
+    const rev = typeof o.keywordsRev === 'number' ? o.keywordsRev : keywords ? 1 : KEYWORDS_REV;
+    if (keywords) {
+      for (const [r, add] of Object.entries(KEYWORD_UPGRADES)) {
+        if (rev >= Number(r)) continue;
+        const extra = add[o.code as CategoryCode] ?? [];
+        keywords = [...keywords, ...extra.filter((k) => !keywords!.some((x) => x.toLowerCase() === k.toLowerCase()))];
+      }
+    }
+    return { ...o, ...(keywords ? { keywords } : {}), keywordsRev: KEYWORDS_REV, requiresCategories: o.requiresCategories ?? d.requiresCategories ?? [], excludePhrases: o.excludePhrases ?? d.excludePhrases ?? [] };
   },
   z.object({
     code: CategoryCode,
@@ -121,6 +137,8 @@ export const CategorySchema = z.preprocess(
     requiresCategories: z.array(CategoryCode).default([]),
     /** phrases that contain a keyword but mean something else ("yêu cầu" is not a bridge) – removed before matching */
     excludePhrases: z.array(z.string()).default([]),
+    /** keyword-list revision (see KEYWORD_UPGRADES) */
+    keywordsRev: z.number().int().default(KEYWORDS_REV),
   }),
 );
 export type Category = z.infer<typeof CategorySchema>;

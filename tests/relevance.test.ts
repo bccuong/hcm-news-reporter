@@ -111,3 +111,17 @@ describe('safety net: strong sector evidence only in the body → review, never 
     expect(judgeRelevance(title, `${sapo}\n${body}`, 'x', s, sapo).status).not.toBe('irrelevant');
   });
 });
+
+describe('saved keyword lists receive new default keywords once (user approved 16/11/2026)', () => {
+  it('an old saved list gets "đường bộ"…; a later removal by the user is kept', () => {
+    const raw = JSON.parse(JSON.stringify(s));
+    const tr = raw.categories.find((c: { code: string }) => c.code === 'TRAFFIC');
+    tr.keywords = ['giao thông', 'cầu', 'Đường bộ'];
+    delete tr.keywordsRev;
+    const up = SettingsSchema.parse(raw).categories.find((c) => c.code === 'TRAFFIC')!;
+    expect(up.keywords).toEqual(['giao thông', 'cầu', 'Đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển']); // no duplicate
+    expect(up.keywordsRev).toBe(2);
+    const saved = JSON.parse(JSON.stringify({ ...raw, categories: raw.categories.map((c: { code: string }) => (c.code === 'TRAFFIC' ? { ...up, keywords: up.keywords.filter((k) => k !== 'sân bay') } : c)) }));
+    expect(SettingsSchema.parse(saved).categories.find((c) => c.code === 'TRAFFIC')!.keywords).not.toContain('sân bay');
+  });
+});
