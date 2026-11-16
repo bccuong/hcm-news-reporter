@@ -58,7 +58,7 @@ export function assembleStories(articles: Article[], reviews: Record<string, Rev
   const byId = new Map(articles.map((a) => [a.id, a]));
   const included = Object.values(reviews)
     .filter((r) => r.included && !r.groupId)
-    .sort((a, b) => a.order - b.order);
+    .sort((a, b) => a.order - b.order || a.articleId.localeCompare(b.articleId)); // same tie-break as the export list on screen
   for (const r of Object.values(reviews)) {
     if (r.included && r.groupId) warnings.push(`"${byId.get(r.articleId)?.title ?? r.articleId}" đã gộp vào tin khác – không xuất thành tin riêng`);
   }

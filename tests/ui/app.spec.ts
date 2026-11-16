@@ -309,6 +309,21 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
   await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(`Xuất báo cáo (${ready0})`);
   await expect(bar).toContainText(`đã chọn ${ready0}`);
   await page.screenshot({ path: 'docs/screenshots/bulk-select.png' });
+  // ↑ / ↓ in "Xuất báo cáo" move a story inside its group, also right after "Chọn tất cả" (all selected in the same instant)
+  await page.getByRole('button', { name: /^Xuất báo cáo/ }).click();
+  const rows = page.locator('div.mb-1.rounded.border');
+  await expect(rows.first()).toBeVisible();
+  const downs = await rows.evaluateAll((els) => els.map((el) => !(el.querySelector('button[aria-label="Xuống"]') as HTMLButtonElement).disabled));
+  const k = downs.indexOf(true);
+  expect(k).toBeGreaterThanOrEqual(0); // a group with ≥ 2 stories
+  const titleOf = async (n: number) => (await rows.nth(n).locator('span.flex-1').first().innerText()).replace(/\(tính chất là gợi ý\)/, '').trim();
+  const [t1, t2] = [await titleOf(k), await titleOf(k + 1)];
+  await rows.nth(k).getByRole('button', { name: 'Xuống' }).click();
+  await expect(rows.nth(k)).toContainText(t2);
+  await expect(rows.nth(k + 1)).toContainText(t1);
+  await rows.nth(k + 1).getByRole('button', { name: 'Lên' }).click();
+  await expect(rows.nth(k)).toContainText(t1);
+  await page.getByRole('button', { name: /^Bài sẵn sàng/ }).click();
   await bar.getByRole('button', { name: 'Bỏ chọn tất cả' }).click();
   await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText('Xuất báo cáo (0)');
 

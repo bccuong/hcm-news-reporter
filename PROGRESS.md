@@ -7,7 +7,12 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13w – slow clicks on the web; 2026-11-16)
+## ▶ RESUME HERE (session 13x – ↑/↓ in Xuất báo cáo did nothing; 2026-11-16)
+- Cause: "Chọn tất cả" gave every story the SAME order (Date.now() in one ms; touched stories also kept order 0) → swapping equal numbers changed nothing; and ↑/↓ swapped with the neighbour in the whole list, i.e. across groups at group edges.
+- Fix: bulk select gives each story its own order (base + position); ↑/↓ work inside the group shown and renumber that group (one batched save on the web); ends of a group are greyed; ties broken by articleId on screen and in the report (src/reports/assemble.ts).
+- Tests: vitest 136/136, playwright 11/11 (new: select all → ↓ / ↑ in Xuất báo cáo), live 8/8.
+
+## (history) Session 13w – slow clicks on the web; 2026-11-16)
 - Measured: rendering 2–23 ms (not the cause); each review-worker request 0.3–1.2 s from the user's network. "Chọn tất cả" saved story by story (await in a loop) → N × latency, boxes ticking one by one; "Thu thập" showed nothing until the worker + GitHub answered.
 - Fix: worker POST /review accepts {items:[{articleId,patch}]} (≤300, all validated, one KV read + one write); web api.queueTeamReview batches every change made in the same tick and keeps ONE batch in flight per period (no self-overwrites); bulk select / merge run in parallel (all boxes change at once, one request); local copy re-read before saving; same error toast shown once; "Thu thập" shows "Đang gửi…" immediately.
 - Measured after (350 ms simulated latency): select all ticked in ~55 ms with 1 POST; Thu thập reacts in ~54 ms.

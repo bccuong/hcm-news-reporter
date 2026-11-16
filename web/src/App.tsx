@@ -962,7 +962,9 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
               onChange={(e) => {
                 const on = e.target.checked;
                 const ids = selectable.filter((a) => !!reviews[a.id]?.included !== on).map((a) => a.id);
-                void runBulk(on ? 'Đang chọn…' : 'Đang bỏ chọn…', ids, (id) => (on ? { included: true, order: reviews[id]?.order ?? Date.now() % 1e6 } : { included: false }));
+                // each newly selected story gets its own place, in the order shown (same order → ↑/↓ could not swap them)
+                const base = Date.now() % 1e9;
+                void runBulk(on ? 'Đang chọn…' : 'Đang bỏ chọn…', ids, (id) => (on ? { included: true, order: base + ids.indexOf(id) } : { included: false }));
               }}
             />
             Chọn tất cả ({selectable.length}{shown.length < list.length ? ' đang hiển thị' : ''})
@@ -1534,7 +1536,7 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
   useEffect(() => {
     api.templates().then((r) => (setTpls(r.templates), setTplId((cur) => (r.templates.some((x) => x.id === cur) ? cur : r.defaultId)))).catch(() => setTpls([]));
   }, []);
-  const sel = Object.values(reviews).filter((r) => r.included && !r.groupId).sort((a, b) => a.order - b.order);
+  const sel = Object.values(reviews).filter((r) => r.included && !r.groupId).sort((a, b) => a.order - b.order || a.articleId.localeCompare(b.articleId));
   const go = async (dryRun: boolean) => {
     setBusy(true);
     try {
@@ -1551,12 +1553,14 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
     go(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(Object.values(reviews).map((s) => [s.articleId, s.included, s.groupId, s.assessment, s.summary, s.timeVerifiedManually]))]);
-  const move = (i: number, d: -1 | 1) => {
-    const a = sel[i];
-    const b = sel[i + d];
-    if (!a || !b) return;
-    onPatch(a.articleId, { order: b.order });
-    onPatch(b.articleId, { order: a.order });
+  /** ↑ / ↓ inside a group (as shown on the slides): swap, then number the group 1..n so equal old numbers cannot block the move */
+  const move = (list: ReviewDecision[], i: number, d: -1 | 1) => {
+    const j = i + d;
+    if (j < 0 || j >= list.length) return;
+    const next = [...list];
+    [next[i], next[j]] = [next[j]!, next[i]!];
+    const base = Math.min(...list.map((r) => r.order));
+    next.forEach((r, k) => r.order !== base + k && onPatch(r.articleId, { order: base + k }));
   };
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
@@ -1571,14 +1575,14 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
               <h4 className={`mb-1 text-xs font-bold uppercase ${ASSESS_COLOR[g].split(' ')[0]}`}>{ASSESSMENT_LABEL[g]} ({list.length})</h4>
               {list.map((r) => {
                 const a = arts.get(r.articleId);
-                const i = sel.indexOf(r);
+                const i = list.indexOf(r);
                 const nMerged = secondariesOf(r.articleId, reviews).length;
                 const pubs = [a?.sourceName, ...secondariesOf(r.articleId, reviews).map((id) => arts.get(id)?.sourceName)].filter(Boolean);
                 return (
                   <div key={r.articleId} className="mb-1 rounded border border-slate-200 p-2 text-sm">
                     <div className="flex items-center gap-2">
-                      <button className="btn-ghost btn-xs" onClick={() => move(i, -1)} aria-label="Lên"><ArrowUp className="h-3 w-3" /></button>
-                      <button className="btn-ghost btn-xs" onClick={() => move(i, 1)} aria-label="Xuống"><ArrowDown className="h-3 w-3" /></button>
+                      <button className="btn-ghost btn-xs disabled:opacity-30" disabled={i === 0} onClick={() => move(list, i, -1)} aria-label="Lên"><ArrowUp className="h-3 w-3" /></button>
+                      <button className="btn-ghost btn-xs disabled:opacity-30" disabled={i === list.length - 1} onClick={() => move(list, i, 1)} aria-label="Xuống"><ArrowDown className="h-3 w-3" /></button>
                       <span className="flex-1">{r.title ?? a?.title}{!r.assessment && <span className="ml-1 text-xs text-amber-700">(tính chất là gợi ý)</span>}</span>
                       <button className="btn-ghost btn-xs" onClick={() => onInspect(r.articleId)}>Biên tập</button>
                       <button className="btn-danger btn-xs" onClick={() => onPatch(r.articleId, { included: false })}>Bỏ</button>
