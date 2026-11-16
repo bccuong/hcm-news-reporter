@@ -253,6 +253,13 @@ function RulesPanel({ s, setS, sources }: { s: Settings; setS: (fn: (p: Settings
           label="Tiêu đề hoặc sapo phải có từ khóa của một lĩnh vực (bài không có bị loại kèm lý do NO_SECTOR_IN_LEAD, vẫn xem được trong Sổ ứng viên)"
           help="Đo trên dữ liệu thật 15/11/2026: hàng Cần kiểm tra giảm 37 → 4 bài, không loại nhầm bài liên quan nào. Tắt nếu thấy bỏ sót."
         />
+        <NumberField
+          label="…nhưng nếu thân bài có điểm lĩnh vực từ mức này trở lên thì đưa vào Cần kiểm tra thay vì loại (0 = tắt)"
+          value={s.rules.bodySectorScoreForReview}
+          min={0}
+          max={50}
+          onChange={(n) => setS((x) => (x ? { ...x, rules: { ...x.rules, bodySectorScoreForReview: n } } : x))}
+        />
         {preset && (
           <>
             <div>
@@ -387,11 +394,41 @@ function CategoriesPanel({ s, setS }: { s: Settings; setS: (fn: (p: Settings | n
   return (
     <Section title="Lĩnh vực chuyên môn" help="Chỉ là gợi ý phân loại theo từ khóa; biên tập viên luôn có thể đổi. Tính chất tin (Tồn tại/Tích cực/Trung lập) được phân loại độc lập.">
       {[...s.categories].sort((a, b) => a.priority - b.priority).map((c) => (
-        <div key={c.code} className="grid gap-2 rounded border border-slate-200 bg-white p-2 md:grid-cols-[auto_12rem_6rem_1fr]">
-          <Toggle checked={c.enabled} onChange={(v) => set(c.code, { enabled: v })} label={c.code} />
-          <input className="input" value={c.label} onChange={(e) => set(c.code, { label: e.target.value })} aria-label="Tên lĩnh vực" />
-          <input className="input" type="number" min={1} max={99} value={c.priority} onChange={(e) => set(c.code, { priority: e.target.valueAsNumber })} aria-label="Ưu tiên" />
-          <ChipEditor values={c.keywords} onChange={(v) => set(c.code, { keywords: v })} placeholder="từ khóa lĩnh vực…" />
+        <div key={c.code} className="rounded border border-slate-200 bg-white p-2" data-testid={`category-${c.code}`}>
+          <div className="grid gap-2 md:grid-cols-[auto_12rem_6rem_1fr]">
+            <Toggle checked={c.enabled} onChange={(v) => set(c.code, { enabled: v })} label={c.code} />
+            <input className="input" value={c.label} onChange={(e) => set(c.code, { label: e.target.value })} aria-label="Tên lĩnh vực" />
+            <input className="input" type="number" min={1} max={99} value={c.priority} onChange={(e) => set(c.code, { priority: e.target.valueAsNumber })} aria-label="Ưu tiên" />
+            <ChipEditor values={c.keywords} onChange={(v) => set(c.code, { keywords: v })} placeholder="từ khóa lĩnh vực…" />
+          </div>
+          <details className="mt-1" open={(c.requiresCategories ?? []).length > 0}>
+            <summary className="cursor-pointer text-xs text-slate-600">
+              Điều kiện thêm{(c.requiresCategories ?? []).length ? ` · chỉ tính khi tiêu đề/sapo có lĩnh vực khác (${c.requiresCategories.length})` : ''}{(c.excludePhrases ?? []).length ? ` · bỏ qua ${c.excludePhrases.length} cụm từ` : ''}
+            </summary>
+            <div className="mt-1 space-y-2 pl-1">
+              <div>
+                <div className="text-xs text-slate-700">
+                  Chỉ xếp vào lĩnh vực này khi <b>tiêu đề hoặc sapo</b> cũng có từ khóa của ít nhất một lĩnh vực được tích (bỏ trống = không điều kiện). Ví dụ "Chính sách, pháp quy" phải là nghị định, luật… về xây dựng, giao thông.
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1" role="group" aria-label={`Lĩnh vực bắt buộc đi kèm – ${c.label}`}>
+                  {s.categories.filter((o) => o.code !== c.code).map((o) => (
+                    <label key={o.code} className="flex items-center gap-1 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={(c.requiresCategories ?? []).includes(o.code)}
+                        onChange={(e) => set(c.code, { requiresCategories: e.target.checked ? [...(c.requiresCategories ?? []), o.code] : (c.requiresCategories ?? []).filter((x) => x !== o.code) })}
+                      />
+                      {o.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-700">Bỏ qua cụm từ (chứa từ khóa nhưng nghĩa khác, ví dụ "yêu cầu" không phải cây cầu):</div>
+                <ChipEditor values={c.excludePhrases ?? []} onChange={(v) => set(c.code, { excludePhrases: v })} placeholder="cụm từ bỏ qua…" />
+              </div>
+            </div>
+          </details>
         </div>
       ))}
     </Section>

@@ -192,7 +192,7 @@ export function defaultSettings(): Settings {
       { code: 'LAND', label: 'Đất đai', priority: 1, keywords: ['thu hồi đất', 'bồi thường', 'giải phóng mặt bằng', 'GPMB', 'quy hoạch sử dụng đất', 'tái định cư', 'đất đai', 'giá đất', 'quỹ đất'] },
       { code: 'BUILD', label: 'Xây dựng', priority: 2, keywords: ['xây dựng', 'công trình', 'giấy phép xây dựng', 'chất lượng công trình', 'an toàn', 'vi phạm', 'xây dựng trái phép', 'chung cư cũ', 'cấp D', 'thi công', 'công trường', 'sập'] },
       { code: 'INFRA', label: 'Hạ tầng kỹ thuật', priority: 3, keywords: ['thoát nước', 'cấp nước', 'hạ tầng', 'cống', 'vỉa hè', 'cây xanh', 'chiếu sáng', 'công viên', 'kè', 'kênh', 'rạch'] },
-      { code: 'TRAFFIC', label: 'Giao thông', priority: 4, keywords: ['giao thông', 'metro', 'đường sắt', 'cầu', 'nút giao', 'cao tốc', 'vành đai', 'ùn tắc', 'kẹt xe', 'xe buýt', 'mở rộng đường'] },
+      { code: 'TRAFFIC', label: 'Giao thông', priority: 4, keywords: ['giao thông', 'metro', 'đường sắt', 'cầu', 'nút giao', 'cao tốc', 'vành đai', 'ùn tắc', 'kẹt xe', 'xe buýt', 'mở rộng đường', 'đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển'] },
       { code: 'REALESTATE', label: 'Bất động sản/nhà ở', priority: 5, keywords: ['bất động sản', 'nhà ở', 'chung cư', 'căn hộ', 'nhà ở xã hội', 'sổ hồng', 'dự án nhà ở', 'thị trường'] },
       { code: 'FLOOD', label: 'Ngập lụt', priority: 6, keywords: ['ngập', 'triều cường', 'mưa lớn', 'chống ngập', 'ngập úng', 'sạt lở', 'đê'] },
       { code: 'INVEST', label: 'Đầu tư công', priority: 7, keywords: ['đầu tư công', 'giải ngân', 'vốn đầu tư', 'chủ đầu tư', 'gói thầu'] },

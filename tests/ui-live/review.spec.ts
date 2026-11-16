@@ -233,6 +233,12 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ho
   await expect(own).toContainText('Riêng cấu hình «Đà Nẵng»');
   for (const l of ['Nguồn tin', 'Từ khóa & quy tắc', 'Địa điểm', 'Lĩnh vực']) await expect(own.getByRole('button', { name: l, exact: true })).toBeVisible();
   await own.getByRole('button', { name: 'Lĩnh vực', exact: true }).click();
+  // "Chính sách, pháp quy" counts only with a construction/transport sector in the title/sapo – a UI setting, not a file
+  const pol = dlg2.getByTestId('category-POLICY');
+  await expect(pol.getByRole('group', { name: /Lĩnh vực bắt buộc đi kèm/ }).getByLabel('Xây dựng')).toBeChecked();
+  await expect(pol.getByRole('group', { name: /Lĩnh vực bắt buộc đi kèm/ }).getByLabel('Giao thông')).toBeChecked();
+  await dlg2.getByTestId('category-TRAFFIC').locator('summary').click();
+  await expect(dlg2.getByTestId('category-TRAFFIC')).toContainText('yêu cầu');
   await page.screenshot({ path: 'docs/screenshots/web-settings-per-profile.png' });
   await dlg2.getByRole('button', { name: 'Đóng cài đặt' }).click();
   await strip.getByLabel('Tự động thu thập mỗi giờ').click();

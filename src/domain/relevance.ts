@@ -55,6 +55,16 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
   if (settings.rules.requireSectorInLead) {
     const lead = classifyCategory(title, sapo, settings.categories);
     if (!lead.primary) {
+      // strong sector evidence in the body (e.g. a road-network plan whose title says "mạng đường bộ") → reviewer decides, never silently lost
+      const min = settings.rules.bodySectorScoreForReview;
+      const full = min > 0 ? classifyCategory(title, body, settings.categories, sapo) : null;
+      const best = full ? Math.max(0, ...Object.values(full.scores).map((v) => v ?? 0)) : 0;
+      if (full && best >= min) {
+        return {
+          status: 'review', reasonCode: 'SECTOR_ONLY_IN_BODY',
+          evidence: [...evidence, ...location.evidence, `Tiêu đề/sapo không nêu lĩnh vực nhưng thân bài có bằng chứng mạnh (điểm ${best} ≥ ${min}): ${full.evidence.filter((e) => !e.includes('không tính'))[0] ?? ''}`], ruleTrace, location,
+        };
+      }
       return {
         status: 'irrelevant', reasonCode: 'NO_SECTOR_IN_LEAD',
         evidence: [...evidence, 'Tiêu đề và sapo không có từ khóa của lĩnh vực nào (Cài đặt › Từ khóa & quy tắc để tắt quy tắc này)'], ruleTrace, location,
@@ -107,7 +117,7 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
 export function annotateArticle(a: Article, settings: Settings): Article & { _verdict: RelevanceVerdict } {
   const body = [a.sapo, a.bodyText].join('\n');
   const verdict = judgeRelevance(a.title, body, a.sourceId, settings, a.sapo);
-  const cat = classifyCategory(a.title, body, settings.categories);
+  const cat = classifyCategory(a.title, body, settings.categories, a.sapo);
   const asmt = suggestAssessment(a.title, body);
   // Broad keywords ("dự án", "đất"…) match many unrelated stories: without sector evidence in the title or
   // ≥3 sector keyword hits, a rule match is not enough to be "ready" – it goes to the review queue (not dropped).

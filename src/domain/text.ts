@@ -18,6 +18,17 @@ export function findWord(haystack: string, needle: string): number {
   return m ? m.index : -1;
 }
 
+/** Blanks out every whole-phrase occurrence of `phrases` (same matching as findWord); returns normalised text. */
+export function blankPhrases(haystack: string, phrases: string[]): string {
+  let t = normText(haystack);
+  for (const p of phrases) {
+    const n = normText(p);
+    if (!n) continue;
+    t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(n).replace(/ /g, '\\s+')}(?![\\p{L}\\p{N}])`, 'gu'), (m) => ' '.repeat(m.length));
+  }
+  return t;
+}
+
 export function findSubstring(haystack: string, needle: string): number {
   const n = normText(needle);
   return n ? normText(haystack).indexOf(n) : -1;

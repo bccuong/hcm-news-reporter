@@ -1,5 +1,5 @@
 import type { CategoryCode, EditorialAssessment, Settings } from './schemas.js';
-import { findWord } from './text.js';
+import { blankPhrases, findWord } from './text.js';
 
 export interface CategoryResult {
   primary: CategoryCode | null;
@@ -8,26 +8,45 @@ export interface CategoryResult {
   scores: Partial<Record<CategoryCode, number>>;
 }
 
-/** Keyword-scored topic suggestion; title hits weigh 3x. A suggestion only – reviewer decides. */
-export function classifyCategory(title: string, body: string, categories: Settings['categories']): CategoryResult {
+/** removes a category's excluded phrases ("yêu cầu" for the keyword "cầu") before matching */
+const stripPhrases = blankPhrases;
+
+/**
+ * Keyword-scored topic suggestion; title hits weigh 3x. A suggestion only – reviewer decides.
+ * `lead` = the sapo (defaults to `body`, for callers that pass only title + sapo): a category with
+ * `requiresCategories` (e.g. "Chính sách, pháp quy") counts only when the title or lead also names one of them.
+ */
+export function classifyCategory(title: string, body: string, categories: Settings['categories'], lead: string = body): CategoryResult {
   const scores: Partial<Record<CategoryCode, number>> = {};
   const evidence: string[] = [];
+  const inLead = new Set<CategoryCode>();
+  const raw: Array<{ c: Settings['categories'][number]; s: number; hits: string[] }> = [];
   for (const c of categories) {
     if (!c.enabled) continue;
+    const ex = c.excludePhrases ?? [];
+    const [ti, bo, le] = ex.length ? [stripPhrases(title, ex), stripPhrases(body, ex), stripPhrases(lead, ex)] : [title, body, lead];
     let s = 0;
     const hits: string[] = [];
     for (const k of c.keywords) {
-      const t = findWord(title, k) >= 0;
-      const b = findWord(body, k) >= 0;
+      const t = findWord(ti, k) >= 0;
+      const b = findWord(bo, k) >= 0;
       if (t || b) {
         s += t ? 3 : 1;
         hits.push(`${k}${t ? '*' : ''}`);
       }
+      if (t || findWord(le, k) >= 0) inLead.add(c.code);
     }
-    if (s > 0) {
-      scores[c.code] = s;
-      evidence.push(`${c.label}: ${hits.slice(0, 6).join(', ')} (điểm ${s})`);
+    if (s > 0) raw.push({ c, s, hits });
+  }
+  for (const { c, s, hits } of raw) {
+    const req = c.requiresCategories ?? [];
+    if (req.length && !req.some((r) => r !== c.code && inLead.has(r))) {
+      const names = req.map((r) => categories.find((x) => x.code === r)?.label ?? r).join(', ');
+      evidence.push(`${c.label}: không tính (${hits.slice(0, 3).join(', ')}) – tiêu đề/sapo không thuộc lĩnh vực ${names}`);
+      continue;
     }
+    scores[c.code] = s;
+    evidence.push(`${c.label}: ${hits.slice(0, 6).join(', ')} (điểm ${s})`);
   }
   const ranked = (Object.entries(scores) as Array<[CategoryCode, number]>).sort((a, b) => {
     if (b[1] !== a[1]) return b[1] - a[1];

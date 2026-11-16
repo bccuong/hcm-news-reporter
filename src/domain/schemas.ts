@@ -93,13 +93,36 @@ export type RulePreset = z.infer<typeof RulePresetSchema>;
 export const CategoryCode = z.enum(['LAND', 'BUILD', 'INFRA', 'TRAFFIC', 'REALESTATE', 'FLOOD', 'INVEST', 'POLICY']);
 export type CategoryCode = z.infer<typeof CategoryCode>;
 
-export const CategorySchema = z.object({
-  code: CategoryCode,
-  label: z.string().min(1),
-  enabled: z.boolean().default(true),
-  priority: z.number().int().min(1).max(99),
-  keywords: z.array(z.string()).default([]),
-});
+/** sector categories of the construction & transport department (what "Chính sách, pháp quy" must be about) */
+export const SECTOR_CODES: CategoryCode[] = ['LAND', 'BUILD', 'INFRA', 'TRAFFIC', 'REALESTATE', 'FLOOD', 'INVEST'];
+/**
+ * Defaults filled in when a stored configuration predates these fields (so saved web/local configs get them too;
+ * the user can change them in Cài đặt › Lĩnh vực).
+ */
+export const CATEGORY_FIELD_DEFAULTS: Partial<Record<CategoryCode, { requiresCategories?: CategoryCode[]; excludePhrases?: string[] }>> = {
+  POLICY: { requiresCategories: SECTOR_CODES },
+  TRAFFIC: { excludePhrases: ['yêu cầu', 'nhu cầu', 'cung cầu', 'toàn cầu', 'cầu nguyện', 'cầu thị', 'cầu lông', 'cầu cứu', 'cầu hôn', 'cầu mong', 'cầu môn', 'khẩn cầu', 'mưu cầu'] },
+  BUILD: { excludePhrases: ['xây dựng Đảng', 'xây dựng chính quyền', 'xây dựng hệ thống chính trị', 'xây dựng gia đình', 'xây dựng văn hóa', 'xây dựng lực lượng', 'xây dựng pháp luật', 'xây dựng nông thôn mới', 'xây dựng đội ngũ', 'xây dựng thương hiệu', 'an toàn giao thông'] },
+};
+export const CategorySchema = z.preprocess(
+  (v) => {
+    if (!v || typeof v !== 'object') return v;
+    const o = v as Record<string, unknown>;
+    const d = CATEGORY_FIELD_DEFAULTS[o.code as CategoryCode] ?? {};
+    return { ...o, requiresCategories: o.requiresCategories ?? d.requiresCategories ?? [], excludePhrases: o.excludePhrases ?? d.excludePhrases ?? [] };
+  },
+  z.object({
+    code: CategoryCode,
+    label: z.string().min(1),
+    enabled: z.boolean().default(true),
+    priority: z.number().int().min(1).max(99),
+    keywords: z.array(z.string()).default([]),
+    /** counted only when the title/sapo also names one of these categories (e.g. a decree must be about construction or transport) */
+    requiresCategories: z.array(CategoryCode).default([]),
+    /** phrases that contain a keyword but mean something else ("yêu cầu" is not a bridge) – removed before matching */
+    excludePhrases: z.array(z.string()).default([]),
+  }),
+);
 export type Category = z.infer<typeof CategorySchema>;
 
 export const LocationAreaSchema = z.object({
@@ -169,6 +192,8 @@ export const SettingsSchema = z.object({
       unknownRelevancePolicy: z.enum(['review', 'exclude_with_reason']).default('review'),
       /** title or sapo must contain a sector keyword (tuned on the 15/11/2026 live sample) */
       requireSectorInLead: z.boolean().default(true),
+      /** safety net for the rule above: body sector score ≥ this → "Cần kiểm tra" instead of excluded (0 = off) */
+      bodySectorScoreForReview: z.number().int().min(0).max(50).default(5),
     })
     .default({}),
   location: z
