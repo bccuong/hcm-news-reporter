@@ -33,7 +33,10 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
   const [filter, setFilter] = useState('');
   const [saving, setSaving] = useState(false);
 
+  /** name of the profile every section except "Cấu hình (profile)" edits */
+  const [profName, setProfName] = useState('');
   const load = async () => {
+    api.profiles().then((p) => setProfName(p.profiles.find((x) => x.id === p.activeId)?.name ?? p.activeId)).catch(() => setProfName(''));
     const [a, b] = await Promise.all([api.getSettings(), api.getSources()]);
     setSaved({ s: a, src: b });
     setS(structuredClone(a));
@@ -94,6 +97,11 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
       <div className="flex h-full w-full max-w-[1100px] flex-col bg-slate-50 shadow-2xl">
         <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
           <h2 className="text-lg font-bold text-navy-700">Cài đặt</h2>
+          {profName && (
+            <span className="chip border-navy-100 bg-navy-50 text-navy-800" data-testid="settings-profile" title="Nguồn tin, từ khóa & quy tắc, địa điểm, lĩnh vực, thời gian, chất lượng, báo cáo và hiệu năng thuộc riêng cấu hình này. Đổi cấu hình ở mục Cấu hình (profile).">
+              Cấu hình: <b className="ml-1">{profName}</b>
+            </span>
+          )}
           {(dirtyS || dirtySrc) && <span className="chip border-amber-300 bg-amber-50 text-amber-800">Chưa lưu</span>}
           <span className="flex-1" />
           <button className="btn-ghost" onClick={resetSection} disabled={nav === 'profiles' || nav === 'sources' || nav === 'backup'}>
@@ -111,7 +119,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
         </header>
         {api.mode === 'live' && api.shared && (
           <div className="border-b border-teal-200 bg-teal-50 px-4 py-2 text-xs text-teal-900" data-testid="shared-config-note">
-            <b>Cài đặt dùng chung:</b> bấm Lưu (cần đăng nhập người duyệt) là áp dụng cho <b>máy chủ thu thập</b> từ lượt kế tiếp (tự động hoặc bấm Thu thập) và cho mọi người dùng web. Mỗi lần lưu được ghi vào Lịch sử, có thể khôi phục. Riêng <b>mẫu PPTX</b> chỉ lưu trong trình duyệt này.
+            <b>Cài đặt dùng chung cho nhóm, riêng từng cấu hình{profName ? ` (đang sửa: ${profName})` : ''}:</b> bấm Lưu (cần đăng nhập người duyệt) là áp dụng cho <b>máy chủ thu thập</b> từ lượt kế tiếp (tự động hoặc bấm Thu thập) và cho mọi người dùng web. Mỗi lần lưu được ghi vào Lịch sử, có thể khôi phục. Riêng <b>mẫu PPTX</b> chỉ lưu trong trình duyệt này.
           </div>
         )}
         {validation && !validation.success && (
@@ -127,11 +135,24 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
               <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
               <input className="input pl-7 text-xs" placeholder="Tìm cài đặt…" value={filter} onChange={(e) => setFilter(e.target.value)} />
             </div>
-            {navItems.map(([k, l]) => (
-              <button key={k} onClick={() => setNav(k)} className={`mb-0.5 block w-full rounded px-2 py-1.5 text-left text-sm ${nav === k ? 'bg-navy-700 text-white' : 'hover:bg-slate-100'}`}>
-                {l}
-              </button>
-            ))}
+            {/* every section except the profile list belongs to the active profile – shown as one group under its name */}
+            {[
+              { title: 'Tất cả cấu hình', items: navItems.filter(([k]) => k === 'profiles') },
+              { title: `Riêng cấu hình «${profName || '…'}»`, items: navItems.filter(([k]) => k !== 'profiles') },
+            ].map((g) =>
+              g.items.length ? (
+                <div key={g.title} className="mb-2" data-testid={g.items[0]![0] === 'profiles' ? 'nav-all-profiles' : 'nav-this-profile'}>
+                  <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{g.title}</div>
+                  <div className={g.items[0]![0] === 'profiles' ? '' : 'border-l-2 border-navy-100 pl-1'}>
+                    {g.items.map(([k, l]) => (
+                      <button key={k} onClick={() => setNav(k)} className={`mb-0.5 block w-full rounded px-2 py-1.5 text-left text-sm ${nav === k ? 'bg-navy-700 text-white' : 'hover:bg-slate-100'}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null,
+            )}
           </nav>
           <main className="min-w-0 flex-1 overflow-auto p-4">
             {!s ? (
@@ -467,25 +488,27 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
   };
   return (
     <div>
-      <Section title="Mẫu báo cáo" help="Khi xuất vẫn chọn được mẫu khác cho từng lần.">
-        <Field label="Mẫu mặc định khi xuất">
-          <select className="input" aria-label="Mẫu mặc định khi xuất" value={s.report.templateId} onChange={(e) => up('report', { templateId: e.target.value })}>
-            {tpls.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-          </select>
-        </Field>
-        <p className="text-xs text-slate-600">{tpls.find((x) => x.id === s.report.templateId)?.description}</p>
-      </Section>
-      {s.report.templateFile ? (
-        <div className="mb-4 rounded border border-green-300 bg-green-50 p-3 text-xs text-green-900">
-          <b>Đã có mẫu tải lên:</b> báo cáo được dựng bằng cách nhân bản đúng các trang của mẫu (Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị), thay nội dung trong các khung sẵn có và giữ nguyên định dạng. Nếu tải mẫu khác cấu trúc, xuất báo cáo sẽ báo <b>BLOCKED</b> thay vì tạo tệp sai.
+      <Section title={`Mẫu báo cáo có sẵn (${tpls.length})`} help="Mẫu Sở Xây dựng TP.HCM (từ Skill) có sẵn trong ứng dụng – không cần tải gì. Tích mẫu mặc định; khi xuất vẫn tích được mẫu khác cho từng lần.">
+        <div className="space-y-1.5" role="radiogroup" aria-label="Mẫu mặc định khi xuất" data-testid="default-template-picker">
+          {tpls.map((x) => (
+            <label key={x.id} className={`flex cursor-pointer items-start gap-2 rounded border p-2 text-sm ${x.id === s.report.templateId ? 'border-teal-600 bg-teal-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+              <input type="radio" name="default-template" className="mt-1" value={x.id} checked={x.id === s.report.templateId} onChange={() => up('report', { templateId: x.id })} aria-label={x.name} />
+              <span>
+                <span className="font-medium">{x.name}</span>
+                <span className="ml-1 text-xs text-slate-500">· {x.orientation === 'landscape' ? 'trang ngang 16:9' : 'A4 dọc'}{x.id === s.report.templateId ? ' · mặc định' : ''}</span>
+                <span className="block text-xs text-slate-600">{x.description}</span>
+              </span>
+            </label>
+          ))}
         </div>
-      ) : (
-        <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-          Muốn dùng <b>mẫu riêng</b> (cùng cấu trúc mẫu Sở: Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị)? Tải tệp .pptx ở bên dưới, rồi chọn "Mẫu đã tải lên" khi xuất.
+      </Section>
+      {s.report.templateFile && (
+        <div className="mb-4 rounded border border-green-300 bg-green-50 p-3 text-xs text-green-900">
+          <b>Có thêm mẫu riêng của bạn:</b> báo cáo được dựng bằng cách nhân bản đúng các trang của mẫu (Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị), thay nội dung trong các khung sẵn có và giữ nguyên định dạng. Nếu mẫu khác cấu trúc, xuất báo cáo sẽ báo <b>BLOCKED</b> thay vì tạo tệp sai.
         </div>
       )}
-      <Section title="Mẫu PowerPoint tải lên & thông tin cơ quan">
-        <p className="text-xs">Tệp mẫu đang chọn: <b>{s.report.templateFile || '(chưa có – dùng bố cục demo)'}</b></p>
+      <Section title="Mẫu riêng (không bắt buộc) & thông tin cơ quan">
+        <p className="text-xs">Chỉ cần khi muốn dùng một tệp .pptx khác (cùng cấu trúc mẫu Sở). Mẫu riêng đang có: <b>{s.report.templateFile || 'không có – vẫn xuất bình thường bằng các mẫu có sẵn ở trên'}</b></p>
         {api.mode !== 'local' && <p className="text-xs text-slate-600">Bản web: mẫu chỉ lưu trong <b>trình duyệt này</b> (không tải lên máy chủ hay GitHub); xuất báo cáo dựng ngay trong trình duyệt, ảnh báo gốc lấy qua máy chủ duyệt tin (cần đăng nhập). PDF: mở tệp .pptx bằng PowerPoint › Lưu thành PDF.</p>}
         <label className="btn-ghost w-fit cursor-pointer">
           <FileUp className="h-4 w-4" /> Tải mẫu .pptx

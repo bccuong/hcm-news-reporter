@@ -1100,7 +1100,6 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
   useEffect(() => {
     api.templates().then((r) => (setTpls(r.templates), setTplId((cur) => (r.templates.some((x) => x.id === cur) ? cur : r.defaultId)))).catch(() => setTpls([]));
   }, []);
-  const tpl = tpls.find((x) => x.id === tplId);
   const sel = Object.values(reviews).filter((r) => r.included && !r.groupId).sort((a, b) => a.order - b.order);
   const go = async (dryRun: boolean) => {
     setBusy(true);
@@ -1163,17 +1162,24 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
       </div>
       <div className="card space-y-3 p-3">
         <h3 className="font-semibold text-navy-700">Xuất báo cáo</h3>
-        <label className="block">
-          <span className="label">Mẫu báo cáo</span>
-          <select className="input" aria-label="Mẫu báo cáo" value={tplId} onChange={(e) => setTplId(e.target.value)}>
-            {tpls.map((x) => (
-              <option key={x.id} value={x.id} disabled={x.available === false}>
-                {x.name} · {x.orientation === 'landscape' ? '16:9' : 'A4 dọc'}{x.available === false ? ' (thiếu tệp)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        {tpl && <p className="rounded bg-slate-50 p-2 text-xs text-slate-700" data-testid="template-info">{tpl.description}</p>}
+        {/* every template visible at once (tick one) – not hidden in a drop-down */}
+        <fieldset className="space-y-1.5" role="radiogroup" aria-label="Mẫu báo cáo" data-testid="template-picker">
+          <legend className="label mb-1">Mẫu báo cáo ({tpls.length})</legend>
+          {tpls.length === 0 && <p className="text-xs text-red-700">Không tải được danh sách mẫu – tải lại trang.</p>}
+          {tpls.map((x) => {
+            const on = x.id === tplId;
+            return (
+              <label key={x.id} className={`flex cursor-pointer items-start gap-2 rounded border p-2 text-sm ${on ? 'border-teal-600 bg-teal-50' : 'border-slate-200 hover:bg-slate-50'} ${x.available === false ? 'cursor-not-allowed opacity-50' : ''}`}>
+                <input type="radio" name="report-template" className="mt-1" value={x.id} checked={on} disabled={x.available === false} onChange={() => setTplId(x.id)} aria-label={x.name} />
+                <span className="min-w-0">
+                  <span className="font-medium">{x.name}</span>
+                  <span className="ml-1 text-xs text-slate-500">· {x.orientation === 'landscape' ? 'trang ngang 16:9' : 'A4 dọc'}{x.kind === 'original-pptx' ? ' · tệp PowerPoint gốc' : x.kind === 'upload' ? ' · tệp của bạn' : ''}{x.available === false ? ' · thiếu tệp' : ''}</span>
+                  {on && <span className="mt-0.5 block text-xs text-slate-600" data-testid="template-info">{x.description}</span>}
+                </span>
+              </label>
+            );
+          })}
+        </fieldset>
         <div className="flex gap-4">
           {(['pptx', 'pdf'] as const).map((f) => (
             <label key={f} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={formats.includes(f)} onChange={(e) => setFormats(e.target.checked ? [...formats, f] : formats.filter((x) => x !== f))} /> .{f}</label>

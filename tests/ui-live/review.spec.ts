@@ -176,7 +176,8 @@ test('web = local: photos, full article text, shared settings used by the server
   const slidesXml = (await Promise.all(Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f)).map((f) => zip.file(f)!.async('string')))).join('');
   expect(slidesXml).toContain('Mưa lớn tối 8.11');
   // default template = the Department's template from the Skill (published with the site), with the real photo
-  await expect(page.getByLabel('Mẫu báo cáo')).toHaveValue('skill-so-xay-dung');
+  await expect(page.getByTestId('template-picker').locator('input[value="skill-so-xay-dung"]')).toBeChecked();
+  for (const id of ['skill-so-xay-dung', 'hanh-chinh', 'ban-tin', 'toi-gian', 'anh-lon']) await expect(page.getByTestId('template-picker').locator(`input[value="${id}"]`)).toBeVisible(); // Skill template + 4 original designs, all visible
   expect(file.suggestedFilename()).not.toContain('DEMO');
   expect(slidesXml).not.toContain('BẢN DEMO');
   const hasPhoto = async (z: JSZip) => {
@@ -188,7 +189,7 @@ test('web = local: photos, full article text, shared settings used by the server
   await page.screenshot({ path: 'docs/screenshots/web-export-template.png' });
 
   // another template, chosen at export: one of the app's original designs
-  await page.getByLabel('Mẫu báo cáo').selectOption('ban-tin');
+  await page.getByTestId('template-picker').locator('input[value="ban-tin"]').check();
   await expect(page.getByTestId('template-info')).toContainText('16:9');
   await page.evaluate(() => delete (window as unknown as { __dl?: unknown }).__dl);
   await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
@@ -224,6 +225,16 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ho
   // the cron now collects both profiles in one run
   expect((await (await request.get('http://127.0.0.1:5181/__cron')).json()).profiles).toEqual(['hcm', 'da-nang']);
   await page.screenshot({ path: 'docs/screenshots/web-profile-da-nang.png' });
+  // Settings say which profile every section edits: sources, rules, location, categories… are grouped under it
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  const dlg2 = page.getByRole('dialog', { name: 'Cài đặt' });
+  await expect(dlg2.getByTestId('settings-profile')).toContainText('Đà Nẵng');
+  const own = dlg2.getByTestId('nav-this-profile');
+  await expect(own).toContainText('Riêng cấu hình «Đà Nẵng»');
+  for (const l of ['Nguồn tin', 'Từ khóa & quy tắc', 'Địa điểm', 'Lĩnh vực']) await expect(own.getByRole('button', { name: l, exact: true })).toBeVisible();
+  await own.getByRole('button', { name: 'Lĩnh vực', exact: true }).click();
+  await page.screenshot({ path: 'docs/screenshots/web-settings-per-profile.png' });
+  await dlg2.getByRole('button', { name: 'Đóng cài đặt' }).click();
   await strip.getByLabel('Tự động thu thập mỗi giờ').click();
   await expect(strip.getByLabel('Tự động thu thập mỗi giờ')).not.toBeChecked();
   // back to TP.HCM: its published data is shown again
