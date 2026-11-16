@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import type { EventEmitter } from 'node:events';
 import { clusterArticles } from '../domain/cluster.js';
 import { assessHealth, measureHealth } from './health.js';
 import { annotateArticle } from '../domain/relevance.js';

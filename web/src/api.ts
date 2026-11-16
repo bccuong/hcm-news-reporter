@@ -435,11 +435,36 @@ class DemoApi implements Api {
   async importSkill(text: string) {
     return parseWebsitesTxt(text);
   }
-  async detect(): Promise<never> {
-    throw new ApiError(NO_NET);
+  /**
+   * "Dò nguồn" / "Thử nguồn" on the web: the collector's own discovery + extraction run in this browser; publisher
+   * pages are fetched through the review worker (publishers do not allow cross-origin reads) – reviewers only.
+   */
+  private proxyHttp() {
+    const s = store.get<{ name: string; code: string }>('reviewer');
+    if (!this.shared || !s) throw new ApiError('Hãy đăng nhập người duyệt để dò / thử nguồn trên web (trang báo được tải qua máy chủ duyệt tin)');
+    const get = async (url: string) => {
+      try {
+        const r = await fetch(`${this.reviewApi}/fetch?url=${encodeURIComponent(url)}`, { headers: { 'x-review-code': s.code } });
+        if (!r.ok) {
+          const err = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`;
+          return { requestedUrl: url, finalUrl: url, status: 0, body: '', contentType: '', errorCode: r.status === 400 ? 'SSRF_BLOCKED' : 'NETWORK', error: err, attempts: 1 };
+        }
+        return { ...((await r.json()) as { requestedUrl: string; finalUrl: string; status: number; body: string; contentType: string; errorCode: string | null; error: string | null }), attempts: 1 };
+      } catch (e) {
+        return { requestedUrl: url, finalUrl: url, status: 0, body: '', contentType: '', errorCode: 'NETWORK', error: (e as Error).message, attempts: 1 };
+      }
+    };
+    return { get } as unknown as import('../../src/collector/http').HttpClient;
   }
-  async testSource(): Promise<never> {
-    throw new ApiError(NO_NET);
+  async detect(url: string) {
+    const http = this.proxyHttp();
+    const { detectStructure } = await import('../../src/collector/probe');
+    return detectStructure(url, http);
+  }
+  async testSource(src: Source) {
+    const http = this.proxyHttp();
+    const { probeSource } = await import('../../src/collector/probe');
+    return probeSource(src, await this.getSettings(), http);
   }
   async previewRule(root: RuleNode, settings: Settings, sample?: { title: string; body: string }) {
     const results: PreviewResult['results'] = [];

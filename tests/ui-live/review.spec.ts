@@ -305,3 +305,31 @@ test('web review is ONE for the whole team: what A selects / moves / removes on 
   await expect(a.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(`Xuất báo cáo (${nSel - 1})`);
   await expect(a.locator('article').filter({ hasText: t1 }).getByTestId('shared-by')).toContainText('Người duyệt H');
 });
+
+test('web: "Dò cấu trúc" and "Thử thu thập" run in the browser through the review worker (reviewers only)', async ({ page }) => {
+  page.on('dialog', (d) => d.accept());
+  await page.goto('');
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  await dlg.getByRole('button', { name: 'Nguồn tin', exact: true }).click();
+  // not logged in: a clear message (no longer "only in the local app")
+  await dlg.getByRole('button', { name: 'Thêm nguồn' }).click();
+  await dlg.getByLabel('URL trang chủ báo').fill('https://fixture-a.example.vn/');
+  await dlg.getByRole('button', { name: /Dò cấu trúc tự động/ }).click();
+  await expect(page.getByText(/Hãy đăng nhập người duyệt để dò \/ thử nguồn trên web/).first()).toBeVisible();
+  await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
+  await login(page, 'Người duyệt T', 'HCM-TEST-CODE');
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  await dlg.getByRole('button', { name: 'Nguồn tin', exact: true }).click();
+  await dlg.getByRole('button', { name: 'Thêm nguồn' }).click();
+  await dlg.getByLabel('URL trang chủ báo').fill('https://fixture-a.example.vn/');
+  await dlg.getByRole('button', { name: /Dò cấu trúc tự động/ }).click();
+  await expect(dlg.getByText('https://fixture-a.example.vn/rss/thoi-su.rss').first()).toBeVisible({ timeout: 20_000 });
+  await dlg.getByRole('button', { name: 'Tạo thẻ nguồn (chưa lưu)' }).click();
+  const card = dlg.locator('[data-testid^="source-"]').filter({ hasText: 'fixture-a.example.vn' }).first();
+  await card.getByRole('button', { name: 'Thử thu thập' }).click();
+  await expect(card).toContainText(/Kết quả thử \(\d+ link ứng viên\)/, { timeout: 30_000 });
+  await expect(card).toContainText('[rss] ok');
+  await expect(card).toContainText('Mưa lớn tối 8.11'); // a sample article really extracted
+  await page.screenshot({ path: 'docs/screenshots/web-source-test.png' });
+});

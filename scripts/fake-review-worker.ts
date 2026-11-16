@@ -8,6 +8,8 @@ import { createServer } from 'node:http';
 import { deflateSync } from 'node:zlib';
 import path from 'node:path';
 import { AUTO_TITLE, handle, scheduledCollect, type KVLike } from '../cloud/review-worker/src/handler.js';
+import { A as SITE_A, siteARoutes } from '../tests/fixtures/siteA.js';
+const SITE_A_ROUTES = siteARoutes();
 
 class MemKV implements KVLike {
   m = new Map<string, { v: string; meta?: unknown }>();
@@ -74,6 +76,16 @@ const PNG = makePng();
 const fakeGitHub = async (url: string, init?: RequestInit): Promise<Response> => {
   // publisher photos of the fixture sites (fetched by the worker's /img proxy)
   if (/^https:\/\/fixture-[a-z]\.example\.vn\/img\//.test(url)) return new Response(PNG as Uint8Array<ArrayBuffer>, { status: 200, headers: { 'content-type': 'image/png' } });
+  // publisher pages of fixture site A (fetched by the worker's /fetch proxy for "Dò nguồn / Thử nguồn" on the web)
+  if (url.startsWith(SITE_A)) {
+    if (url === `${SITE_A}/` || url === SITE_A) {
+      const home = `<html><head><title>Báo mẫu thử A</title><link rel="alternate" type="application/rss+xml" href="/rss/thoi-su.rss"></head>
+<body><nav><a href="/thoi-su.htm">Thời sự</a></nav></body></html>`;
+      return new Response(home, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
+    const r = SITE_A_ROUTES[url];
+    return r ? new Response(r.body, { status: r.status, headers: r.headers ?? { 'content-type': 'text/html; charset=utf-8' } }) : new Response('', { status: 404 });
+  }
   if (url.includes('/runs?status=')) {
     const st = /status=(\w+)/.exec(url)![1];
     return new Response(JSON.stringify({ total_count: runs.filter((r) => r.status === st).length }), { status: 200 });

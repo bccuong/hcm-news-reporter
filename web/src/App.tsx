@@ -172,7 +172,7 @@ export function App() {
     // reuse a period that is already published for exactly this window (no need to collect again)
     if (api.mode === 'live') {
       const same = runs.find((x) => Date.parse(x.window.from) === Date.parse(windowIso.from) && Date.parse(x.window.to) === Date.parse(windowIso.to) && !x.notes.some((n) => /đang diễn ra/.test(n)));
-      if (same && !confirm('Khung giờ này đã có dữ liệu trên web. Vẫn thu thập lại?')) {
+      if (same && !confirm('Khung giờ này đã có dữ liệu trên web. Thu thập lại? (Kỳ này được cập nhật: giữ các bài đã đọc, tải thêm bài còn thiếu, phân loại lại theo cài đặt hiện tại)')) {
         setRunId(same.runId);
         return;
       }

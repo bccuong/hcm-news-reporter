@@ -264,6 +264,31 @@ describe('shared review worker', () => {
     });
   });
 
+  describe('page proxy for "Dò nguồn / Thử nguồn" on the web', () => {
+    const call = (e: Env, target: string, f: (u: string, init?: RequestInit) => Promise<Response>, code = 'HCM-test-1234') =>
+      handle(new Request(`https://w.example/fetch?url=${encodeURIComponent(target)}`, { headers: { origin: ORIGIN, 'x-review-code': code } }), e, f as never);
+    it('reviewers only; returns the page as the collector expects; follows public redirects only', async () => {
+      const e = env();
+      const pages: Record<string, Response> = {
+        'https://bao.vn/': new Response(null, { status: 301, headers: { location: '/trang-chu' } }),
+        'https://bao.vn/trang-chu': new Response('<html><title>Báo</title></html>', { headers: { 'content-type': 'text/html; charset=utf-8' } }),
+        'https://bao.vn/x': new Response(null, { status: 302, headers: { location: 'http://192.168.1.1/admin' } }),
+        'https://bao.vn/img.jpg': new Response(new Uint8Array([1, 2]), { headers: { 'content-type': 'image/jpeg' } }),
+      };
+      const f = async (u: string) => pages[u] ?? new Response('', { status: 404 });
+      expect((await call(e, 'https://bao.vn/', f, 'wrong')).status).toBe(401);
+      const ok = (await (await call(e, 'https://bao.vn/', f)).json()) as { status: number; finalUrl: string; body: string; errorCode: string | null };
+      expect(ok).toMatchObject({ status: 200, finalUrl: 'https://bao.vn/trang-chu', errorCode: null });
+      expect(ok.body).toContain('<title>Báo</title>');
+      expect(((await (await call(e, 'https://bao.vn/x', f)).json()) as { errorCode: string }).errorCode).toBe('SSRF_BLOCKED');
+      expect(((await (await call(e, 'https://bao.vn/img.jpg', f)).json()) as { errorCode: string }).errorCode).toBe('NOT_TEXT');
+      expect(((await (await call(e, 'https://bao.vn/none', f)).json()) as { status: number; errorCode: string })).toMatchObject({ status: 404, errorCode: 'FETCH_404' });
+      for (const bad of ['http://127.0.0.1/', 'http://localhost/', 'file:///etc/passwd', 'https://10.0.0.5/', 'https://bao.vn:8080/', 'https://[::1]/']) {
+        expect((await call(e, bad, f)).status).toBe(400);
+      }
+    });
+  });
+
   it('reviewer ids are ascii slugs', () => {
     expect(reviewerId('  Lê Đình Ánh ')).toBe('le-dinh-anh');
   });

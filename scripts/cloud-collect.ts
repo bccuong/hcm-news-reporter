@@ -225,7 +225,11 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
         throw new Error(`invalid on-demand window: ${reqFrom} → ${reqTo}`);
       }
       const window = { from: toVnIso(new Date(reqFrom)), to: toVnIso(new Date(reqTo)) };
-      jobs.push({ key: `custom-${stamp(window.from)}-${stamp(window.to)}`, reportDate: vnDate(new Date(window.to)), window, provisional: Date.parse(reqTo) > now.getTime(), custom: true });
+      // exactly the window of a published daily period → that period is refreshed in place (continued + re-classified),
+      // e.g. to clear a stale warning after its freeze; any other window → an on-demand ("custom") period
+      const daily = [...prevDays.values()].find((d) => !d.custom && Date.parse(d.manifest.window.from) === Date.parse(window.from) && Date.parse(d.manifest.window.to) === Date.parse(window.to));
+      if (daily) jobs.push({ key: keyOf(daily), reportDate: daily.reportDate, window: daily.manifest.window, provisional: Date.parse(reqTo) > now.getTime() });
+      else jobs.push({ key: `custom-${stamp(window.from)}-${stamp(window.to)}`, reportDate: vnDate(new Date(window.to)), window, provisional: Date.parse(reqTo) > now.getTime(), custom: true });
     } else {
       const last = lastCompletedWindow(now, startClock, endClock);
       const todays = windowForReportDate(vnDate(now), startClock, endClock);

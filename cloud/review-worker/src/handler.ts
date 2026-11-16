@@ -290,6 +290,61 @@ async function profileRoutes(req: Request, url: URL, env: Env, h: Record<string,
   }
   return null;
 }
+/* ---------------- page proxy for "Dò nguồn" / "Thử nguồn" on the web ---------------- */
+const FETCH_MAX_BYTES = 3_000_000;
+const FETCH_TIMEOUT_MS = 15_000;
+const FETCH_UA = 'NewsReporter/1.0 (editorial source test; +https://bccuong.github.io/news-reporter/)';
+/** public web pages only: http(s), default ports, no IP literals of private / local ranges, no localhost */
+export function publicPageUrl(raw: string): URL | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || (u.port && !['80', '443'].includes(u.port))) return null;
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h.includes('.') || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return null;
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224) return null;
+  }
+  if (h.includes(':')) return null; // IPv6 literals: not needed for news sites
+  return u;
+}
+/** reviewers only: fetch a public page (redirects re-checked hop by hop), text/HTML/XML ≤ 3 MB, 15 s */
+async function pageProxy(url: URL, f: Fetch, h: Record<string, string>) {
+  let target = publicPageUrl(url.searchParams.get('url') ?? '');
+  if (!target) return json({ error: 'URL không hợp lệ (chỉ trang web công khai http/https)' }, 400, h);
+  const requested = target.toString();
+  for (let hop = 0; hop < 6; hop++) {
+    let r: Response;
+    try {
+      r = await f(target.toString(), { redirect: 'manual', headers: { 'user-agent': FETCH_UA, accept: 'text/html,application/xhtml+xml,application/xml,application/rss+xml,text/xml;q=0.9,*/*;q=0.5' }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    } catch (e) {
+      const timeout = (e as Error).name === 'TimeoutError';
+      return json({ requestedUrl: requested, finalUrl: target.toString(), status: 0, body: '', contentType: '', errorCode: timeout ? 'TIMEOUT' : 'NETWORK', error: (e as Error).message }, 200, h);
+    }
+    if (r.status >= 300 && r.status < 400 && r.headers.get('location')) {
+      const next = publicPageUrl(new URL(r.headers.get('location')!, target).toString());
+      if (!next) return json({ requestedUrl: requested, finalUrl: target.toString(), status: 0, body: '', contentType: '', errorCode: 'SSRF_BLOCKED', error: 'Chuyển hướng tới địa chỉ không công khai' }, 200, h);
+      target = next;
+      continue;
+    }
+    const ct = r.headers.get('content-type') ?? '';
+    if (r.status === 200 && ct && !/text\/|xml|json/i.test(ct)) return json({ requestedUrl: requested, finalUrl: target.toString(), status: 0, body: '', contentType: ct, errorCode: 'NOT_TEXT', error: `Không phải trang văn bản (${ct})` }, 200, h);
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.length > FETCH_MAX_BYTES) return json({ requestedUrl: requested, finalUrl: target.toString(), status: 0, body: '', contentType: ct, errorCode: 'TOO_LARGE', error: 'Trang quá lớn (> 3 MB)' }, 200, h);
+    const status = r.status;
+    return json({
+      requestedUrl: requested, finalUrl: target.toString(), status, body: new TextDecoder('utf-8').decode(buf), contentType: ct,
+      errorCode: status === 200 ? null : `FETCH_${status}`, error: status === 200 ? null : `HTTP ${status}`,
+    }, 200, h);
+  }
+  return json({ requestedUrl: requested, finalUrl: target.toString(), status: 0, body: '', contentType: '', errorCode: 'REDIRECT_LOOP', error: 'Quá nhiều lần chuyển hướng' }, 200, h);
+}
+
 /** Article photo for the report (browser export): https only, real jpeg/png/webp, ≤ 8 MB. */
 async function imageProxy(url: URL, f: Fetch, h: Record<string, string>) {
   const target = url.searchParams.get('url') ?? '';
@@ -444,6 +499,7 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
   if (url.pathname === '/collect' && req.method === 'POST') return collect(req, env, f, h);
   if (url.pathname === '/collect/status' && req.method === 'GET') return collectStatus(env, f, h);
   if (url.pathname === '/img' && req.method === 'GET') return imageProxy(url, f, h);
+  if (url.pathname === '/fetch' && req.method === 'GET') return pageProxy(url, f, h);
   const pr = await profileRoutes(req, url, env, h);
   if (pr) return pr;
   // hourly automatic collection on/off for ONE profile

@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13k – ONE team review on the web; 2026-11-16)
+## ▶ RESUME HERE (session 13l – source test/detect on the web; refresh a daily period; 2026-11-16)
+- User: 2 sources "bóc tách suy giảm" (= the stale false flags of the frozen 2026-11-16 period, Thanh Niên + SGGP) and "Thử nguồn" said local-only.
+- "Dò cấu trúc tự động" and "Thử thu thập" now work on the web: the collector's own discovery + extraction (src/collector/probe.ts) run in the browser; pages fetched through the review worker `GET /fetch?url=` (reviewers only; public http(s) pages only – private/local hosts and IP literals refused, redirects re-checked hop by hop, text/HTML/XML only, ≤ 3 MB, 15 s). Worker deployed (version aec9c21f); real check: Thanh Niên RSS 60 items, SGGP RSS 50 items. run.ts now imports EventEmitter as a type only (browser bundle).
+- "Thu thập" with exactly the window of a published DAILY period refreshes that period in place (continued + re-classified) instead of creating a duplicate custom period – used to clear the stale flags of 2026-11-16.
+- Still local-only on the web: per-source re-scan of a period ("Thử lại"/"Mở rộng quét" in Độ phủ) – use "Thu thập" for the window.
+- Tests: typecheck, vitest 113/113 (worker proxy tests), playwright 11/11, live E2E 7/7 (new: web "Dò cấu trúc" + "Thử thu thập", screenshot docs/screenshots/web-source-test.png).
+
+## (history) Session 13k – ONE team review on the web; 2026-11-16)
 - User: results differed per machine – the web kept selection / Sẵn sàng / Loại / edits / merges in each BROWSER (localStorage). User chose "Dùng chung cả nhóm".
 - Worker (deployed 2026-11-16 ~13:25 VN, version b17e0a27): `GET /review?profile&period` (public, like the published data), `POST /review` (access code + reviewer name) merges a patch into ONE decision per article per period. KV key `rv:<profile>:<period>:<articleId>`, compact decision in metadata (≤ 1 KB, one list per period), edited texts / photo URL in the value. Fields validated (`cleanReviewPatch`); `by`/`at` recorded. Tests in tests/review-worker.test.ts.
 - Web (api.ts): `review()` = team decision (worker) + personal votes (✓/✗, note) from this browser; offline → last copy. `patchReview()` saves team fields to the worker first (login required – every web change now opens the login dialog without a session). First visit of a period with a session: decisions made earlier in this browser are shared once (never over the team's). App: team review refreshed every minute and on focus; each story shows "duyệt chung: <name> · <time>".
