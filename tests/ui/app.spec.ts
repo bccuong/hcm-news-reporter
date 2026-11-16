@@ -247,3 +247,49 @@ test('Profiles: create Hà Nội from the defaults, its own settings and runs, c
   await expect(page.getByTestId('app-subtitle')).toHaveText('Điểm tin báo chí ngành xây dựng TP.HCM');
   await expect(page.getByLabel('Lượt đã lưu')).toBeVisible(); // TP.HCM's runs are back
 });
+test('Bulk select / unselect all for the report; move stories from Cần kiểm tra to Bài sẵn sàng and back', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
+  await page.getByLabel('Từ (gồm)').fill('2026-11-08T17:00');
+  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
+  await page.getByRole('button', { name: 'Thu thập' }).click();
+  await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
+  const num = async (re: RegExp) => Number(/\((\d+)\)/.exec((await page.getByRole('button', { name: re }).innerText()))![1]);
+  const ready0 = await num(/^Bài sẵn sàng/);
+  const review0 = await num(/^Cần kiểm tra/);
+  expect(review0).toBeGreaterThan(0);
+
+  // select all → every ready story goes to the report; unselect all → none
+  await page.getByRole('button', { name: /^Bài sẵn sàng/ }).click();
+  const bar = page.getByTestId('bulk-bar');
+  await bar.getByLabel('Chọn tất cả bài đang hiển thị').click(); // saved story by story, the box follows
+  await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(`Xuất báo cáo (${ready0})`);
+  await expect(bar).toContainText(`đã chọn ${ready0}`);
+  await page.screenshot({ path: 'docs/screenshots/bulk-select.png' });
+  await bar.getByRole('button', { name: 'Bỏ chọn tất cả' }).click();
+  await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText('Xuất báo cáo (0)');
+
+  // one story from Cần kiểm tra → Bài sẵn sàng (marked), then back
+  await page.getByRole('button', { name: /^Cần kiểm tra/ }).click();
+  const first = page.locator('article').first();
+  const title = (await first.locator('h3').innerText()).trim();
+  await first.getByRole('button', { name: /Chuyển sang Bài sẵn sàng/ }).click();
+  await expect(page.getByRole('button', { name: /^Cần kiểm tra/ })).toHaveText(`Cần kiểm tra (${review0 - 1})`);
+  await expect(page.getByRole('button', { name: /^Bài sẵn sàng/ })).toHaveText(`Bài sẵn sàng (${ready0 + 1})`);
+  await page.getByRole('button', { name: /^Bài sẵn sàng/ }).click();
+  const moved = page.locator('article').filter({ hasText: title });
+  await expect(moved).toContainText('từ Cần kiểm tra');
+  // persists after reload
+  await page.reload();
+  await expect(page.getByRole('button', { name: /^Bài sẵn sàng/ })).toHaveText(`Bài sẵn sàng (${ready0 + 1})`);
+  await page.getByRole('button', { name: /^Bài sẵn sàng/ }).click();
+  await page.locator('article').filter({ hasText: title }).getByRole('button', { name: /Trả về Cần kiểm tra/ }).click();
+  await expect(page.getByRole('button', { name: /^Cần kiểm tra/ })).toHaveText(`Cần kiểm tra (${review0})`);
+
+  // all shown stories of Cần kiểm tra at once
+  await page.getByRole('button', { name: /^Cần kiểm tra/ }).click();
+  page.once('dialog', (d) => d.accept());
+  await page.getByTestId('bulk-bar').getByRole('button', { name: /Chuyển tất cả sang Bài sẵn sàng/ }).click();
+  await expect(page.getByRole('button', { name: /^Cần kiểm tra/ })).toHaveText('Cần kiểm tra (0)');
+  await expect(page.getByRole('button', { name: /^Bài sẵn sàng/ })).toHaveText(`Bài sẵn sàng (${ready0 + review0})`);
+});

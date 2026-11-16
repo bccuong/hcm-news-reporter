@@ -456,6 +456,8 @@ export interface ReviewDecision {
   relevanceLabel?: 'relevant' | 'irrelevant' | null;
   /** reviewer's note to the developers (why the filter/classification was wrong) */
   reviewNote?: string;
+  /** editor moved the story from "Cần kiểm tra" to "Bài sẵn sàng" (export checks such as an unverified time still apply) */
+  promotedToReady?: boolean;
   updatedAt: string;
   changes: Array<{ at: string; field: string; from: unknown; to: unknown }>;
 }

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Undo2, Wifi, WifiOff, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
@@ -327,11 +327,13 @@ export function App() {
   const n = (...k: string[]) => k.reduce((s, x) => s + (counts[x] ?? 0), 0);
   const artById = useMemo(() => new Map(arts.map((a) => [a.id, a])), [arts]);
   const candByArticle = useMemo(() => new Map(cands.filter((c) => c.articleId).map((c) => [c.articleId!, c])), [cands]);
-  const ready = arts.filter((a) => candByArticle.get(a.id)?.state === 'ready_for_review' && !candByArticle.get(a.id)?.reasonCode);
-  const reviewQueue = arts.filter((a) => {
+  const inReviewQueue = (a: Article) => {
     const c = candByArticle.get(a.id);
-    return c && (['date_unverified', 'parsed_partial'].includes(c.state) || (c.state === 'ready_for_review' && c.reasonCode));
-  });
+    return !!c && (['date_unverified', 'parsed_partial'].includes(c.state) || (c.state === 'ready_for_review' && !!c.reasonCode));
+  };
+  // the editor can move a story from Cần kiểm tra to Bài sẵn sàng (and back)
+  const ready = arts.filter((a) => (candByArticle.get(a.id)?.state === 'ready_for_review' && !candByArticle.get(a.id)?.reasonCode) || (inReviewQueue(a) && !!reviews[a.id]?.promotedToReady));
+  const reviewQueue = arts.filter((a) => inReviewQueue(a) && !reviews[a.id]?.promotedToReady);
   const selected = Object.values(reviews).filter((r) => r.included).length;
 
   return (
@@ -611,11 +613,23 @@ function Metric({ label, value, tone }: { label: string; value: number; tone?: '
   );
 }
 
-function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, reviewMode, votes }: { list: Article[]; reviews: Record<string, ReviewDecision>; cands: Map<string, Candidate>; settings: Settings | null; onInspect: (id: string) => void; onPatch: (id: string, p: Partial<ReviewDecision>) => void; reviewMode?: boolean; votes?: Record<string, Vote[]> }) {
+function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, reviewMode, votes }: { list: Article[]; reviews: Record<string, ReviewDecision>; cands: Map<string, Candidate>; settings: Settings | null; onInspect: (id: string) => void; onPatch: (id: string, p: Partial<ReviewDecision>) => void | Promise<unknown>; reviewMode?: boolean; votes?: Record<string, Vote[]> }) {
   const [q, setQ] = useState('');
+  const [bulk, setBulk] = useState<string | null>(null);
   const [cat, setCat] = useState<string>('all');
   const shown = list.filter((a) => (!q || a.title.toLowerCase().includes(q.toLowerCase())) && (cat === 'all' || (reviews[a.id]?.primaryCategory ?? a.primaryCategory) === cat));
   const catLabel = (c: string | null | undefined) => settings?.categories.find((x) => x.code === c)?.label ?? 'Chưa phân loại';
+  // bulk actions apply to the stories SHOWN (search + sector filter); stories merged into another one are skipped
+  const selectable = shown.filter((a) => !reviews[a.id]?.groupId);
+  const nSel = selectable.filter((a) => reviews[a.id]?.included).length;
+  const runBulk = async (label: string, ids: string[], p: (id: string) => Partial<ReviewDecision>) => {
+    setBulk(label);
+    try {
+      for (const id of ids) await onPatch(id, p(id));
+    } finally {
+      setBulk(null);
+    }
+  };
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -628,6 +642,48 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
           <button key={c.code} className={`chip ${cat === c.code ? 'border-navy-700 bg-navy-700 text-white' : 'border-slate-300 bg-white'}`} onClick={() => setCat(c.code)}>{c.label}</button>
         ))}
       </div>
+      {selectable.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm" data-testid="bulk-bar">
+          <label className="flex cursor-pointer items-center gap-2 font-medium">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-teal-600"
+              aria-label="Chọn tất cả bài đang hiển thị"
+              checked={nSel === selectable.length}
+              ref={(el) => {
+                if (el) el.indeterminate = nSel > 0 && nSel < selectable.length;
+              }}
+              disabled={!!bulk}
+              onChange={(e) => {
+                const on = e.target.checked;
+                const ids = selectable.filter((a) => !!reviews[a.id]?.included !== on).map((a) => a.id);
+                void runBulk(on ? 'Đang chọn…' : 'Đang bỏ chọn…', ids, (id) => (on ? { included: true, order: reviews[id]?.order ?? Date.now() % 1e6 } : { included: false }));
+              }}
+            />
+            Chọn tất cả ({selectable.length}{shown.length < list.length ? ' đang hiển thị' : ''})
+          </label>
+          <span className="text-slate-500">· đã chọn {nSel}</span>
+          {nSel > 0 && (
+            <button className="btn-ghost btn-xs" disabled={!!bulk} onClick={() => void runBulk('Đang bỏ chọn…', selectable.filter((a) => reviews[a.id]?.included).map((a) => a.id), () => ({ included: false }))}>
+              Bỏ chọn tất cả
+            </button>
+          )}
+          {reviewMode && (
+            <button
+              className="btn-teal btn-xs ml-auto"
+              disabled={!!bulk}
+              title="Chuyển các bài đang hiển thị sang Bài sẵn sàng (bài chưa rõ giờ đăng vẫn phải xác nhận giờ trước khi xuất)"
+              onClick={() => {
+                const ids = (nSel > 0 ? selectable.filter((a) => reviews[a.id]?.included) : shown).map((a) => a.id);
+                if (confirm(`Chuyển ${ids.length} bài${nSel > 0 ? ' đã chọn' : ' đang hiển thị'} sang Bài sẵn sàng?`)) void runBulk('Đang chuyển…', ids, () => ({ promotedToReady: true }));
+              }}
+            >
+              <ArrowRight className="h-3.5 w-3.5" /> Chuyển {nSel > 0 ? `${nSel} bài đã chọn` : 'tất cả'} sang Bài sẵn sàng
+            </button>
+          )}
+          {bulk && <span className="text-xs text-slate-500">{bulk}</span>}
+        </div>
+      )}
       {shown.length === 0 && <div className="card p-6 text-center text-sm text-slate-500">{reviewMode ? 'Không có bài cần kiểm tra.' : 'Chưa có bài sẵn sàng trong khung giờ này.'}</div>}
       <div className="space-y-2">
         {shown.map((a) => {
@@ -660,6 +716,7 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
                   ) : null}
                   {r && !r.groupId && secondariesOf(a.id, reviews).length > 0 && <span className="chip border-purple-300 bg-purple-50 text-purple-800">+{secondariesOf(a.id, reviews).length} nguồn</span>}
                   {a.extractionWarnings.length > 0 && <span className="chip border-amber-300 bg-amber-50 text-amber-800"><AlertTriangle className="h-3 w-3" /> {a.extractionWarnings.length} cảnh báo</span>}
+                  {!reviewMode && r?.promotedToReady && <span className="chip border-sky-300 bg-sky-50 text-sky-800" title="Biên tập viên đã chuyển bài này từ Cần kiểm tra">từ Cần kiểm tra</span>}
                 </div>
                 <h3 className="font-semibold leading-snug">{r?.title ?? a.title}</h3>
                 <p className="line-clamp-2 text-sm text-slate-600">{r?.summary ?? a.sapo}</p>
@@ -669,6 +726,16 @@ function ArticleList({ list, reviews, cands, settings, onInspect, onPatch, revie
                 <button className="btn-ghost btn-xs" onClick={() => onInspect(a.id)}><FileText className="h-3.5 w-3.5" /> Xem chi tiết</button>
                 <a className="btn-ghost btn-xs" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Bài gốc</a>
                 <RelevanceButtons r={r} onPatch={(p) => onPatch(a.id, p)} title={a.title} votes={votes?.[a.id]} />
+                {reviewMode && (
+                  <button className="btn-teal btn-xs" onClick={() => onPatch(a.id, { promotedToReady: true })} title="Chuyển bài này sang Bài sẵn sàng" aria-label={`Chuyển sang Bài sẵn sàng: ${a.title}`}>
+                    <ArrowRight className="h-3.5 w-3.5" /> Sẵn sàng
+                  </button>
+                )}
+                {!reviewMode && r?.promotedToReady && (
+                  <button className="btn-ghost btn-xs" onClick={() => onPatch(a.id, { promotedToReady: false })} title="Trả bài về Cần kiểm tra" aria-label={`Trả về Cần kiểm tra: ${a.title}`}>
+                    <Undo2 className="h-3.5 w-3.5" /> Trả về
+                  </button>
+                )}
               </div>
             </article>
           );

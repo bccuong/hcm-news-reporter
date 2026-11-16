@@ -7,7 +7,10 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13e – Settings as one profile tree; 2026-11-16)
+## ▶ RESUME HERE (session 13f – bulk select, move review → ready; 2026-11-16)
+- User: no select/unselect all for the report; how to move a story from "Cần kiểm tra" to "Bài sẵn sàng"? Done in both article lists (`ArticleList`, web/src/App.tsx): bar "Chọn tất cả (n đang hiển thị)" (tri-state, follows search + sector filter, skips merged secondaries) and "Bỏ chọn tất cả"; in Cần kiểm tra a per-story "→ Sẵn sàng" button and "Chuyển tất cả / n bài đã chọn sang Bài sẵn sàng"; moved stories show "từ Cần kiểm tra" and "↩ Trả về". Stored as review field `promotedToReady` (local API + browser store). Export checks still apply (unverified publication time must be confirmed). Test "Bulk select / unselect all…" (app.spec.ts), screenshot `docs/screenshots/bulk-select.png`. Tests: typecheck, vitest 99/99, playwright 10/10, live E2E 5/5.
+
+## (history) Session 13e – Settings as one profile tree; 2026-11-16)
 - User: profile list and its details should sit together, simpler to configure. Settings nav is now ONE tree: "Cấu hình" → every profile; the open one expanded with Tổng quan (rename / copy / delete), Nguồn tin, Từ khóa & quy tắc, Địa điểm, Lĩnh vực, Thời gian, Chất lượng, Báo cáo & mẫu, Hiệu năng, Sao lưu & lịch sử; other profiles one click away (switch → reload → Settings reopen on the same section via sessionStorage key `reopenSettings`); "+ Tạo cấu hình mới" at the bottom. Screenshot `docs/screenshots/profiles-tree.png`. Tests: typecheck, vitest 99/99, playwright 9/9, live E2E 5/5.
 
 ## (history) Session 13d – "Chính sách, pháp quy" must be construction/transport; 2026-11-16)
