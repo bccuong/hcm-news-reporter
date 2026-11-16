@@ -71,6 +71,20 @@ export function App() {
   // several loads can be in flight (startup, run picker, live refresh): only the most recently requested run is shown,
   // otherwise a slow earlier load could display one period while the review is saved to another
   const lastLoad = useRef<string | null>(null);
+  const shownWindowOf = useRef<string | null>(null);
+  useEffect(() => {
+    const r = runs.find((x) => x.runId === runId);
+    if (!r || !settings || shownWindowOf.current === r.runId) return;
+    shownWindowOf.current = r.runId;
+    setFrom(vnIsoToLocalInput(r.window.from));
+    setTo(vnIsoToLocalInput(r.window.to));
+    const same = (p: 'last_completed' | 'today' | 'yesterday') => {
+      const w = presetWindow(p, settings);
+      return Date.parse(w.from) === Date.parse(r.window.from) && Date.parse(w.to) === Date.parse(r.window.to);
+    };
+    setPreset(same('today') ? 'today' : same('yesterday') ? 'yesterday' : same('last_completed') ? 'last_completed' : 'custom');
+  }, [runId, runs, settings]);
+
   const loadRun = useCallback(async (id: string) => {
     lastLoad.current = id;
     const [r, c, a, rv] = await Promise.all([api.getRun(id), api.candidates(id), api.articles(id), api.review(id)]);
@@ -90,10 +104,9 @@ export function App() {
         setSettings(s);
         setSources(src);
         setRuns(rs);
-        const w = applyPreset(s.reportWindow.defaultPreset, s);
-        // open the saved run of the default window (e.g. "Hôm nay"); otherwise the most recent one
-        const same = rs.find((r) => Date.parse(r.window.from) === Date.parse(w.from) && Date.parse(r.window.to) === Date.parse(w.to));
-        const first = same ?? rs[0];
+        // open the most recent collection (its window fills Từ/Đến, see the effect on runId); no collection yet → default window
+        const first = latestRun(rs);
+        if (!first) applyPreset(s.reportWindow.defaultPreset, s);
         if (first) {
           setRunId(first.runId);
           await loadRun(first.runId);
@@ -422,7 +435,7 @@ export function App() {
           <section className="card flex flex-wrap items-end gap-3 p-3" data-testid="live-periods">
             <label>
               <span className="label">Kỳ báo cáo (dữ liệu thu thập tự động)</span>
-              <select className="input w-96" value={runId ?? ''} onChange={(e) => setRunId(e.target.value)}>
+              <select className="input w-96" value={runId ?? ''} onChange={(e) => ((shownWindowOf.current = null), setRunId(e.target.value))} aria-label="Lượt đã lưu">
                 {runs.map((r) => (
                   <option key={r.runId} value={r.runId}>
                     Sáng {formatVn(r.window.to).slice(6)} · {formatVn(r.window.from)} → {formatVn(r.window.to)}{r.notes.some((x) => /đang diễn ra/.test(x)) ? ' · ĐANG DIỄN RA' : ''}
@@ -482,7 +495,7 @@ export function App() {
           {runs.length > 0 && (
             <label>
               <span className="label">Lượt đã lưu</span>
-              <select className="input w-64" value={runId ?? ''} onChange={(e) => setRunId(e.target.value)}>
+              <select className="input w-64" value={runId ?? ''} onChange={(e) => ((shownWindowOf.current = null), setRunId(e.target.value))} aria-label="Lượt đã lưu">
                 {runs.map((r) => (
                   <option key={r.runId} value={r.runId}>
                     {formatVn(r.window.from)} → {formatVn(r.window.to)} · {api.mode === 'live' ? (r.notes.find((x) => /theo yêu cầu|đang diễn ra/.test(x)) ?? 'tự động') : r.status}
@@ -708,6 +721,12 @@ function DateTime24({ label, value, onChange }: { label: string; value: string; 
       </div>
     </fieldset>
   );
+}
+
+/** the most recent collection: latest finish (or start) time */
+function latestRun<T extends { finishedAt: string | null; createdAt: string }>(rs: T[]): T | undefined {
+  const at = (r: T) => Date.parse(r.finishedAt ?? r.createdAt) || 0;
+  return [...rs].sort((a, b) => at(b) - at(a))[0];
 }
 
 /** window of a preset ("Kỳ gần nhất", "Hôm nay", "Hôm qua", saved custom) */

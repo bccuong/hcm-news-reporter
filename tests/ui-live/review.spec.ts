@@ -342,3 +342,25 @@ test('web: "Dò cấu trúc" and "Thử thu thập" run in the browser through t
   await expect(card).toContainText('Mưa lớn tối 8.11'); // a sample article really extracted
   await page.screenshot({ path: 'docs/screenshots/web-source-test.png' });
 });
+
+test('F5 opens the most recent collection; picking a saved run loads its window into Từ / Đến', async ({ page }) => {
+  await page.goto('');
+  await page.waitForLoadState('networkidle');
+  const picker = page.getByLabel('Lượt đã lưu');
+  const opts = await picker.locator('option').allInnerTexts();
+  expect(opts.length).toBeGreaterThanOrEqual(2);
+  // the on-demand period 18:00 08/11 → 07:00 09/11 (collected in an earlier test) is the most recent collection
+  await expect(picker.locator('option:checked')).toContainText('18:00 08/11/2026');
+  const field = async (l: string) => `${await page.getByLabel(`${l} – ngày`).inputValue()}T${await page.getByLabel(`${l} – giờ`).inputValue()}:${await page.getByLabel(`${l} – phút`).inputValue()}`;
+  expect(await field('Từ (gồm)')).toBe('2026-11-08T18:00');
+  expect(await field('Đến (không gồm)')).toBe('2026-11-09T07:00');
+  await expect(page.getByRole('button', { name: 'Tùy chỉnh' })).toHaveClass(/bg-navy-700/);
+  // pick the daily period: Từ / Đến follow
+  const daily = opts.find((o) => o.startsWith('17:00 08/11/2026'))!;
+  await picker.selectOption({ label: daily });
+  await expect.poll(() => field('Từ (gồm)')).toBe('2026-11-08T17:00');
+  expect(await field('Đến (không gồm)')).toBe('2026-11-09T08:00');
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByLabel('Lượt đã lưu').locator('option:checked')).toContainText('18:00 08/11/2026'); // F5 → most recent again
+});

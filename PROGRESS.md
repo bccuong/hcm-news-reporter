@@ -7,7 +7,12 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13p – cover without "SÁNG", suggested units for "Tồn tại", feed-date trust; 2026-11-16)
+## ▶ RESUME HERE (session 13q – open the latest collection; Từ/Đến follow the picked run; 2026-11-16)
+- User: F5 selected "Hôm nay" instead of the most recent collection; Từ/Đến should follow the run picked in "Lượt đã lưu".
+- Done (web/src/App.tsx): startup opens `latestRun()` (latest finish time); the default window preset only applies when there is no collection yet (Settings label updated). An effect on the shown run fills Từ/Đến from its window and highlights the matching preset (Kỳ gần nhất / Hôm nay / Hôm qua / Tùy chỉnh) – for the picker, startup and finished collections.
+- Tests: typecheck, vitest 127/127, playwright 11/11, live E2E 8/8 (new: "F5 opens the most recent collection…").
+
+## (history) Session 13p – cover without "SÁNG", suggested units for "Tồn tại", feed-date trust; 2026-11-16)
 - User: the cover must not say "SÁNG NGÀY" (any window can be reported) → "NGÀY dd/mm/yyyy" in the Skill template (incl. dated layout/master footers) and the 4 designs.
 - User: proposals for "Tồn tại cần khắc phục" follow the Sở guidance → `settings.editorial.assignmentRules` (6 default groups: mưa bão/ngập/thoát nước/cây xanh → P. Hạ tầng kỹ thuật + TT QL giao thông và HTKT; ùn tắc/kẹt xe → TT QL điều hành giao thông đô thị; huy động vốn/nhà ở hình thành trong tương lai → P. Phát triển đô thị; chất lượng/hư hỏng/xuống cấp/sụp đổ → P. QL chất lượng công trình; sai phép/trái phép/không phép → P. Kiểm tra chuyên ngành; mặt đường/ổ gà → P. Bảo trì và Khai thác CTGT) + fallback sentence. `suggestAssignment` (src/domain/assignment.ts: title keyword 3, sapo 1, strongest group). Used by the report when the editor wrote no proposal; Inspector shows the suggestion with its evidence and "Dùng gợi ý"; rules editable in Cài đặt › Báo cáo & mẫu. Recommendation slide lines capitalised ("Giao Phòng …"). Rendered with the Skill template and checked as PowerPoint PNGs.
 - Collector: (a) a feed date read later (parser fix) is taken for links seen again in a continued run; (b) feed dates trusted per publisher once ≥ 5 stories read in the run match their page time (≤ 10 min) → links dated outside the window are recorded FEED_DATE_CONFIRMED without download.

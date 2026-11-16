@@ -490,7 +490,7 @@ function TimePanel({ s, up }: { s: Settings; up: Up }) {
         <div className="grid gap-3 md:grid-cols-3">
           <Field label="Giờ bắt đầu (hôm trước)"><input className="input" type="time" value={s.reportWindow.startClock} onChange={(e) => up('reportWindow', { startClock: e.target.value })} /></Field>
           <Field label="Giờ kết thúc (ngày báo cáo)"><input className="input" type="time" value={s.reportWindow.endClock} onChange={(e) => up('reportWindow', { endClock: e.target.value })} /></Field>
-          <Select label="Khung mặc định khi mở ứng dụng" value={s.reportWindow.defaultPreset} onChange={(v) => up('reportWindow', { defaultPreset: v })} options={[['last_completed', 'Kỳ gần nhất (đã kết thúc)'], ['today', 'Hôm nay'], ['yesterday', 'Hôm qua'], ['custom', 'Tùy chỉnh đã lưu']]} />
+          <Select label="Khung mặc định khi chưa có lượt thu thập nào (có lượt rồi thì mở lượt gần nhất)" value={s.reportWindow.defaultPreset} onChange={(v) => up('reportWindow', { defaultPreset: v })} options={[['last_completed', 'Kỳ gần nhất (đã kết thúc)'], ['today', 'Hôm nay'], ['yesterday', 'Hôm qua'], ['custom', 'Tùy chỉnh đã lưu']]} />
         </div>
         <p className="rounded bg-teal-50 p-2 text-xs text-teal-900">{preview}</p>
         <NumberField label="Biên dò thêm quanh khung giờ" value={s.reportWindow.lookbackMarginHours} min={0} max={72} suffix="giờ" onChange={(n) => up('reportWindow', { lookbackMarginHours: n })} help="Bài có ngày RSS nằm ngoài khung ± biên này được ghi nhận Ngoài khung mà không tải. Bài trong biên vẫn được tải để xác minh giờ đăng thật." />
