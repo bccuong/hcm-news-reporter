@@ -501,8 +501,8 @@ export function App() {
               ))}
             </div>
           </div>
-          <DateTime24 label="Từ (gồm)" value={from} onChange={(v) => (setFrom(v), setPreset('custom'))} />
-          <DateTime24 label="Đến (không gồm)" value={to} onChange={(v) => (setTo(v), setPreset('custom'))} />
+          <DateTime24 label="Từ" value={from} onChange={(v) => (setFrom(v), setPreset('custom'))} />
+          <DateTime24 label="Đến" value={to} onChange={(v) => (setTo(v), setPreset('custom'))} />
           <div className="text-xs text-slate-500">
             Asia/Ho_Chi_Minh (UTC+07:00)
             <br />
@@ -762,10 +762,15 @@ function DateTime24({ label, value, onChange }: { label: string; value: string; 
   const set = (nd: string, nh: string, nm: string) => nd && onChange(`${nd}T${nh}:${nm}`);
   const two = (n: number) => String(n).padStart(2, '0');
   return (
-    <fieldset role="group" aria-label={label}>
-      <legend className="label">{label}</legend>
-      <div className="flex items-center gap-1">
+    // "Từ ngày [date]  Giờ [hh]:[mm]"
+    <fieldset role="group" aria-label={label} className="flex items-end gap-2">
+      <label>
+        <span className="label">{label} ngày</span>
         <input type="date" className="input w-40" aria-label={`${label} – ngày`} value={d} onChange={(e) => set(e.target.value, h, m)} />
+      </label>
+      <div>
+      <span className="label">Giờ</span>
+      <div className="flex items-center gap-1">
         <select className="input w-16 px-1" aria-label={`${label} – giờ`} value={h} onChange={(e) => set(d, e.target.value, m)}>
           {Array.from({ length: 24 }, (_, i) => <option key={i} value={two(i)}>{two(i)}</option>)}
         </select>
@@ -773,6 +778,7 @@ function DateTime24({ label, value, onChange }: { label: string; value: string; 
         <select className="input w-16 px-1" aria-label={`${label} – phút`} value={m} onChange={(e) => set(d, h, e.target.value)}>
           {Array.from({ length: 60 }, (_, i) => <option key={i} value={two(i)}>{two(i)}</option>)}
         </select>
+      </div>
       </div>
     </fieldset>
   );

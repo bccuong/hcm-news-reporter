@@ -96,8 +96,8 @@ test('web "Thu thập" like the local app: choose from/to → server collection 
   await page.goto('');
   // same window controls as the local app
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
-  await setWindowField(page, 'Từ (gồm)', '2026-11-08T18:00');
-  await setWindowField(page, 'Đến (không gồm)', '2026-11-09T07:00');
+  await setWindowField(page, 'Từ', '2026-11-08T18:00');
+  await setWindowField(page, 'Đến', '2026-11-09T07:00');
   await expect(page.getByText('[18:00 08/11/2026, 07:00 09/11/2026)')).toBeVisible();
   // collecting requires a reviewer session
   await page.getByRole('button', { name: 'Thu thập' }).click();
@@ -376,20 +376,20 @@ test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; pic
   const field = async (l: string) => `${await page.getByLabel(`${l} – ngày`).inputValue()}T${await page.getByLabel(`${l} – giờ`).inputValue()}:${await page.getByLabel(`${l} – phút`).inputValue()}`;
   // the on-demand period 18:00 08/11 → 07:00 09/11 (collected in an earlier test) is the most recent collection
   await expect(picker).toContainText('08/11 18:00 → 09/11 07:00'); // compact label
-  expect(await field('Từ (gồm)')).toBe('2026-11-08T18:00');
-  expect(await field('Đến (không gồm)')).toBe('2026-11-09T07:00');
+  expect(await field('Từ')).toBe('2026-11-08T18:00');
+  expect(await field('Đến')).toBe('2026-11-09T07:00');
   await expect(page.getByRole('button', { name: 'Kỳ gần nhất' })).toHaveClass(/bg-navy-700/); // latest run = "Kỳ gần nhất"
   await picker.click();
   expect(await rows.count()).toBeGreaterThanOrEqual(2);
   await expect(rows.first()).toHaveAttribute('aria-selected', 'true'); // newest first, current one ticked
   // pick the daily period: Từ / Đến follow
   await rows.filter({ hasText: '08/11 17:00 → 09/11 08:00' }).click();
-  await expect.poll(() => field('Từ (gồm)')).toBe('2026-11-08T17:00');
-  expect(await field('Đến (không gồm)')).toBe('2026-11-09T08:00');
+  await expect.poll(() => field('Từ')).toBe('2026-11-08T17:00');
+  expect(await field('Đến')).toBe('2026-11-09T08:00');
   // "Kỳ gần nhất" goes back to the most recent run (not a computed clock window)
   await page.getByRole('button', { name: 'Kỳ gần nhất' }).click();
   await expect(picker).toContainText('08/11 18:00 → 09/11 07:00');
-  await expect.poll(() => field('Từ (gồm)')).toBe('2026-11-08T18:00');
+  await expect.poll(() => field('Từ')).toBe('2026-11-08T18:00');
   await page.reload();
   await page.waitForLoadState('networkidle');
   await expect(picker).toContainText('08/11 18:00 → 09/11 07:00'); // F5 → most recent again
