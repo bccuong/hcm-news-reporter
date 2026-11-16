@@ -346,6 +346,59 @@ async function collectStatus(env: Env, f: Fetch, h: Record<string, string>) {
   return json({ enabled: true, runs }, 200, h);
 }
 
+/* ---------------- shared editorial review (one decision per article per period, for the whole team) ---------------- */
+/**
+ * KV key: rv:<profile>:<period>:<articleId>. Metadata = compact decision (≤ 1 KB) so a period is read with one list;
+ * edited texts (title, summary, short label, proposal) live in the value and are fetched only when present.
+ * Personal votes (✓/✗, note) stay in the labels store.
+ */
+const PERIOD_ID = /^[A-Za-z0-9_-]{1,80}$/;
+const rvPrefix = (pid: string, period: string) => `rv:${pid}:${period}:`;
+const REVIEW_BOOL = ['included', 'promotedToReady', 'excludedByEditor', 'timeVerifiedManually', 'extractionMarkedComplete'] as const;
+const REVIEW_TEXT: Record<string, number> = { title: 300, summary: 2000, shortLabel: 80, proposal: 600 };
+export interface SharedDecision {
+  articleId: string; included?: boolean; order?: number; promotedToReady?: boolean; excludedByEditor?: boolean; timeVerifiedManually?: boolean;
+  extractionMarkedComplete?: boolean; groupId?: string | null; primaryImageUrl?: string | null; primaryCategory?: string | null; assessment?: string | null;
+  title?: string; summary?: string; shortLabel?: string; proposal?: string; by: string; at: string;
+}
+/** only known fields with valid values; null clears a nullable field */
+export function cleanReviewPatch(raw: unknown): Partial<SharedDecision> | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of REVIEW_BOOL) if (typeof o[k] === 'boolean') out[k] = o[k];
+  if (typeof o.order === 'number' && Number.isFinite(o.order)) out.order = o.order;
+  if (o.groupId === null || (typeof o.groupId === 'string' && ART.test(o.groupId))) out.groupId = o.groupId;
+  if (o.primaryImageUrl === null || (typeof o.primaryImageUrl === 'string' && /^https:\/\//.test(o.primaryImageUrl) && o.primaryImageUrl.length <= 600)) out.primaryImageUrl = o.primaryImageUrl;
+  if (o.primaryCategory === null || (typeof o.primaryCategory === 'string' && (CATEGORIES as readonly string[]).includes(o.primaryCategory))) out.primaryCategory = o.primaryCategory;
+  if (o.assessment === null || (typeof o.assessment === 'string' && (ASSESSMENTS as readonly string[]).includes(o.assessment))) out.assessment = o.assessment;
+  for (const [k, max] of Object.entries(REVIEW_TEXT)) if (typeof o[k] === 'string') out[k] = (o[k] as string).slice(0, max);
+  return out as Partial<SharedDecision>;
+}
+const META_OF = (d: SharedDecision) => {
+  // long values (edited texts, photo URL) stay in the value – metadata must fit 1 KB
+  const { title, summary, shortLabel, proposal, primaryImageUrl, ...m } = d;
+  return { ...m, txt: !!(title || summary || shortLabel || proposal || primaryImageUrl) };
+};
+async function readReviews(env: Env, pid: string, period: string): Promise<Record<string, SharedDecision>> {
+  const keys = await listAll(env.REVIEWS, rvPrefix(pid, period));
+  const out: Record<string, SharedDecision> = {};
+  for (const k of keys) {
+    const m = k.metadata as (SharedDecision & { txt?: boolean }) | undefined;
+    if (m && !m.txt) {
+      const { txt: _t, ...d } = m;
+      out[d.articleId] = d;
+      continue;
+    }
+    const v = await env.REVIEWS.get(k.name);
+    if (v) {
+      const d = JSON.parse(v) as SharedDecision;
+      out[d.articleId] = d;
+    }
+  }
+  return out;
+}
+
 export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fetch(i, init)): Promise<Response> {
   const h = cors(req, env);
   const url = new URL(req.url);
@@ -358,6 +411,14 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
     const pid = url.searchParams.get('profile') ?? DEFAULT_PROFILE;
     const v = PROFILE_ID.test(pid) ? await readConfig(env, pid) : null;
     return json({ config: v ? JSON.parse(v) : null }, 200, h);
+  }
+
+  // shared editorial review of a period: public read (same audience as the published period)
+  if (url.pathname === '/review' && req.method === 'GET') {
+    const pid = url.searchParams.get('profile') ?? DEFAULT_PROFILE;
+    const period = url.searchParams.get('period') ?? '';
+    if (!PROFILE_ID.test(pid) || !PERIOD_ID.test(period)) return json({ error: 'INVALID_PERIOD' }, 400, h);
+    return json({ period, reviews: await readReviews(env, pid, period) }, 200, h);
   }
 
   // nightly export for the GitHub Action (bearer token, never sent to browsers)
@@ -400,6 +461,24 @@ export async function handle(req: Request, env: Env, f: Fetch = (i, init) => fet
     list[i] = { ...list[i]!, autoCollect: b.enabled, autoBy: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', autoAt: new Date().toISOString() };
     await saveProfiles(env, list);
     return json({ ok: true, profile: list[i] }, 200, h);
+  }
+
+  if (url.pathname === '/review' && req.method === 'POST') {
+    if (Number(req.headers.get('content-length') ?? 0) > 8000) return json({ error: 'TOO_LARGE' }, 413, h);
+    const b = (await req.json().catch(() => null)) as { profile?: string; period?: string; articleId?: string; patch?: unknown; reviewer?: string } | null;
+    const pid = String(b?.profile ?? DEFAULT_PROFILE);
+    const period = String(b?.period ?? '');
+    const articleId = String(b?.articleId ?? '');
+    const reviewer = String(b?.reviewer ?? '').trim().slice(0, 40);
+    if (!PROFILE_ID.test(pid) || !PERIOD_ID.test(period) || !ART.test(articleId)) return json({ error: 'INVALID_ARTICLE' }, 400, h);
+    if (!reviewer) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
+    const patch = cleanReviewPatch(b?.patch);
+    if (!patch || !Object.keys(patch).length) return json({ error: 'INVALID_PATCH' }, 400, h);
+    const key = `${rvPrefix(pid, period)}${articleId}`;
+    const prev = await env.REVIEWS.get(key);
+    const next: SharedDecision = { ...(prev ? (JSON.parse(prev) as SharedDecision) : { articleId }), ...patch, articleId, by: reviewer, at: new Date().toISOString() };
+    await env.REVIEWS.put(key, JSON.stringify(next), { metadata: META_OF(next) });
+    return json({ ok: true, review: next }, 200, h);
   }
 
   if (url.pathname === '/labels' && req.method === 'GET') {

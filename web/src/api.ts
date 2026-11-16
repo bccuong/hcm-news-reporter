@@ -65,6 +65,14 @@ export interface Api {
   shared?: SharedReview;
 }
 
+/** fields of the team's shared decision (web); relevanceLabel / reviewNote are personal votes */
+export const SHARED_REVIEW_FIELDS = ['included', 'order', 'promotedToReady', 'excludedByEditor', 'timeVerifiedManually', 'extractionMarkedComplete', 'groupId', 'primaryImageUrl', 'primaryCategory', 'assessment', 'title', 'summary', 'shortLabel', 'proposal'] as const;
+function pickShared(p: Partial<ReviewDecision>): Partial<ReviewDecision> {
+  const out: Record<string, unknown> = {};
+  for (const k of SHARED_REVIEW_FIELDS) if (k in p && (p as Record<string, unknown>)[k] !== undefined) out[k] = (p as Record<string, unknown>)[k];
+  return out as Partial<ReviewDecision>;
+}
+
 export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: string | null; a: string | null; n: string; t: string }
 export interface CollectRun { id: number; status: string; conclusion: string | null; createdAt: string; updatedAt: string; event: string; kind?: 'auto' | 'request' | 'deploy'; title: string; url: string }
 export interface ServerStatus {
@@ -511,7 +519,8 @@ class DemoApi implements Api {
   async getRun(id: string) {
     const b = await this.load(id);
     const rec = (b.manifest as RunInfo).reconciliation ?? { total: b.candidates.length, accounted: b.candidates.length, transient: 0, balanced: true };
-    return { ...b.manifest, active: false, reconciliation: rec };
+    // the id this period is listed (and its team review stored) under, whatever the published manifest says
+    return { ...b.manifest, runId: id, active: false, reconciliation: rec };
   }
   async cancel() {}
   async retry(): Promise<never> {
@@ -523,11 +532,78 @@ class DemoApi implements Api {
   async articles(id: string) {
     return (await this.load(id)).articles;
   }
+  /**
+   * Web: ONE review per period for the whole team (worker /review): selection, order, Sẵn sàng/Loại, edits, merges…
+   * Personal votes (✓/✗ relevance, note) stay per reviewer (labels store). Offline → the last copy in this browser.
+   */
+  private get teamReview() {
+    return !!this.reviewApi && this.mode === 'live';
+  }
   async review(id: string) {
-    return store.get<Record<string, ReviewDecision>>(`review:${id}`) ?? {};
+    const local = store.get<Record<string, ReviewDecision>>(`review:${id}`) ?? {};
+    if (!this.teamReview) return local;
+    let team: Record<string, Partial<ReviewDecision> & { by?: string; at?: string }>;
+    try {
+      const r = await fetch(`${this.reviewApi}/review?profile=${encodeURIComponent(this.pid)}&period=${encodeURIComponent(id)}`, { cache: 'no-cache' });
+      if (!r.ok) throw new Error(String(r.status));
+      team = ((await r.json()) as { reviews: typeof team }).reviews;
+    } catch {
+      return local; // offline: last copy seen in this browser
+    }
+    team = await this.migrateLocalReview(id, local, team);
+    const out: Record<string, ReviewDecision> = {};
+    for (const aid of new Set([...Object.keys(local), ...Object.keys(team)])) {
+      const l = local[aid];
+      const t = team[aid];
+      const { by, at, ...shared } = t ?? {};
+      out[aid] = {
+        articleId: aid, included: false, order: 0, updatedAt: at ?? l?.updatedAt ?? '', changes: l?.changes ?? [],
+        // personal votes from this browser, the team's decision from the worker
+        ...(l?.relevanceLabel !== undefined ? { relevanceLabel: l.relevanceLabel } : {}), ...(l?.reviewNote !== undefined ? { reviewNote: l.reviewNote } : {}),
+        ...shared, ...(by ? { sharedBy: by, sharedAt: at } : {}),
+      } as ReviewDecision;
+    }
+    store.set(`review:${id}`, out);
+    return out;
+  }
+  /** first visit of a period with a reviewer session: decisions made in this browser before the team review existed are shared once (never over the team's) */
+  private async migrateLocalReview(id: string, local: Record<string, ReviewDecision>, team: Record<string, any>) {
+    const s = store.get<{ name: string; code: string }>('reviewer');
+    const flag = `rvmig:${this.pid}:${id}`;
+    if (!s || store.get<boolean>(flag)) return team;
+    const next = { ...team };
+    for (const [aid, d] of Object.entries(local)) {
+      if (team[aid]) continue;
+      const patch = pickShared(d);
+      const meaningful = patch.included || patch.promotedToReady || patch.excludedByEditor || patch.groupId || patch.title || patch.summary || patch.shortLabel || patch.proposal || patch.timeVerifiedManually || patch.primaryImageUrl;
+      if (!meaningful) continue;
+      try {
+        next[aid] = await this.postTeamReview(id, aid, patch, s);
+      } catch {
+        return team; // try again next time
+      }
+    }
+    store.set(flag, true);
+    return next;
+  }
+  private async postTeamReview(id: string, articleId: string, patch: Partial<ReviewDecision>, s: { name: string; code: string }) {
+    const r = await fetch(`${this.reviewApi}/review`, {
+      method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' },
+      body: JSON.stringify({ profile: this.pid, period: id, articleId, patch, reviewer: s.name }),
+    });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được kết quả duyệt chung (HTTP ${r.status})`);
+    return ((await r.json()) as { review: Partial<ReviewDecision> & { by?: string; at?: string } }).review;
   }
   async patchReview(id: string, articleId: string, patch: Partial<ReviewDecision>) {
-    const all = await this.review(id);
+    const all = store.get<Record<string, ReviewDecision>>(`review:${id}`) ?? {};
+    // the team's decision is saved on the worker first (needs a reviewer session); the browser keeps a copy
+    const shared = pickShared(patch);
+    let team: (Partial<ReviewDecision> & { by?: string; at?: string }) | null = null;
+    if (this.teamReview && Object.keys(shared).length) {
+      const s = store.get<{ name: string; code: string }>('reviewer');
+      if (!s) throw new ApiError('Hãy đăng nhập người duyệt để lưu kết quả duyệt chung cho cả nhóm');
+      team = await this.postTeamReview(id, articleId, shared, s);
+    }
     const now = new Date().toISOString();
     const prev: ReviewDecision = all[articleId] ?? { articleId, included: false, order: Object.keys(all).length, updatedAt: now, changes: [] };
     const changes = [...prev.changes];
@@ -540,6 +616,10 @@ class DemoApi implements Api {
         reportDate: this.reportDateOf(id), articleId, url: a?.originalUrl ?? '', title: a?.title ?? '', sourceId: a?.sourceId ?? '',
         label: next.relevanceLabel ?? null, category: next.primaryCategory ?? null, assessment: next.assessment ?? null, note: next.reviewNote ?? '',
       });
+    }
+    if (team) {
+      const { by, at, ...rest } = team;
+      Object.assign(next, rest, { sharedBy: by, sharedAt: at });
     }
     all[articleId] = next;
     store.set(`review:${id}`, all);

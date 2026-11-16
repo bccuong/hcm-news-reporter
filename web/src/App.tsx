@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, Wifi, WifiOff, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
@@ -67,8 +67,13 @@ export function App() {
     return w;
   }, []);
 
+  // several loads can be in flight (startup, run picker, live refresh): only the most recently requested run is shown,
+  // otherwise a slow earlier load could display one period while the review is saved to another
+  const lastLoad = useRef<string | null>(null);
   const loadRun = useCallback(async (id: string) => {
+    lastLoad.current = id;
     const [r, c, a, rv] = await Promise.all([api.getRun(id), api.candidates(id), api.articles(id), api.review(id)]);
+    if (lastLoad.current !== id) return;
     setRun(r);
     setCands(c);
     setArts(a);
@@ -296,11 +301,29 @@ export function App() {
     const t = setInterval(reloadVotes, 120_000);
     return () => clearInterval(t);
   }, [reloadVotes, reviewer]);
+  // the team's shared review (selection, Sẵn sàng/Loại, edits): other reviewers' changes every minute and when the tab gets focus
+  useEffect(() => {
+    if (!api.shared || !runId) return;
+    const id = runId;
+    const pull = () => {
+      if (document.visibilityState === 'visible') api.review(id).then((rv) => setReviews((cur) => (runIdRef.current === id ? rv : cur))).catch(() => {});
+    };
+    if (reviewer) pull(); // right after login: this browser's earlier decisions are shared once (api.review), the team's appear
+    const t = setInterval(pull, 60_000);
+    window.addEventListener('focus', pull);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('focus', pull);
+    };
+  }, [runId, reviewer]);
+  const runIdRef = useRef(runId);
+  runIdRef.current = runId;
   /** in shared mode, labelling requires a reviewer session; the reviewer's own vote is shown immediately */
   const guardedPatch = async (articleId: string, p: Partial<ReviewDecision>) => {
     const reviewKeys = ['relevanceLabel', 'primaryCategory', 'assessment', 'reviewNote'];
     const s = api.shared?.session();
-    if (api.shared && !s && reviewKeys.some((k) => k in p)) {
+    // web: the review is the team's (selection, Sẵn sàng/Loại, edits too) → every change needs a reviewer session
+    if (api.shared && !s) {
       setLoginOpen(true);
       return;
     }
@@ -829,7 +852,12 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                       <Undo2 className="h-3.5 w-3.5" /> Trả về
                     </button>
                   )}
-                  <button className="btn-ghost btn-xs ml-auto text-red-700" onClick={() => onPatch(a.id, { excludedByEditor: true, included: false })} title="Loại bài này khỏi danh sách và báo cáo (khôi phục ở mục Đã loại bên dưới)" aria-label={`Loại bài: ${a.title}`}>
+                  {r?.sharedBy && (
+                    <span className="ml-auto text-[11px] text-slate-500" title="Kết quả duyệt dùng chung cho cả nhóm" data-testid="shared-by">
+                      duyệt chung: {r.sharedBy}{r.sharedAt ? ` · ${formatVn(r.sharedAt)}` : ''}
+                    </span>
+                  )}
+                  <button className={`btn-ghost btn-xs text-red-700 ${r?.sharedBy ? '' : 'ml-auto'}`} onClick={() => onPatch(a.id, { excludedByEditor: true, included: false })} title="Loại bài này khỏi danh sách và báo cáo (khôi phục ở mục Đã loại bên dưới)" aria-label={`Loại bài: ${a.title}`}>
                     <Trash2 className="h-3.5 w-3.5" /> Loại
                   </button>
                 </div>

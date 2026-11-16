@@ -7,6 +7,7 @@
 | DIS-06 / LED-02 duplicate by canonical | PASS (improved) | A link that is the canonical page of an already extracted story → `duplicate` DUPLICATE_CANONICAL, no fetch, its discovery evidence merged into the story; `tests/collector.test.ts` "a link that is already the canonical page…" (fails without the fix). vitest 90/90, playwright 9/9. |
 | UI – profile scope & template choice (user feedback) | PASS | Settings show the active profile and group its sections; export + Settings list all 5 templates as radio cards. Live E2E 5/5 (`tests/ui-live/review.spec.ts`: per-profile nav for "Đà Nẵng", 5 built-in templates visible, Skill template default, export with "ban-tin"). Screenshots in docs/screenshots. |
 | DIS-08 false degraded after carry-over | PASS (fixed) | 09:12 live run falsely degraded 3 sources; fix 7649d00, 09:49 live run: 6/6 ok, ready 35. |
+| Web shared review (team) | **PASS** | One decision per article per period on the review worker (deployed); two-browser E2E: A selects/removes/moves → B (another machine, not logged in) sees the same lists, report selection and "duyệt chung: A"; B cannot change without login; B's change reaches A. vitest worker tests (merge, validation, separation per period/profile). |
 | DIS-08 | PASS (adjusted) | Container drift share now counts only articles with a recorded container (carried-over articles from older data have none) – `tests/health.test.ts` green. |
 
 

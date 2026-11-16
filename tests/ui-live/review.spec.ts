@@ -252,3 +252,56 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ho
   await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('hcm');
   await expect(page.locator('article').filter({ hasText: 'khiến nhiều tuyến đường ở phường Hiệp Bình' }).first()).toBeVisible();
 });
+test('web review is ONE for the whole team: what A selects / moves / removes on one machine, B sees on another', async ({ browser }) => {
+  const a = await (await browser.newContext()).newPage();
+  await a.goto('');
+  await login(a, 'Người duyệt G', 'HCM-TEST-CODE');
+  await expect(a.getByTestId('reviewer-chip')).toContainText('Người duyệt G');
+  await a.reload();
+  await a.waitForLoadState('networkidle'); // the team review is loaded (earlier tests already changed it)
+  const readyTab = (p: Page) => p.getByRole('button', { name: /^Bài sẵn sàng/ });
+  const reviewTab = (p: Page) => p.getByRole('button', { name: /^Cần kiểm tra/ });
+  const n = async (l: ReturnType<typeof readyTab>) => Number(/\((\d+)\)/.exec(await l.innerText())![1]);
+  // A: select one ready story for the report, remove another, move one story from Cần kiểm tra
+  const stories = a.locator('article');
+  const t1 = (await stories.nth(0).locator('h3').innerText()).trim();
+  const t2 = (await stories.nth(1).locator('h3').innerText()).trim();
+  await stories.nth(0).getByLabel(/^Chọn bài/).check();
+  await a.locator('article').filter({ hasText: t2 }).getByRole('button', { name: /^Loại bài:/ }).click();
+  await reviewTab(a).click();
+  const review1 = await n(reviewTab(a));
+  const t3 = (await a.locator('article').first().locator('h3').innerText()).trim();
+  await a.locator('article').first().getByRole('button', { name: /Chuyển sang Bài sẵn sàng/ }).click();
+  await expect(reviewTab(a)).toHaveText(`Cần kiểm tra (${review1 - 1})`);
+  const readyA = await readyTab(a).innerText();
+  const reviewA = await reviewTab(a).innerText();
+  const exportA = await a.getByRole('button', { name: /^Xuất báo cáo/ }).innerText();
+  const nSel = Number(/\((\d+)\)/.exec(exportA)![1]);
+
+  // B on another machine (fresh browser), not logged in: sees the same team review
+  const b = await (await browser.newContext()).newPage();
+  await b.goto('');
+  await b.waitForLoadState('networkidle');
+  await expect(readyTab(b)).toHaveText(readyA); // the same lists on the other machine
+  await expect(reviewTab(b)).toHaveText(reviewA);
+  await expect(b.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(exportA);
+  const s1 = b.locator('article').filter({ hasText: t1 });
+  await expect(s1.getByLabel(/^Chọn bài/)).toBeChecked();
+  await expect(s1.getByTestId('shared-by')).toContainText('Người duyệt G');
+  await expect(b.locator('article').filter({ hasText: t3 })).toContainText('từ Cần kiểm tra');
+  await b.getByTestId('excluded-list').locator('summary').click();
+  await expect(b.getByTestId('excluded-list')).toContainText(t2);
+  await b.screenshot({ path: 'docs/screenshots/web-team-review.png' });
+  // without a session B cannot change it (login dialog), with one B's change reaches A
+  await s1.getByLabel(/^Chọn bài/).uncheck().catch(() => undefined);
+  await expect(b.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
+  await b.getByLabel('Họ tên').fill('Người duyệt H');
+  await b.getByLabel('Mã truy cập (do quản trị gửi)').fill('HCM-TEST-CODE');
+  await b.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(b.getByTestId('reviewer-chip')).toContainText('Người duyệt H');
+  await b.locator('article').filter({ hasText: t1 }).getByLabel(/^Chọn bài/).uncheck();
+  await expect(b.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(`Xuất báo cáo (${nSel - 1})`);
+  await a.reload();
+  await expect(a.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(`Xuất báo cáo (${nSel - 1})`);
+  await expect(a.locator('article').filter({ hasText: t1 }).getByTestId('shared-by')).toContainText('Người duyệt H');
+});

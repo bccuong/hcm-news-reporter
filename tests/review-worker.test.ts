@@ -228,6 +228,42 @@ describe('shared review worker', () => {
       expect(r.status).toBe(400);
     });
   });
+  describe('shared editorial review (one decision per article per period, whole team)', () => {
+    const rv = (e: Env, body: unknown, code = 'HCM-test-1234') =>
+      handle(new Request('https://w.example/review', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);
+    const read = async (e: Env, period = 'custom-202611151700-202611161145', profile = 'hcm') =>
+      (await (await handle(new Request(`https://w.example/review?profile=${profile}&period=${period}`, { headers: { origin: ORIGIN } }), e)).json()) as { reviews: Record<string, any> };
+    const P = 'custom-202611151700-202611161145';
+    it('public read, reviewer write; patches merge per article and record who/when', async () => {
+      const e = env();
+      expect((await rv(e, { profile: 'hcm', period: P, articleId: 'a_1234abcd5678', patch: { included: true }, reviewer: 'A' }, 'wrong')).status).toBe(401);
+      expect((await rv(e, { profile: 'hcm', period: P, articleId: 'a_1234abcd5678', patch: { included: true, order: 3 }, reviewer: 'Người A' })).status).toBe(200);
+      await rv(e, { profile: 'hcm', period: P, articleId: 'a_1234abcd5678', patch: { promotedToReady: true, summary: 'Tóm tắt đã sửa' }, reviewer: 'Người B' });
+      await rv(e, { profile: 'hcm', period: P, articleId: 'a_9999abcd0000', patch: { excludedByEditor: true, included: false }, reviewer: 'Người A' });
+      const r = (await read(e)).reviews;
+      expect(r['a_1234abcd5678']).toMatchObject({ included: true, order: 3, promotedToReady: true, summary: 'Tóm tắt đã sửa', by: 'Người B' });
+      expect(r['a_9999abcd0000']).toMatchObject({ excludedByEditor: true, included: false, by: 'Người A' });
+      // other periods and profiles are separate
+      expect((await read(e, 'custom-202611161700-202611170800')).reviews).toEqual({});
+      expect((await read(e, P, 'ha-noi')).reviews).toEqual({});
+    });
+    it('rejects unknown fields / bad values, bad ids, missing reviewer; null clears', async () => {
+      const e = env();
+      expect((await rv(e, { profile: 'hcm', period: P, articleId: 'a_1234abcd5678', patch: { hacked: 1 }, reviewer: 'A' })).status).toBe(400);
+      expect((await rv(e, { profile: 'hcm', period: '../x', articleId: 'a_1234abcd5678', patch: { included: true }, reviewer: 'A' })).status).toBe(400);
+      expect((await rv(e, { profile: 'hcm', period: P, articleId: 'bad', patch: { included: true }, reviewer: 'A' })).status).toBe(400);
+      expect((await rv(e, { profile: 'hcm', period: P, articleId: 'a_1234abcd5678', patch: { included: true }, reviewer: ' ' })).status).toBe(400);
+      await rv(e, { profile: 'hcm', period: P, articleId: 'a_1234abcd5678', patch: { primaryCategory: 'NOPE', assessment: 'positive', primaryImageUrl: 'http://x/a.jpg', groupId: 'a_5555abcd1111' }, reviewer: 'A' });
+      let d = (await read(e)).reviews['a_1234abcd5678'];
+      expect(d.primaryCategory).toBeUndefined(); // invalid → ignored
+      expect(d.primaryImageUrl).toBeUndefined(); // https only
+      expect(d).toMatchObject({ assessment: 'positive', groupId: 'a_5555abcd1111' });
+      await rv(e, { profile: 'hcm', period: P, articleId: 'a_1234abcd5678', patch: { groupId: null }, reviewer: 'A' });
+      d = (await read(e)).reviews['a_1234abcd5678'];
+      expect(d.groupId).toBeNull();
+    });
+  });
+
   it('reviewer ids are ascii slugs', () => {
     expect(reviewerId('  Lê Đình Ánh ')).toBe('le-dinh-anh');
   });

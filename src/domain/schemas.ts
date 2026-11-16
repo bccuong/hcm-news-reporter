@@ -479,6 +479,9 @@ export interface ReviewDecision {
   promotedToReady?: boolean;
   /** editor removed the story from the lists ("Loại"; restorable under "Đã loại") – never deletes collected data */
   excludedByEditor?: boolean;
+  /** web: who last changed the team's shared decision and when (read-only, from the review worker) */
+  sharedBy?: string;
+  sharedAt?: string;
   updatedAt: string;
   changes: Array<{ at: string; field: string; from: unknown; to: unknown }>;
 }
