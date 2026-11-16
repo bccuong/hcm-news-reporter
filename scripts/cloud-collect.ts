@@ -68,7 +68,8 @@ export function toPublicArticle(a: Article): PublicArticle {
     extractionWarnings: a.extractionWarnings, sections: { paragraphs: count('paragraph'), headings: count('heading'), tables: count('table'), figures: count('figure') },
     location: a.location, relevance: a.relevance, primaryCategory: a.primaryCategory, classificationEvidence: a.classificationEvidence,
     suggestedAssessment: a.suggestedAssessment, assessmentEvidence: a.assessmentEvidence, duplicateGroupId: a.duplicateGroupId, dateEvidence: a.dateEvidence,
-    extractionContainer: a.extractionContainer ?? null,
+    // undefined (carried-over article, container unknown) stays absent – null would read as "no container found" = false drift
+    extractionContainer: a.extractionContainer,
     images: a.imageCandidates.filter((i) => /^https:\/\//.test(i.url) && i.rightsStatus !== 'not_usable').slice(0, 3)
       .map((i) => ({ url: i.url, caption: i.caption ? cut(i.caption, 200) : undefined, credit: i.credit, origin: i.origin, rightsStatus: i.rightsStatus })),
   };
@@ -80,7 +81,11 @@ export function fromPublicArticle(p: PublicArticle, runId: string, collectedAt: 
     id: p.id, runId, sourceId: p.sourceId, sourceName: p.sourceName, originType: 'website', originalUrl: p.url, canonicalUrl: p.url, title: p.title, sapo: p.sapo,
     bodyText: (p.contentSections ?? []).filter((s) => s.type !== 'figure').map((s) => s.text).join('\n'), contentSections: p.contentSections ?? [], articleLinks: [],
     author: p.author, publishedAt: p.publishedAt, modifiedAt: p.modifiedAt, collectedAt, dateConfidence: p.dateConfidence, dateEvidence: p.dateEvidence ?? [],
-    extractionAdapterVersion: 'carried-over', extractionContainer: p.extractionContainer, extractionCompleteness: p.extractionCompleteness, extractionWarnings: p.extractionWarnings ?? [],
+    // container: undefined = not evidence for this run's adapter-health check (only articles fetched in this run are).
+    // A previous run's ADAPTER_DEGRADED downgrade is undone; this run re-assesses health and re-applies it if still degraded.
+    extractionAdapterVersion: 'carried-over', extractionContainer: undefined,
+    extractionCompleteness: (p.extractionWarnings ?? []).some((w) => w.startsWith('ADAPTER_DEGRADED')) && p.extractionCompleteness === 'partial' && (p.extractionWarnings ?? []).every((w) => w.startsWith('ADAPTER_DEGRADED')) ? 'auto_checks_passed' : p.extractionCompleteness,
+    extractionWarnings: (p.extractionWarnings ?? []).filter((w) => !w.startsWith('ADAPTER_DEGRADED')),
     continuation: { detected: false, urls: [] }, location: p.location, relevance: p.relevance, primaryCategory: p.primaryCategory, secondaryCategories: [],
     classificationEvidence: p.classificationEvidence ?? [], suggestedAssessment: p.suggestedAssessment, assessmentEvidence: p.assessmentEvidence ?? [],
     imageCandidates: (p.images ?? []).map((i) => ({ ...i, sourceArticleUrl: p.url })), duplicateGroupId: p.duplicateGroupId, warnings: [],
@@ -102,7 +107,11 @@ export async function seedFromPublished(stores: Stores, runId: string, day: Publ
   const arts = (day.articles ?? []).map((p) => fromPublicArticle(p, runId, day.generatedAt));
   const have = new Set(arts.map((a) => a.id));
   // extracted-but-unpublished (outside the window) keep their terminal state; their article was never published
-  const cands: Candidate[] = day.candidates.map((c) => ({ ...c, runId, history: [], articleId: c.articleId && have.has(c.articleId) ? c.articleId : null }));
+  const cands: Candidate[] = day.candidates.map((c) => ({
+    ...c, runId, history: [], articleId: c.articleId && have.has(c.articleId) ? c.articleId : null,
+    // stale "adapter degraded" flag from the previous run → cleared, re-assessed in this run
+    ...(c.reasonCode === 'ADAPTER_DEGRADED' ? { reasonCode: null, reasonDetail: null } : {}),
+  }));
   const { reconciliation: _r, ...m } = day.manifest;
   await stores.saveManifest({ ...m, runId, sources: [], notes: [], counts: {} });
   await stores.saveCandidates(runId, cands);

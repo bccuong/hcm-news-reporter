@@ -240,3 +240,20 @@ describe('a link that is already the canonical page of an extracted story', () =
     expect(alias.discoveredVia.some((d) => d.method === 'rss' && d.feedTitle?.includes('Khánh thành'))).toBe(true);
   });
 });
+
+describe('carried-over articles are not evidence of adapter drift', () => {
+  it('unknown container stays absent when republished; a stale ADAPTER_DEGRADED downgrade is undone', async () => {
+    const { fromPublicArticle, toPublicArticle } = await import('../scripts/cloud-collect.js');
+    const pub = {
+      id: 'a_1', sourceId: 's', sourceName: 'S', url: 'https://x.vn/a.htm', title: 't', sapo: '', contentSections: [], author: null, publishedAt: null, modifiedAt: null,
+      dateConfidence: 'verified' as const, extractionCompleteness: 'partial' as const, extractionWarnings: ['ADAPTER_DEGRADED: Khung nội dung bài đổi'],
+      sections: { paragraphs: 0, headings: 0, tables: 0, figures: 0 }, location: { status: 'hcm' as const, evidence: [] }, relevance: { status: 'relevant' as const, score: 1, evidence: [] },
+      primaryCategory: null, classificationEvidence: [], suggestedAssessment: null, assessmentEvidence: [], duplicateGroupId: null, dateEvidence: [], extractionContainer: null, images: [],
+    };
+    const a = fromPublicArticle(pub, 'run', '2026-11-16T09:00:00+07:00');
+    expect(a.extractionContainer).toBeUndefined();
+    expect(a.extractionCompleteness).toBe('auto_checks_passed');
+    expect(a.extractionWarnings).toEqual([]);
+    expect('extractionContainer' in JSON.parse(JSON.stringify(toPublicArticle(a)))).toBe(false);
+  });
+});
