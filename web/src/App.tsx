@@ -829,7 +829,7 @@ function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { r
         <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-slate-500" />
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1 max-h-96 w-[24rem] overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg" role="listbox" aria-label="Danh sách các lượt">
+        <div className="absolute left-0 z-30 mt-1 max-h-96 w-[min(24rem,calc(100vw-2rem))] overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg" role="listbox" aria-label="Danh sách các lượt">
           {sorted.map((r) => {
             const tg = runTag(r);
             const sel = r.runId === runId;
