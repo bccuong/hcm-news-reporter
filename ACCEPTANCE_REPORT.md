@@ -3,6 +3,7 @@
 ## Session 13 changes in status
 | ID | Status | Evidence |
 |---|---|---|
+| UI responsiveness on the web (bulk select, Thu thập) | PASS (fixed) | Cause measured: sequential worker requests (0.3–1.2 s each), render 2–23 ms. Batch save + immediate feedback; measured 55 ms / 1 request for select-all and 54 ms for Thu thập with 350 ms simulated latency; worker batch test. |
 | UI – "Lượt đã lưu" compact + delete; "Kỳ gần nhất" = latest run | PASS | Live E2E review.spec.ts (compact label, latest run highlighted as Kỳ gần nhất and re-opened from another run, reviewer delete hidden for a second browser, restore); server.test (DELETE run 401 without token, 404, removed, exports kept); worker test (hide/restore, reviewers only). |
 | Web shared review – F5 resilience (Cloudflare KV free quota) | PASS (fixed) | F5 showed "Failed to fetch": worker threw "KV list() limit exceeded for the day" (wrangler tail). Reads now one get per period/day (no list), legacy keys merged once, errors answered with CORS. tests/review-worker.test.ts (list counter unchanged over repeated reads; quota-gone → 200 + pending; 503 with CORS). Live: GET /review of the custom period 500 → 200 after deploy. |
 | UI – publisher home page link | PASS | Source tile name = link to the source's home page (new tab, noopener); tests/ui/app.spec.ts. |

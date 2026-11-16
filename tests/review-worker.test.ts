@@ -278,6 +278,26 @@ describe('shared review worker', () => {
       for (let i = 0; i < 3; i++) await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e);
       expect(kv.lists).toBe(l0);
     });
+    it('a batch ("Chọn tất cả") is saved in one request: one read + one write, every item validated', async () => {
+      const e = env();
+      const kv = e.REVIEWS as MemKV;
+      await rv(e, { profile: 'hcm', period: P, articleId: 'a_1111abcd1111', patch: { included: true, order: 1 }, reviewer: 'A' });
+      let puts = 0;
+      const put = kv.put.bind(kv);
+      kv.put = async (k, v, o) => (puts++, put(k, v, o));
+      const ids = ['a_1111abcd1111', 'a_2222abcd2222', 'a_3333abcd3333'];
+      const r = await rv(e, { profile: 'hcm', period: P, items: ids.map((articleId) => ({ articleId, patch: { included: false } })), reviewer: 'B' });
+      expect(r.status).toBe(200);
+      expect(Object.keys(((await r.json()) as { reviews: object }).reviews)).toEqual(ids);
+      expect(puts).toBe(1);
+      const all = (await read(e)).reviews;
+      expect(all['a_1111abcd1111']).toMatchObject({ included: false, order: 1, by: 'B' }); // merged, not replaced
+      expect(all['a_3333abcd3333']).toMatchObject({ included: false });
+      // one bad item → nothing saved
+      expect((await rv(e, { profile: 'hcm', period: P, items: [{ articleId: 'a_1111abcd1111', patch: { included: true } }, { articleId: 'bad', patch: { included: true } }], reviewer: 'B' })).status).toBe(400);
+      expect((await rv(e, { profile: 'hcm', period: P, items: [{ articleId: 'a_1111abcd1111', patch: { hacked: 1 } }], reviewer: 'B' })).status).toBe(400);
+      expect((await read(e)).reviews['a_1111abcd1111'].included).toBe(false);
+    });
     it('saved runs removed by a reviewer: hidden for everyone (public read), restorable, reviewers only', async () => {
       const e = env();
       const hide = (body: unknown, code = 'HCM-test-1234') => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);

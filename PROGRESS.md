@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13v – "Lượt đã lưu" picker + delete; "Kỳ gần nhất" = latest run; 2026-11-16)
+## ▶ RESUME HERE (session 13w – slow clicks on the web; 2026-11-16)
+- Measured: rendering 2–23 ms (not the cause); each review-worker request 0.3–1.2 s from the user's network. "Chọn tất cả" saved story by story (await in a loop) → N × latency, boxes ticking one by one; "Thu thập" showed nothing until the worker + GitHub answered.
+- Fix: worker POST /review accepts {items:[{articleId,patch}]} (≤300, all validated, one KV read + one write); web api.queueTeamReview batches every change made in the same tick and keeps ONE batch in flight per period (no self-overwrites); bulk select / merge run in parallel (all boxes change at once, one request); local copy re-read before saving; same error toast shown once; "Thu thập" shows "Đang gửi…" immediately.
+- Measured after (350 ms simulated latency): select all ticked in ~55 ms with 1 POST; Thu thập reacts in ~54 ms.
+- Note: KV free plan also limits writes to 1,000/day – batching reduces writes too.
+- Tests: vitest 136/136 (worker batch: one put, merge, all-or-nothing validation), playwright 11/11, live 8/8.
+
+## (history) Session 13v – "Lượt đã lưu" picker + delete; "Kỳ gần nhất" = latest run; 2026-11-16)
 - RunPicker (web/src/App.tsx): compact labels ("16/11 · 08:01–16:30", "15/11 17:00 → 16/11 08:00") + chip (tự động / requester / đang diễn ra / status), newest first, current ticked, trash per row. Local: DELETE /api/runs/:id (stores.deleteRun; refused while running; exports kept). Web: reviewer hides a run for the whole team via worker POST /runs/hide (KV `hid:<profile>`, one get via GET /runs/hidden, public); "Lượt đã xoá (n)" › Khôi phục. Not logged in: no delete (greyed icon with hint).
 - "Kỳ gần nhất" button now opens the most recent run (latestRun) instead of a computed 17:00→08:00 window; the most recent run shows "Kỳ gần nhất" highlighted. Without any run: the last completed window as before.
 - Worker deployed d818872b. Tests: vitest 135/135 (worker hide/restore; server DELETE run), playwright 11/11, live 8/8 (compact label, Kỳ gần nhất, delete hidden for another browser, restore).

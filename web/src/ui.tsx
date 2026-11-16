@@ -8,7 +8,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [list, setList] = useState<Toast[]>([]);
   const push = useCallback((kind: Toast['kind'], text: string) => {
     const id = Date.now() + Math.random();
-    setList((l) => [...l, { id, kind, text }]);
+    // the same message already on screen (e.g. one failed batch of several stories) is shown once
+    setList((l) => (l.some((t) => t.kind === kind && t.text === text) ? l : [...l, { id, kind, text }]));
     setTimeout(() => setList((l) => l.filter((t) => t.id !== id)), kind === 'err' ? 9000 : 4000);
   }, []);
   return (

@@ -662,16 +662,56 @@ class DemoApi implements Api {
     if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được kết quả duyệt chung (HTTP ${r.status})`);
     return ((await r.json()) as { review: Partial<ReviewDecision> & { by?: string; at?: string } }).review;
   }
+  /**
+   * Team decisions are sent in batches: every change made in the same moment ("Chọn tất cả", quick clicks) goes in ONE
+   * request (one KV read + write on the worker, ~0.3–1 s from Vietnam) instead of one request per story in a row;
+   * one batch at a time per period, so two saves from this browser never overwrite each other.
+   */
+  private teamQueue = new Map<string, { items: Map<string, Partial<ReviewDecision>>; waiters: Array<{ articleId: string; ok: (d: any) => void; fail: (e: unknown) => void }>; busy: boolean }>();
+  private queueTeamReview(id: string, articleId: string, patch: Partial<ReviewDecision>, s: { name: string; code: string }) {
+    let q = this.teamQueue.get(id);
+    if (!q) this.teamQueue.set(id, (q = { items: new Map(), waiters: [], busy: false }));
+    q.items.set(articleId, { ...q.items.get(articleId), ...patch });
+    const p = new Promise<Partial<ReviewDecision> & { by?: string; at?: string }>((ok, fail) => q!.waiters.push({ articleId, ok, fail }));
+    if (!q.busy) setTimeout(() => void this.flushTeam(id, s), 0);
+    return p;
+  }
+  private async flushTeam(id: string, s: { name: string; code: string }) {
+    const q = this.teamQueue.get(id);
+    if (!q || q.busy) return;
+    q.busy = true;
+    try {
+      while (q.items.size) {
+        const items = [...q.items].map(([articleId, patch]) => ({ articleId, patch }));
+        const waiters = q.waiters;
+        q.items = new Map();
+        q.waiters = [];
+        try {
+          const r = await fetch(`${this.reviewApi}/review`, {
+            method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' },
+            body: JSON.stringify({ profile: this.pid, period: id, items, reviewer: s.name }),
+          });
+          if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được kết quả duyệt chung (HTTP ${r.status})`);
+          const out = ((await r.json()) as { reviews: Record<string, Partial<ReviewDecision> & { by?: string; at?: string }> }).reviews;
+          for (const w of waiters) w.ok(out[w.articleId] ?? {});
+        } catch (e) {
+          for (const w of waiters) w.fail(e);
+        }
+      }
+    } finally {
+      q.busy = false;
+    }
+  }
   async patchReview(id: string, articleId: string, patch: Partial<ReviewDecision>) {
-    const all = store.get<Record<string, ReviewDecision>>(`review:${id}`) ?? {};
     // the team's decision is saved on the worker first (needs a reviewer session); the browser keeps a copy
     const shared = pickShared(patch);
     let team: (Partial<ReviewDecision> & { by?: string; at?: string }) | null = null;
     if (this.teamReview && Object.keys(shared).length) {
       const s = store.get<{ name: string; code: string }>('reviewer');
       if (!s) throw new ApiError('Hãy đăng nhập người duyệt để lưu kết quả duyệt chung cho cả nhóm');
-      team = await this.postTeamReview(id, articleId, shared, s);
+      team = await this.queueTeamReview(id, articleId, shared, s);
     }
+    const all = store.get<Record<string, ReviewDecision>>(`review:${id}`) ?? {};
     const now = new Date().toISOString();
     const prev: ReviewDecision = all[articleId] ?? { articleId, included: false, order: Object.keys(all).length, updatedAt: now, changes: [] };
     const changes = [...prev.changes];
@@ -689,8 +729,10 @@ class DemoApi implements Api {
       const { by, at, ...rest } = team;
       Object.assign(next, rest, { sharedBy: by, sharedAt: at });
     }
-    all[articleId] = next;
-    store.set(`review:${id}`, all);
+    // re-read: other saves of this period may have finished while this one waited for the network
+    const latest = store.get<Record<string, ReviewDecision>>(`review:${id}`) ?? {};
+    latest[articleId] = next;
+    store.set(`review:${id}`, latest);
     return next;
   }
 

@@ -605,22 +605,27 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
   }
 
   if (url.pathname === '/review' && req.method === 'POST') {
-    if (Number(req.headers.get('content-length') ?? 0) > 8000) return json({ error: 'TOO_LARGE' }, 413, h);
-    const b = (await req.json().catch(() => null)) as { profile?: string; period?: string; articleId?: string; patch?: unknown; reviewer?: string } | null;
+    // one article ({articleId, patch}) or several at once ({items: [{articleId, patch}]}, "Chọn tất cả"): one read + one write
+    if (Number(req.headers.get('content-length') ?? 0) > 200_000) return json({ error: 'TOO_LARGE' }, 413, h);
+    const b = (await req.json().catch(() => null)) as { profile?: string; period?: string; articleId?: string; patch?: unknown; items?: unknown; reviewer?: string } | null;
     const pid = String(b?.profile ?? DEFAULT_PROFILE);
     const period = String(b?.period ?? '');
-    const articleId = String(b?.articleId ?? '');
     const reviewer = String(b?.reviewer ?? '').trim().slice(0, 40);
-    if (!PROFILE_ID.test(pid) || !PERIOD_ID.test(period) || !ART.test(articleId)) return json({ error: 'INVALID_ARTICLE' }, 400, h);
+    const raw = Array.isArray(b?.items) ? (b!.items as Array<{ articleId?: unknown; patch?: unknown }>) : [{ articleId: b?.articleId, patch: b?.patch }];
+    if (!PROFILE_ID.test(pid) || !PERIOD_ID.test(period) || !raw.length || raw.length > 300 || raw.some((x) => !ART.test(String(x?.articleId ?? '')))) return json({ error: 'INVALID_ARTICLE' }, 400, h);
     if (!reviewer) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
-    const patch = cleanReviewPatch(b?.patch);
-    if (!patch || !Object.keys(patch).length) return json({ error: 'INVALID_PATCH' }, 400, h);
+    const items = raw.map((x) => ({ articleId: String(x.articleId), patch: cleanReviewPatch(x.patch) }));
+    if (items.some((x) => !x.patch || !Object.keys(x.patch).length)) return json({ error: 'INVALID_PATCH' }, 400, h);
     const { agg } = await loadReviewAgg(env, pid, period);
-    const next: SharedDecision = { ...(agg.reviews[articleId] ?? { articleId }), ...patch, articleId, by: reviewer, at: new Date().toISOString() };
-    for (const k of Object.keys(next) as Array<keyof SharedDecision>) if (next[k] === undefined) delete next[k];
-    agg.reviews[articleId] = next;
+    const at = new Date().toISOString();
+    const out: Record<string, SharedDecision> = {};
+    for (const { articleId, patch } of items) {
+      const next: SharedDecision = { ...(agg.reviews[articleId] ?? { articleId }), ...patch!, articleId, by: reviewer, at };
+      for (const k of Object.keys(next) as Array<keyof SharedDecision>) if (next[k] === undefined) delete next[k];
+      agg.reviews[articleId] = out[articleId] = next;
+    }
     await env.REVIEWS.put(rvAggKey(pid, period), JSON.stringify(agg));
-    return json({ ok: true, review: next }, 200, h);
+    return Array.isArray(b?.items) ? json({ ok: true, reviews: out }, 200, h) : json({ ok: true, review: out[items[0]!.articleId] }, 200, h);
   }
 
   if (url.pathname === '/labels' && req.method === 'GET') {

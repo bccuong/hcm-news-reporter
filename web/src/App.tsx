@@ -222,8 +222,10 @@ export function App() {
   }, [from, to]);
   const windowErr = windowIso ? validateWindow(windowIso) : 'Ngày giờ không hợp lệ';
 
+  // "Thu thập" reacts at once (the request to the server / GitHub takes 1–3 s from Vietnam)
+  const [starting, setStarting] = useState(false);
   const collect = async () => {
-    if (!windowIso || windowErr) return;
+    if (!windowIso || windowErr || starting) return;
     if (api.mode === 'live' && api.shared && !api.shared.session()) {
       setLoginOpen(true);
       return;
@@ -236,6 +238,7 @@ export function App() {
         return;
       }
     }
+    setStarting(true);
     try {
       // remember the custom window (local/demo only; on the web settings are SHARED with the server collector)
       if (preset === 'custom' && settings && api.mode !== 'live') {
@@ -254,6 +257,8 @@ export function App() {
       }
     } catch (e) {
       toast('err', (e as Error).message);
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -402,8 +407,8 @@ export function App() {
   const merge = async (secondaryId: string, targetId: string) => {
     const ps = mergePatches(secondaryId, targetId, reviews);
     if (!ps.length) return toast('err', 'Không thể gộp: hai bài đã cùng một tin hoặc gộp vào chính nó');
-    for (const p of ps) await patch(p.articleId, p.patch);
-    toast('ok', 'Đã gộp nguồn vào tin');
+    const ok = await Promise.all(ps.map((p) => patch(p.articleId, p.patch))); // one save on the web
+    if (ok.every(Boolean)) toast('ok', 'Đã gộp nguồn vào tin');
   };
   const split = (secondaryId: string) => patch(secondaryId, { groupId: null });
 
@@ -516,7 +521,7 @@ export function App() {
           ) : (
             <button
               className="btn-primary"
-              disabled={!!windowErr || !online || api.mode === 'demo' || (api.mode === 'live' && (!api.shared || !!remote || !!busyRun))}
+              disabled={starting || !!windowErr || !online || api.mode === 'demo' || (api.mode === 'live' && (!api.shared || !!remote || !!busyRun))}
               onClick={collect}
               title={
                 api.mode === 'live'
@@ -528,7 +533,7 @@ export function App() {
                     : ''
               }
             >
-              <Play className="h-4 w-4" /> Thu thập
+              {starting ? <><RefreshCw className="h-4 w-4 animate-spin" /> Đang gửi…</> : <><Play className="h-4 w-4" /> Thu thập</>}
             </button>
           )}
           {runs.length > 0 && (
@@ -921,7 +926,8 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
   const runBulk = async (label: string, ids: string[], p: (id: string) => Partial<ReviewDecision>) => {
     setBulk(label);
     try {
-      for (const id of ids) await onPatch(id, p(id));
+      // all at once: every box changes immediately, the web saves them in ONE request (see api.queueTeamReview)
+      await Promise.all(ids.map((id) => onPatch(id, p(id))));
     } finally {
       setBulk(null);
     }
