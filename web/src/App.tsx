@@ -448,14 +448,8 @@ export function App() {
               ))}
             </div>
           </div>
-          <label>
-            <span className="label">Từ (gồm)</span>
-            <input type="datetime-local" className="input" value={from} onChange={(e) => (setFrom(e.target.value), setPreset('custom'))} />
-          </label>
-          <label>
-            <span className="label">Đến (không gồm)</span>
-            <input type="datetime-local" className="input" value={to} onChange={(e) => (setTo(e.target.value), setPreset('custom'))} />
-          </label>
+          <DateTime24 label="Từ (gồm)" value={from} onChange={(v) => (setFrom(v), setPreset('custom'))} />
+          <DateTime24 label="Đến (không gồm)" value={to} onChange={(v) => (setTo(v), setPreset('custom'))} />
           <div className="text-xs text-slate-500">
             Asia/Ho_Chi_Minh (UTC+07:00)
             <br />
@@ -686,6 +680,32 @@ function SourceStrip({ run, arts, ready, onOpen }: { run: RunInfo; arts: Article
       </div>
       {off > 0 && <p className="mt-1.5 text-[11px] text-slate-500">{off} nguồn đang tắt (Cài đặt › Nguồn tin).</p>}
     </section>
+  );
+}
+
+/**
+ * Date + time in 24-hour form on every computer (the browser's datetime-local follows the OS locale, e.g. AM/PM).
+ * value / onChange: "YYYY-MM-DDTHH:mm" (local Vietnam time), like datetime-local.
+ */
+function DateTime24({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [d = '', hm = '00:00'] = value.split('T');
+  const [h = '00', m = '00'] = hm.slice(0, 5).split(':');
+  const set = (nd: string, nh: string, nm: string) => nd && onChange(`${nd}T${nh}:${nm}`);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return (
+    <fieldset role="group" aria-label={label}>
+      <legend className="label">{label}</legend>
+      <div className="flex items-center gap-1">
+        <input type="date" className="input w-40" aria-label={`${label} – ngày`} value={d} onChange={(e) => set(e.target.value, h, m)} />
+        <select className="input w-16 px-1" aria-label={`${label} – giờ`} value={h} onChange={(e) => set(d, e.target.value, m)}>
+          {Array.from({ length: 24 }, (_, i) => <option key={i} value={two(i)}>{two(i)}</option>)}
+        </select>
+        <span className="text-slate-500">:</span>
+        <select className="input w-16 px-1" aria-label={`${label} – phút`} value={m} onChange={(e) => set(d, h, e.target.value)}>
+          {Array.from({ length: 60 }, (_, i) => <option key={i} value={two(i)}>{two(i)}</option>)}
+        </select>
+      </div>
+    </fieldset>
   );
 }
 

@@ -3,6 +3,15 @@ import { expect, test, type Page } from '@playwright/test';
 import JSZip from 'jszip';
 
 /** Two reviewers label the same published (fixture) articles through the shared review store. */
+/** the window fields are date + 24-hour selects (not datetime-local): set "YYYY-MM-DDTHH:mm" */
+async function setWindowField(p: Page, label: string, v: string) {
+  const [d, hm] = v.split('T');
+  const [h, m] = hm!.split(':');
+  await p.getByLabel(`${label} – ngày`).fill(d!);
+  await p.getByLabel(`${label} – giờ`).selectOption(h!);
+  await p.getByLabel(`${label} – phút`).selectOption(m!);
+}
+
 const FLOOD = /Liên quan: \[Mẫu thử\] Mưa lớn tối 8\.11 khiến/;
 const METRO_NO = /^Không liên quan: \[Mẫu thử\] Khánh thành nhà ga metro/;
 
@@ -87,8 +96,8 @@ test('web "Thu thập" like the local app: choose from/to → server collection 
   await page.goto('');
   // same window controls as the local app
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
-  await page.getByLabel('Từ (gồm)').fill('2026-11-08T18:00');
-  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T07:00');
+  await setWindowField(page, 'Từ (gồm)', '2026-11-08T18:00');
+  await setWindowField(page, 'Đến (không gồm)', '2026-11-09T07:00');
   await expect(page.getByText('[18:00 08/11/2026, 07:00 09/11/2026)')).toBeVisible();
   // collecting requires a reviewer session
   await page.getByRole('button', { name: 'Thu thập' }).click();

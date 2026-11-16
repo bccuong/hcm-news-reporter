@@ -7,7 +7,10 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13m – per-publisher article limit; VnExpress 150; 2026-11-16)
+## ▶ RESUME HERE (session 13n – 24-hour time fields; 2026-11-16)
+- User: the window pickers showed AM/PM (browser datetime-local follows the OS locale). Replaced by  (web/src/App.tsx): native date picker + hour 00–23 + minute 00–59 selects, same "YYYY-MM-DDTHH:mm" value. Tests use ; UI-06 checks 24 hour options. Tests: typecheck, vitest 114/114, playwright 11/11, live E2E 7/7.
+
+## (history) Session 13m – per-publisher article limit; VnExpress 150; 2026-11-16)
 - User: only VnExpress still "chạm giới hạn tải". Live analysis of 2026-11-16: 149 links pending – 78 RSS-dated but all OUTSIDE the window (within the 6 h verification margin or after the window end), 71 undated from deep listing pages (/bat-dong-san/chinh-sach-p3 …, weeks old). In-window VnExpress stories were already read; publisher ids in URLs are NOT safe to date stories (a 16/11 00:00 story had an old id).
 - Done: `crawlLimits.perRunArticles` (Sửa nguồn › "Số bài tải tối đa mỗi lượt cho báo này"; empty = shared limit) overrides the shared 50/publisher; undated links are fetched newest publisher id first. Saved web config: VnExpress = 150. First refresh still fetched only ~50: the saved VnExpress `maxArticleFetches` was 50 (set earlier in the UI) and capped the new value → the publisher's own limit now decides (`maxArticleFetches` only caps the shared limit; shown as "Mức trần khi dùng giới hạn chung" when the own limit is empty).
 - Tests: typecheck, vitest 114/114, playwright 11/11, live E2E 7/7.

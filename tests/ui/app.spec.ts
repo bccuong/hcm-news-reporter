@@ -2,6 +2,15 @@ import { expect, test, type Page } from '@playwright/test';
 
 /** Click-through UI tests: every assertion goes through real controls, then a page reload proves persistence. */
 
+/** the window fields are date + 24-hour selects (not datetime-local): set "YYYY-MM-DDTHH:mm" */
+async function setWindowField(p: Page, label: string, v: string) {
+  const [d, hm] = v.split('T');
+  const [h, m] = hm!.split(':');
+  await p.getByLabel(`${label} – ngày`).fill(d!);
+  await p.getByLabel(`${label} – giờ`).selectOption(h!);
+  await p.getByLabel(`${label} – phút`).selectOption(m!);
+}
+
 async function openSettings(page: Page, section: string) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Cài đặt' }).click();
@@ -101,14 +110,18 @@ test('UI-07: retry/concurrency limits are edited in UI and persist', async ({ pa
 test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, select, export PPTX', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
-  await page.getByLabel('Từ (gồm)').fill('2026-11-08T17:00');
-  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
+  await setWindowField(page, 'Từ (gồm)', '2026-11-08T17:00');
+  // 24-hour time on every computer (no AM/PM): hour 00–23, minute 00–59
+  await expect(page.getByLabel('Từ (gồm) – giờ').locator('option')).toHaveCount(24);
+  await expect(page.getByLabel('Từ (gồm) – giờ')).toHaveValue('17');
+  await expect(page.getByLabel('Đến (không gồm) – phút').locator('option')).toHaveCount(60);
+  await setWindowField(page, 'Đến (không gồm)', '2026-11-09T08:00');
   await expect(page.getByText('[17:00 08/11/2026, 08:00 09/11/2026)')).toBeVisible();
   // invalid range is blocked
-  await page.getByLabel('Đến (không gồm)').fill('2026-11-08T10:00');
+  await setWindowField(page, 'Đến (không gồm)', '2026-11-08T10:00');
   await expect(page.getByText('Thời điểm kết thúc phải sau thời điểm bắt đầu')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Thu thập' })).toBeDisabled();
-  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
+  await setWindowField(page, 'Đến (không gồm)', '2026-11-09T08:00');
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByRole('button', { name: /Bài sẵn sàng \(\d+\)/ })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
@@ -183,8 +196,8 @@ test('DIS-08: publisher redesign → coverage tab shows degraded adapter, articl
   await expect(page.getByTestId('adapter-health').first()).toContainText('Bộ bóc tách: ổn định');
   await request.post('/__e2e/redesign', { data: { mode: 'new_container' } });
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
-  await page.getByLabel('Từ (gồm)').fill('2026-11-08T17:00');
-  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
+  await setWindowField(page, 'Từ (gồm)', '2026-11-08T17:00');
+  await setWindowField(page, 'Đến (không gồm)', '2026-11-09T08:00');
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByText('bóc tách suy giảm')).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: /Độ phủ/ }).click();
@@ -253,8 +266,8 @@ test('Profiles: create Hà Nội from the defaults, its own settings and runs, c
 test('Bulk select / unselect all for the report; move stories from Cần kiểm tra to Bài sẵn sàng and back', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
-  await page.getByLabel('Từ (gồm)').fill('2026-11-08T17:00');
-  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
+  await setWindowField(page, 'Từ (gồm)', '2026-11-08T17:00');
+  await setWindowField(page, 'Đến (không gồm)', '2026-11-09T08:00');
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
   // counts of THIS run: wait for it to start, then to finish (until then the previous run's numbers are shown)
@@ -312,8 +325,8 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
 test('Remove ("Loại") a story from Bài sẵn sàng, restore it; bulk remove selected; "✗ Không" also removes', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
-  await page.getByLabel('Từ (gồm)').fill('2026-11-08T17:00');
-  await page.getByLabel('Đến (không gồm)').fill('2026-11-09T08:00');
+  await setWindowField(page, 'Từ (gồm)', '2026-11-08T17:00');
+  await setWindowField(page, 'Đến (không gồm)', '2026-11-09T08:00');
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
   // counts of THIS run: wait for it to start, then to finish (until then the previous run's numbers are shown)
