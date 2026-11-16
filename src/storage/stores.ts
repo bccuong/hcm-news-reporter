@@ -266,6 +266,10 @@ export class Stores {
   async getManifest(runId: string) {
     return readJson<RunManifest>(path.join(this.runDir(runId), 'manifest.json'));
   }
+  /** delete a saved run (ledger, articles, review); exported files in exports/ are kept */
+  async deleteRun(runId: string) {
+    await fs.rm(this.runDir(runId), { recursive: true, force: true });
+  }
   async listRuns(): Promise<RunManifest[]> {
     let dirs: string[] = [];
     try {

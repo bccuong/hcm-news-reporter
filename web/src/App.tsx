@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Check, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, Wifi, WifiOff, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
@@ -82,8 +82,53 @@ export function App() {
       const w = presetWindow(p, settings);
       return Date.parse(w.from) === Date.parse(r.window.from) && Date.parse(w.to) === Date.parse(r.window.to);
     };
-    setPreset(same('today') ? 'today' : same('yesterday') ? 'yesterday' : same('last_completed') ? 'last_completed' : 'custom');
+    setPreset(latestRun(runs)?.runId === r.runId ? 'last_completed' : same('today') ? 'today' : same('yesterday') ? 'yesterday' : 'custom');
   }, [runId, runs, settings]);
+
+  /** open a saved run (its window fills Từ / Đến) */
+  const pickRun = (id: string) => {
+    shownWindowOf.current = null;
+    setRunId(id);
+  };
+  /** "Kỳ gần nhất" = the most recent collection (not a computed clock window); without any run: the last completed window */
+  const pickLatest = (s: Settings) => {
+    const l = latestRun(runs);
+    if (!l) return applyPreset('last_completed', s);
+    setPreset('last_completed');
+    if (l.runId === runId) {
+      setFrom(vnIsoToLocalInput(l.window.from));
+      setTo(vnIsoToLocalInput(l.window.to));
+    } else pickRun(l.runId);
+  };
+  /** "Lượt đã lưu" › Xoá (local: deleted; web: hidden for the team, restorable) */
+  const removeRun = async (r: RunInfo) => {
+    const local = api.mode === 'local';
+    const msg = `Xoá lượt ${runLabel(r)}?\n\n` + (local ? 'Dữ liệu thu thập và kết quả duyệt của lượt này sẽ bị xoá khỏi máy (các báo cáo đã xuất vẫn giữ).' : 'Lượt này sẽ ẩn với cả nhóm; có thể khôi phục ở cuối danh sách "Lượt đã lưu".');
+    if (!window.confirm(msg)) return;
+    try {
+      await api.deleteRun!(r.runId);
+      const rs = await api.listRuns();
+      setRuns(rs);
+      if (r.runId === runId) {
+        const l = latestRun(rs);
+        if (l) pickRun(l.runId);
+        else setRunId(null);
+      }
+      toast('ok', local ? 'Đã xoá lượt' : 'Đã xoá lượt (ẩn với cả nhóm)');
+    } catch (e) {
+      toast('err', (e as Error).message);
+    }
+  };
+  const restoreRun = async (id: string) => {
+    try {
+      await api.restoreRun!(id);
+      setRuns(await api.listRuns());
+      toast('ok', 'Đã khôi phục lượt');
+    } catch (e) {
+      toast('err', (e as Error).message);
+    }
+  };
+  const canDeleteRuns = !!api.deleteRun && (api.mode === 'local' || !!api.shared?.session());
 
   const loadRun = useCallback(async (id: string) => {
     lastLoad.current = id;
@@ -435,13 +480,7 @@ export function App() {
           <section className="card flex flex-wrap items-end gap-3 p-3" data-testid="live-periods">
             <label>
               <span className="label">Kỳ báo cáo (dữ liệu thu thập tự động)</span>
-              <select className="input w-96" value={runId ?? ''} onChange={(e) => ((shownWindowOf.current = null), setRunId(e.target.value))} aria-label="Lượt đã lưu">
-                {runs.map((r) => (
-                  <option key={r.runId} value={r.runId}>
-                    Sáng {formatVn(r.window.to).slice(6)} · {formatVn(r.window.from)} → {formatVn(r.window.to)}{r.notes.some((x) => /đang diễn ra/.test(x)) ? ' · ĐANG DIỄN RA' : ''}
-                  </option>
-                ))}
-              </select>
+              <RunPicker runs={runs} runId={runId} onPick={pickRun} />
             </label>
             <div className="text-xs text-slate-500">
               Asia/Ho_Chi_Minh · khung [từ, đến)
@@ -456,7 +495,7 @@ export function App() {
             <span className="label">Khung giờ</span>
             <div className="inline-flex overflow-hidden rounded-md border border-slate-300">
               {([['last_completed', 'Kỳ gần nhất'], ['today', 'Hôm nay'], ['yesterday', 'Hôm qua'], ['custom', 'Tùy chỉnh']] as const).map(([k, l]) => (
-                <button key={k} className={`px-3 py-1.5 text-sm ${preset === k ? 'bg-navy-700 text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => settings && (k === 'custom' ? setPreset('custom') : applyPreset(k, settings))}>
+                <button key={k} className={`px-3 py-1.5 text-sm ${preset === k ? 'bg-navy-700 text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => settings && (k === 'custom' ? setPreset('custom') : k === 'last_completed' ? pickLatest(settings) : applyPreset(k, settings))}>
                   {l}
                 </button>
               ))}
@@ -493,16 +532,10 @@ export function App() {
             </button>
           )}
           {runs.length > 0 && (
-            <label>
+            <div>
               <span className="label">Lượt đã lưu</span>
-              <select className="input w-64" value={runId ?? ''} onChange={(e) => ((shownWindowOf.current = null), setRunId(e.target.value))} aria-label="Lượt đã lưu">
-                {runs.map((r) => (
-                  <option key={r.runId} value={r.runId}>
-                    {formatVn(r.window.from)} → {formatVn(r.window.to)} · {api.mode === 'live' ? (r.notes.find((x) => /theo yêu cầu|đang diễn ra/.test(x)) ?? 'tự động') : r.status}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá' : undefined} onRestore={api.restoreRun && canDeleteRuns ? restoreRun : undefined} />
+            </div>
           )}
         </section>
         )}
@@ -742,6 +775,97 @@ function DateTime24({ label, value, onChange }: { label: string; value: string; 
         </select>
       </div>
     </fieldset>
+  );
+}
+
+/** compact run window: "16/11 · 08:01–16:30" (same day) or "15/11 17:00 → 16/11 08:00" */
+function runLabel(r: { window: { from: string; to: string } }): string {
+  const [fh, fd] = formatVn(r.window.from).split(' ');
+  const [th, td] = formatVn(r.window.to).split(' ');
+  const dm = (d?: string) => (d ?? '').slice(0, 5);
+  return fd === td ? `${dm(fd)} · ${fh}–${th}` : `${dm(fd)} ${fh} → ${dm(td)} ${th}`;
+}
+/** who / how: "tự động", the reviewer who asked for it, "đang diễn ra", or a local status */
+function runTag(r: RunInfo): { text: string; tone: string } {
+  if (r.active) return { text: 'đang chạy', tone: 'border-blue-300 bg-blue-50 text-blue-800' };
+  if (r.notes.some((x) => /đang diễn ra/i.test(x))) return { text: 'đang diễn ra', tone: 'border-sky-300 bg-sky-50 text-sky-800' };
+  // "Thu thập theo yêu cầu (Cường)" / "… (Claude (cho Cường))" / "… của Cường trên web." → the requester
+  const req = r.notes.map((x) => /theo yêu cầu(?: của)?\s*(.*)$/i.exec(x)).find(Boolean);
+  if (req) {
+    const who = (req[1] ?? '').replace(/\s*trên web\.?$/, '').replace(/^\((.*)\)$/, '$1').trim();
+    return { text: who || 'theo yêu cầu', tone: 'border-violet-200 bg-violet-50 text-violet-800' };
+  }
+  if (r.status && r.status !== 'completed') return { text: STATUS_VN[r.status] ?? r.status, tone: 'border-amber-300 bg-amber-50 text-amber-800' };
+  return { text: r.trigger === 'manual' ? 'thủ công' : 'tự động', tone: 'border-slate-200 bg-slate-50 text-slate-600' };
+}
+const STATUS_VN: Record<string, string> = { running: 'đang chạy', cancelled: 'đã dừng', failed: 'lỗi', partial: 'một phần', interrupted: 'bị ngắt' };
+
+/** "Lượt đã lưu": compact list, newest first, current one ticked; delete per run; removed runs (web) can be restored */
+function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { runs: RunInfo[]; runId: string | null; onPick: (id: string) => void; onDelete?: (r: RunInfo) => void; deleteHint?: string; onRestore?: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [removed, setRemoved] = useState<Array<{ run: RunInfo; by: string; at: string }> | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => (document.removeEventListener('mousedown', close), document.removeEventListener('keydown', close));
+  }, [open]);
+  useEffect(() => {
+    if (open && onRestore && api.hiddenRuns) api.hiddenRuns().then(setRemoved).catch(() => setRemoved(null));
+  }, [open, onRestore, runs]);
+  const at = (r: RunInfo) => Date.parse(r.finishedAt ?? r.createdAt) || 0;
+  const sorted = [...runs].sort((a, b) => at(b) - at(a));
+  const cur = runs.find((r) => r.runId === runId);
+  const tag = cur && runTag(cur);
+  return (
+    <div className="relative" ref={box}>
+      <button type="button" className="input flex w-72 items-center gap-2 text-left" aria-label="Lượt đã lưu" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="run-picker">
+        <span className="truncate font-medium tabular-nums">{cur ? runLabel(cur) : 'Chọn lượt…'}</span>
+        {tag && <span className={`chip shrink-0 truncate ${tag.tone}`}>{tag.text}</span>}
+        <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-slate-500" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-30 mt-1 max-h-96 w-[24rem] overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg" role="listbox" aria-label="Danh sách các lượt">
+          {sorted.map((r) => {
+            const tg = runTag(r);
+            const sel = r.runId === runId;
+            return (
+              <div key={r.runId} className={`group flex items-center gap-1 px-1 ${sel ? 'bg-navy-50' : 'hover:bg-slate-50'}`} data-testid={`run-row-${r.runId}`}>
+                <button type="button" role="option" aria-selected={sel} className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-sm" onClick={() => (onPick(r.runId), setOpen(false))}>
+                  <Check className={`h-3.5 w-3.5 shrink-0 ${sel ? 'text-navy-700' : 'invisible'}`} />
+                  <span className="truncate tabular-nums">{runLabel(r)}</span>
+                  <span className={`chip ml-auto shrink-0 ${tg.tone}`}>{tg.text}</span>
+                </button>
+                {onDelete ? (
+                  <button type="button" className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-700 disabled:opacity-30" disabled={r.active} title={r.active ? 'Lượt đang chạy – dừng trước khi xoá' : 'Xoá lượt này'} aria-label={`Xoá lượt ${runLabel(r)}`} onClick={() => (setOpen(false), onDelete(r))}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                ) : deleteHint ? (
+                  <span className="p-1.5 text-slate-300" title={deleteHint}><Trash2 className="h-3.5 w-3.5" /></span>
+                ) : null}
+              </div>
+            );
+          })}
+          {!sorted.length && <p className="px-3 py-2 text-sm text-slate-500">Chưa có lượt nào.</p>}
+          {onRestore && removed && removed.length > 0 && (
+            <details className="mt-1 border-t border-slate-100 px-3 py-1.5 text-xs text-slate-600">
+              <summary className="cursor-pointer select-none">Lượt đã xoá ({removed.length})</summary>
+              {removed.map((x) => (
+                <div key={x.run.runId} className="flex items-center gap-2 py-1">
+                  <span className="truncate tabular-nums">{runLabel(x.run)}</span>
+                  <span className="truncate text-slate-400">xoá bởi {x.by}</span>
+                  <button type="button" className="ml-auto shrink-0 text-blue-700 underline" onClick={() => onRestore(x.run.runId)}>Khôi phục</button>
+                </div>
+              ))}
+            </details>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -482,6 +482,12 @@ async function readLegacyReviews(env: Env, pid: string, period: string): Promise
   return out;
 }
 
+export interface HiddenRun { runId: string; by: string; at: string }
+async function readHiddenRuns(env: Env, pid: string): Promise<HiddenRun[]> {
+  const v = await env.REVIEWS.get(`hid:${pid}`);
+  return v ? (JSON.parse(v) as HiddenRun[]) : [];
+}
+
 /** votes of one day, `la:<date>` = { articleId: { reviewerId: Vote } }; old days merged once from l:<date>:* keys */
 interface VoteAgg { v: 2; legacy: boolean; votes: Record<string, Record<string, Vote>> }
 async function loadVoteAgg(env: Env, date: string): Promise<{ agg: VoteAgg; changed: boolean }> {
@@ -535,6 +541,13 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     return json({ period, reviews: r.reviews, ...(r.pending ? { pending: 'Một phần kết quả duyệt cũ đang chờ Cloudflare mở lại hạn mức, sẽ hiện lại sau 07:00.' } : {}) }, 200, h);
   }
 
+  // saved runs ("Lượt đã lưu") a reviewer removed: hidden for the whole team (one KV value per profile, public read)
+  if (url.pathname === '/runs/hidden' && req.method === 'GET') {
+    const pid = url.searchParams.get('profile') ?? DEFAULT_PROFILE;
+    if (!PROFILE_ID.test(pid)) return json({ error: 'INVALID_PROFILE' }, 400, h);
+    return json({ hidden: await readHiddenRuns(env, pid) }, 200, h);
+  }
+
   // nightly export for the GitHub Action (bearer token, never sent to browsers)
   if (url.pathname === '/export' && req.method === 'GET') {
     const auth = req.headers.get('authorization') ?? '';
@@ -576,6 +589,19 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     list[i] = { ...list[i]!, autoCollect: b.enabled, autoBy: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', autoAt: new Date().toISOString() };
     await saveProfiles(env, list);
     return json({ ok: true, profile: list[i] }, 200, h);
+  }
+
+  if (url.pathname === '/runs/hide' && req.method === 'POST') {
+    const b = (await req.json().catch(() => null)) as { profile?: string; runId?: string; hidden?: unknown; reviewer?: string } | null;
+    const pid = String(b?.profile ?? DEFAULT_PROFILE);
+    const runId = String(b?.runId ?? '');
+    const reviewer = String(b?.reviewer ?? '').trim().slice(0, 40);
+    if (!PROFILE_ID.test(pid) || !PERIOD_ID.test(runId) || typeof b?.hidden !== 'boolean') return json({ error: 'INVALID_RUN' }, 400, h);
+    if (!reviewer) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
+    const list = (await readHiddenRuns(env, pid)).filter((x) => x.runId !== runId);
+    if (b.hidden) list.push({ runId, by: reviewer, at: new Date().toISOString() });
+    await env.REVIEWS.put(`hid:${pid}`, JSON.stringify(list.slice(-500)));
+    return json({ ok: true, hidden: list }, 200, h);
   }
 
   if (url.pathname === '/review' && req.method === 'POST') {

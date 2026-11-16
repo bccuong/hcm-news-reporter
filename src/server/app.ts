@@ -275,6 +275,14 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     a.events.on('event', on);
     req.raw.on('close', () => a.events.off('event', on));
   });
+  /** "Lượt đã lưu" › Xoá: removes a saved run (not while it is running); exported reports are kept */
+  app.delete('/api/runs/:id', async (req) => {
+    const id = (req.params as { id: string }).id;
+    if (active.has(id)) throw Object.assign(new Error('Lượt này đang chạy – dừng trước khi xoá'), { statusCode: 409 });
+    if (!(await stores.getManifest(id))) throw Object.assign(new Error('RUN_NOT_FOUND'), { statusCode: 404 });
+    await stores.deleteRun(id);
+    return { ok: true };
+  });
   app.post('/api/runs/:id/cancel', async (req) => {
     const a = active.get((req.params as { id: string }).id);
     a?.ctl.abort();

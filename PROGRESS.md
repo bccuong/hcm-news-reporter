@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13u – F5 "Failed to fetch" = Cloudflare KV list() quota; publisher name → home page; 2026-11-16)
+## ▶ RESUME HERE (session 13v – "Lượt đã lưu" picker + delete; "Kỳ gần nhất" = latest run; 2026-11-16)
+- RunPicker (web/src/App.tsx): compact labels ("16/11 · 08:01–16:30", "15/11 17:00 → 16/11 08:00") + chip (tự động / requester / đang diễn ra / status), newest first, current ticked, trash per row. Local: DELETE /api/runs/:id (stores.deleteRun; refused while running; exports kept). Web: reviewer hides a run for the whole team via worker POST /runs/hide (KV `hid:<profile>`, one get via GET /runs/hidden, public); "Lượt đã xoá (n)" › Khôi phục. Not logged in: no delete (greyed icon with hint).
+- "Kỳ gần nhất" button now opens the most recent run (latestRun) instead of a computed 17:00→08:00 window; the most recent run shows "Kỳ gần nhất" highlighted. Without any run: the last completed window as before.
+- Worker deployed d818872b. Tests: vitest 135/135 (worker hide/restore; server DELETE run), playwright 11/11, live 8/8 (compact label, Kỳ gần nhất, delete hidden for another browser, restore).
+- Next: after 07:00 check the 16/11 shared decisions came back (see 13u).
+
+## (history) Session 13u – F5 "Failed to fetch" = Cloudflare KV list() quota; publisher name → home page; 2026-11-16)
 - Root cause (wrangler tail): "KV list() limit exceeded for the day" – the free plan allows 1,000 list()/day and every page load listed the period's reviews (GET /review) and the day's votes (GET /labels). The worker threw (1101) without CORS headers → browser "Failed to fetch".
 - Fix (cloud/review-worker/src/handler.ts, deployed f0b63bcd): one aggregate KV value per period `rva:<profile>:<period>` and per day `la:<date>` → reads = ONE get, no list(). Old per-article keys are merged once when list() is available (`legacy` flag; while the quota is gone the answer carries `pending` and the merge is retried on a later read). Writes: read-merge-write of the aggregate (labels still keep their per-key record for the nightly /export). Config-history pruning tolerates a failed list(). Any unexpected error now answers JSON WITH CORS headers (503 + reason for quota errors).
 - Known: decisions saved before the fix for the current period reappear after the daily quota reset (00:00 UTC = 07:00 VN). Concurrent edits of the same period by two reviewers within the same instant can overwrite each other (KV has no transactions).

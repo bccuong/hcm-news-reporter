@@ -278,6 +278,21 @@ describe('shared review worker', () => {
       for (let i = 0; i < 3; i++) await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e);
       expect(kv.lists).toBe(l0);
     });
+    it('saved runs removed by a reviewer: hidden for everyone (public read), restorable, reviewers only', async () => {
+      const e = env();
+      const hide = (body: unknown, code = 'HCM-test-1234') => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);
+      const list = async (pid = 'hcm') => ((await (await handle(new Request(`https://w.example/runs/hidden?profile=${pid}`, { headers: { origin: ORIGIN } }), e)).json()) as { hidden: Array<{ runId: string; by: string }> }).hidden;
+      expect((await hide({ profile: 'hcm', runId: 'run_live_custom1', hidden: true, reviewer: 'A' }, 'wrong')).status).toBe(401);
+      expect((await hide({ profile: 'hcm', runId: '../x', hidden: true, reviewer: 'A' })).status).toBe(400);
+      expect((await hide({ profile: 'hcm', runId: 'run_live_custom1', hidden: 'yes', reviewer: 'A' })).status).toBe(400);
+      expect((await hide({ profile: 'hcm', runId: 'run_live_custom1', hidden: true, reviewer: '' })).status).toBe(400);
+      expect((await hide({ profile: 'hcm', runId: 'run_live_custom1', hidden: true, reviewer: 'Cường' })).status).toBe(200);
+      await hide({ profile: 'hcm', runId: 'run_live_custom1', hidden: true, reviewer: 'Cường' }); // twice = once
+      expect(await list()).toEqual([expect.objectContaining({ runId: 'run_live_custom1', by: 'Cường' })]);
+      expect(await list('ha-noi')).toEqual([]);
+      await hide({ profile: 'hcm', runId: 'run_live_custom1', hidden: false, reviewer: 'B' });
+      expect(await list()).toEqual([]);
+    });
     it('an unexpected error still answers with CORS headers (the page shows the reason, not "Failed to fetch")', async () => {
       const e = env();
       (e.REVIEWS as MemKV).get = async () => { throw new Error('KV get() limit exceeded for the day.'); };

@@ -44,6 +44,11 @@ export interface Api {
   backup(): Promise<unknown>;
   restore(b: unknown): Promise<void>;
   listRuns(): Promise<RunInfo[]>;
+  /** "Lượt đã lưu" › Xoá – local: deletes the saved run; web: hides it for the whole team (reviewer login, can be restored) */
+  deleteRun?(id: string): Promise<void>;
+  /** web only: runs removed by a reviewer, newest removal first, to restore them */
+  hiddenRuns?(): Promise<Array<{ run: RunInfo; by: string; at: string }>>;
+  restoreRun?(id: string): Promise<void>;
   /** local: starts a run; live: asks the server (GitHub Actions) to collect → { remote: true } */
   startRun(window: ReportWindow, trigger: 'manual' | 'auto'): Promise<{ runId?: string; skipped?: string; remote?: boolean }>;
   getRun(id: string): Promise<RunInfo>;
@@ -73,6 +78,7 @@ function pickShared(p: Partial<ReviewDecision>): Partial<ReviewDecision> {
   return out as Partial<ReviewDecision>;
 }
 
+type HiddenRunRef = { runId: string; by: string; at: string };
 export type ExportFormat = 'pptx' | 'docx' | 'pdf';
 
 export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: string | null; a: string | null; n: string; t: string }
@@ -149,6 +155,7 @@ class LocalApi implements Api {
     const [rs, p] = await Promise.all([this.req<RunInfo[]>('GET', '/api/runs'), this.profiles()]);
     return rs.filter((r) => (r.profileId ?? 'hcm') === p.activeId);
   };
+  deleteRun = async (id: string) => void (await this.req('DELETE', `/api/runs/${id}`, {}));
   startRun = (window: ReportWindow, trigger: 'manual' | 'auto') => this.req<{ runId?: string; skipped?: string }>('POST', '/api/runs', { window, trigger });
   getRun = (id: string) => this.req<RunInfo>('GET', `/api/runs/${id}`);
   cancel = async (id: string) => void (await this.req('POST', `/api/runs/${id}/cancel`, {}));
@@ -515,8 +522,39 @@ class DemoApi implements Api {
     await this.saveSettings(b.settings, 'Khôi phục từ bản sao lưu');
     await this.saveSources(b.sources, 'Khôi phục từ bản sao lưu');
   }
+  /** runs a reviewer removed from "Lượt đã lưu" (shared by the team through the review worker) */
+  private hidden: HiddenRunRef[] = [];
+  private allRuns: RunInfo[] = [];
+  private async loadHidden() {
+    if (!this.reviewApi) return [];
+    try {
+      const r = await fetch(`${this.reviewApi}/runs/hidden?profile=${encodeURIComponent(this.pid)}`, { cache: 'no-cache' });
+      this.hidden = r.ok ? ((await r.json()) as { hidden: HiddenRunRef[] }).hidden : this.hidden;
+    } catch {
+      /* offline: keep the last list */
+    }
+    return this.hidden;
+  }
+  private async setHidden(id: string, hidden: boolean) {
+    const s = this.who(hidden ? 'xoá lượt đã lưu' : 'khôi phục lượt đã lưu');
+    const r = await fetch(`${this.reviewApi}/runs/hide`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ profile: this.pid, runId: id, hidden, reviewer: s.name }) });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không lưu được');
+    this.hidden = ((await r.json()) as { hidden: HiddenRunRef[] }).hidden;
+  }
+  async deleteRun(id: string) {
+    await this.setHidden(id, true);
+  }
+  async restoreRun(id: string) {
+    await this.setHidden(id, false);
+  }
+  async hiddenRuns() {
+    const hid = await this.loadHidden();
+    const byId = new Map(this.allRuns.map((r) => [r.runId, r]));
+    return hid.filter((x) => byId.has(x.runId)).map((x) => ({ run: byId.get(x.runId)!, by: x.by, at: x.at })).reverse();
+  }
   async listRuns(): Promise<RunInfo[]> {
     if (this.mode === 'demo') return [{ ...(await this.load()).manifest, active: false }];
+    const hiddenP = this.loadHidden();
     const i = await this.liveIndex();
     const days: any[] = i?.days ?? [];
     const runs = days.map((d) => {
@@ -529,8 +567,11 @@ class DemoApi implements Api {
         status: 'completed' as const, sources: [], counts: d.counts, completeness: d.completeness, settingsHash: '', notes, active: false,
       };
     });
-    this.latestId = runs[0]?.runId ?? '';
-    return runs;
+    this.allRuns = runs;
+    const hidden = new Set((await hiddenP).map((x) => x.runId));
+    const shown = runs.filter((r) => !hidden.has(r.runId));
+    this.latestId = shown[0]?.runId ?? '';
+    return shown;
   }
   async startRun(window: ReportWindow): Promise<{ remote: true }> {
     const s = store.get<{ name: string; code: string }>('reviewer');

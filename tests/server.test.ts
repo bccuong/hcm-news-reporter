@@ -182,6 +182,12 @@ describe('local API', () => {
     expect(q.missed.map((m: any) => m.articleId)).toContain(hanoi.id);
     // review persisted for offline reopen
     expect((await app.inject({ method: 'GET', url: `/api/runs/${runId}/review`, headers: H })).json()[flood.id].changes.length).toBeGreaterThan(0);
+    // "Lượt đã lưu" › Xoá: token required, the run disappears, exported files stay
+    expect((await app.inject({ method: 'DELETE', url: `/api/runs/${runId}`, headers: H, payload: {} })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'DELETE', url: '/api/runs/run_nope', headers: auth, payload: {} })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: `/api/runs/${runId}`, headers: auth, payload: {} })).json().ok).toBe(true);
+    expect((await app.inject({ method: 'GET', url: '/api/runs', headers: H })).json().some((r: any) => r.runId === runId)).toBe(false);
+    expect(existsSync(path.join(root, 'exports', pptx))).toBe(true);
     await app.close();
   });
 });
