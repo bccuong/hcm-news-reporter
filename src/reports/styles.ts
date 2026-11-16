@@ -124,7 +124,7 @@ function formal(c: Ctx) {
   cover.addText(c.input.organization.toUpperCase(), { x: M, y: 0.6, w: W - 2 * M, h: 0.5, fontFace: t.headFont, fontSize: 12, bold: true, color: t.ink, align: 'center' });
   rules(cover, 1.2);
   cover.addText('ĐIỂM TIN BÁO CHÍ', { x: M, y: 1.6, w: W - 2 * M, h: 0.6, fontFace: t.headFont, fontSize: 26, bold: true, color: t.accent, align: 'center' });
-  cover.addText(`Phản ánh về ngành xây dựng${c.input.regionName ? ` ${c.input.regionName}` : ''}\nSáng ngày ${c.input.reportDateLabel}`, {
+  cover.addText(`Phản ánh về ngành xây dựng${c.input.regionName ? ` ${c.input.regionName}` : ''}\nNgày ${c.input.reportDateLabel}`, {
     x: M, y: 2.25, w: W - 2 * M, h: 0.9, fontFace: t.font, fontSize: 15, italic: true, color: t.ink, align: 'center',
   });
   cover.addText(windowLine(c), { x: M, y: 3.15, w: W - 2 * M, h: 0.3, fontFace: t.font, fontSize: 9, color: t.muted, align: 'center' });

@@ -1,5 +1,6 @@
 import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, Wifi, WifiOff, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
@@ -1192,6 +1193,8 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
   const srcText = `${a.title} ${a.sapo} ${a.bodyText}`;
   const missingNums = (summary.match(/\d[\d.,]*/g) ?? []).filter((x) => !srcText.includes(x));
   const save = () => onPatch({ title, summary, shortLabel: short, proposal });
+  // "Tồn tại cần khắc phục": unit suggested from the topic (Cài đặt › Báo cáo & mẫu › Đề xuất giao đơn vị)
+  const suggested = suggestAssignment({ title, sapo: a.sapo }, settings);
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/30" role="dialog" aria-modal="true" aria-label="Chi tiết bài">
       <div className="flex h-full w-full max-w-[1200px] flex-col bg-white shadow-2xl">
@@ -1294,7 +1297,21 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
               {missingNums.length > 0 && <span className="block text-xs text-red-700">⚠ Số liệu không có trong bài gốc: {missingNums.join(', ')} – kiểm tra lại, không thêm dữ kiện ngoài bài.</span>}
             </label>
             {asm === 'needs_attention' && (
-              <label className="block"><span className="label">Đề xuất đầu mối (DỰ THẢO – cần lãnh đạo duyệt)</span><textarea className="input" rows={2} placeholder="Đề xuất: … (đầu mối đề xuất, chờ rà soát)" value={proposal} onChange={(e) => setProposal(e.target.value)} onBlur={save} /></label>
+              <div className="block" data-testid="proposal-box">
+                <label className="block">
+                  <span className="label">Đề xuất giao đơn vị (DỰ THẢO – cần lãnh đạo duyệt)</span>
+                  <textarea className="input" rows={2} placeholder={suggested.text} value={proposal} onChange={(e) => setProposal(e.target.value)} onBlur={save} aria-label="Đề xuất giao đơn vị" />
+                </label>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span>
+                    Gợi ý{suggested.rule ? ` (nhóm "${suggested.rule}": ${suggested.evidence.slice(0, 4).join(', ')})` : ' (không khớp nhóm nào – câu chung)'}: <i>{suggested.text}</i>
+                    {!proposal && ' – để trống thì báo cáo dùng gợi ý này.'}
+                  </span>
+                  {proposal !== suggested.text && (
+                    <button className="btn-ghost btn-xs" onClick={() => (setProposal(suggested.text), onPatch({ title, summary, shortLabel: short, proposal: suggested.text }))}>Dùng gợi ý</button>
+                  )}
+                </div>
+              </div>
             )}
             <div>
               <span className="label">Ảnh báo gốc (chỉ ảnh thật từ bài)</span>

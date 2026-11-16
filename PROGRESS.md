@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13o – why every publisher hit its limit; 2026-11-16)
+## ▶ RESUME HERE (session 13p – cover without "SÁNG", suggested units for "Tồn tại", feed-date trust; 2026-11-16)
+- User: the cover must not say "SÁNG NGÀY" (any window can be reported) → "NGÀY dd/mm/yyyy" in the Skill template (incl. dated layout/master footers) and the 4 designs.
+- User: proposals for "Tồn tại cần khắc phục" follow the Sở guidance → `settings.editorial.assignmentRules` (6 default groups: mưa bão/ngập/thoát nước/cây xanh → P. Hạ tầng kỹ thuật + TT QL giao thông và HTKT; ùn tắc/kẹt xe → TT QL điều hành giao thông đô thị; huy động vốn/nhà ở hình thành trong tương lai → P. Phát triển đô thị; chất lượng/hư hỏng/xuống cấp/sụp đổ → P. QL chất lượng công trình; sai phép/trái phép/không phép → P. Kiểm tra chuyên ngành; mặt đường/ổ gà → P. Bảo trì và Khai thác CTGT) + fallback sentence. `suggestAssignment` (src/domain/assignment.ts: title keyword 3, sapo 1, strongest group). Used by the report when the editor wrote no proposal; Inspector shows the suggestion with its evidence and "Dùng gợi ý"; rules editable in Cài đặt › Báo cáo & mẫu. Recommendation slide lines capitalised ("Giao Phòng …"). Rendered with the Skill template and checked as PowerPoint PNGs.
+- Collector: (a) a feed date read later (parser fix) is taken for links seen again in a continued run; (b) feed dates trusted per publisher once ≥ 5 stories read in the run match their page time (≤ 10 min) → links dated outside the window are recorded FEED_DATE_CONFIRMED without download.
+- Tests: typecheck, vitest 127/127 (tests/assignment.test.ts, feed-date trust, cover text), playwright 11/11, live E2E 7/7.
+
+## (history) Session 13o – why every publisher hit its limit; 2026-11-16)
 - User: in the on-demand run 08:01 → 14:00 16/11 Thanh Niên, VnExpress, Dân trí all "chạm giới hạn tải". Live analysis showed two real causes (not a limit too low):
   1. **Bug:** Thanh Niên RSS pubDate uses a two-digit year ("Mon, 16 Nov 26 14:20:00 +0700") → `parsePublisherDate` returned null → all 151 RSS links undated → every story downloaded to learn its date. Fixed (RFC 822 two-digit year → 20yy); test in tests/domain.test.ts.
   2. Undated links from deep listing pages (up to 30 pages per section) – e.g. VnExpress spent 144/150 downloads on them. Now undated links are read newest publisher id first and, after `collection.undatedStopAfterOld` (default 8, Cài đặt › Hiệu năng; 0 = off) consecutive stories verified older than the window, the remaining undated links with smaller ids are recorded outside_window / OLDER_THAN_CHECKED without download ("Thử lại" still fetches). Test "links without any date" in tests/collector.test.ts.

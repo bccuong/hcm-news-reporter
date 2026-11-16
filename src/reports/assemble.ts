@@ -1,3 +1,4 @@
+import { suggestAssignment } from '../domain/assignment.js';
 import type { Article, CategoryCode, EditorialAssessment, ReviewDecision, Settings } from '../domain/schemas.js';
 import type { ReportStory } from './pptx.js';
 
@@ -123,7 +124,7 @@ export function assembleStories(articles: Article[], reviews: Record<string, Rev
       title: r.title ?? a.title,
       summary,
       sources,
-      proposal: group === 'needs_attention' ? r.proposal || 'Đề xuất: đầu mối đề xuất, chờ rà soát.' : undefined,
+      proposal: group === 'needs_attention' ? r.proposal || suggestAssignment({ title: r.title ?? a.title, sapo: a.sapo }, settings).text : undefined,
       image: null,
       imageUrl,
     });

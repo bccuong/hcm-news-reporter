@@ -54,7 +54,10 @@ export class Ledger {
     const id = candidateId(url);
     const ex = this.byId.get(id);
     if (ex) {
-      if (!ex.discoveredVia.some((d) => d.method === ev.method && d.listingUrl === ev.listingUrl)) ex.discoveredVia.push(ev);
+      const same = ex.discoveredVia.find((d) => d.method === ev.method && d.listingUrl === ev.listingUrl);
+      if (!same) ex.discoveredVia.push(ev);
+      // seen again (continued run): a feed date that could not be read before (e.g. a parser fix) is taken now
+      else if (!same.feedPublishedAt && ev.feedPublishedAt) Object.assign(same, { feedPublishedAt: ev.feedPublishedAt, ...(ev.feedTitle ? { feedTitle: ev.feedTitle } : {}) });
       return { cand: ex, isNew: false };
     }
     const c: Candidate = {
@@ -304,6 +307,11 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
     const olderThan = winFrom - settings.reportWindow.lookbackMarginHours * 3600_000;
     let oldStreak = 0;
     let oldIdFloor = Infinity;
+    // feed dates checked against the real publication time of the stories read in this run: when they agree (≥ 5 stories,
+    // ≤ 10 min), links whose feed date is outside the window are not downloaded just to confirm it
+    const feedChecks: number[] = [];
+    const feedTrusted = () => feedChecks.length >= 5 && feedChecks.every((d) => d <= 10 * 60_000);
+    const feedOf = (c: Candidate) => c.discoveredVia.map((d) => d.feedPublishedAt).find(Boolean);
     /** fetch order under a limit: dated inside the window (newest first) → undated → dated outside */
     const rank = (c: Candidate): [number, number] => {
       const fd = c.discoveredVia.map((d) => d.feedPublishedAt).find(Boolean);
@@ -358,6 +366,11 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
         const primary = ledger.byId.get(sameAs)!;
         primary.discoveredVia.push(...c.discoveredVia);
         ledger.set(c, 'duplicate', 'DUPLICATE_CANONICAL', `Đã có bài từ link khác trỏ tới cùng trang: ${primary.url}`);
+        continue;
+      }
+      const fdc = feedOf(c);
+      if (!ctx.retryCandidateIds && fdc && !(Date.parse(fdc) >= winFrom && Date.parse(fdc) < winTo) && feedTrusted()) {
+        ledger.set(c, 'outside_window', 'FEED_DATE_CONFIRMED', `Ngày trong RSS/sitemap ${fdc} ngoài khung; ngày RSS của báo này khớp giờ đăng thật ở ${feedChecks.length} bài đã đọc trong lượt – bấm "Thử lại" để tải kiểm tra`);
         continue;
       }
       if (!ctx.retryCandidateIds && stopAfter > 0 && oldStreak >= stopAfter && undated(c) && pubId(c.url) > 0 && pubId(c.url) < oldIdFloor) {
@@ -448,6 +461,7 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
       await stores.appendArticles(ctx.runId, [article]);
 
       ledger.set(c, ...stateFor(article, _verdict, ctx.window));
+      if (fdc && article.publishedAt && article.dateConfidence === 'verified') feedChecks.push(Math.abs(Date.parse(article.publishedAt) - Date.parse(fdc)));
       if (undated(c) && pubId(c.url) > 0 && article.publishedAt && article.dateConfidence === 'verified') {
         if (Date.parse(article.publishedAt) < olderThan) {
           oldStreak++;

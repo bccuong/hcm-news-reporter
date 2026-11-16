@@ -95,6 +95,16 @@ export type RulePreset = z.infer<typeof RulePresetSchema>;
 export const CategoryCode = z.enum(['LAND', 'BUILD', 'INFRA', 'TRAFFIC', 'REALESTATE', 'FLOOD', 'INVEST', 'POLICY']);
 export type CategoryCode = z.infer<typeof CategoryCode>;
 
+/** Sở Xây dựng TP.HCM guidance (16/11/2026): which unit handles which kind of "tồn tại cần khắc phục" */
+export const ASSIGNMENT_RULES_DEFAULT = [
+  { name: 'Mưa bão, ngập lụt, thoát nước, cây xanh', keywords: ['mưa bão', 'bão', 'mưa lớn', 'mưa dông', 'ngập', 'ngập lụt', 'ngập úng', 'triều cường', 'thoát nước', 'cống', 'cây xanh', 'cây đổ', 'gãy đổ', 'ngã đổ', 'gãy cành'], unit: 'Phòng Hạ tầng kỹ thuật, Trung tâm Quản lý giao thông và Hạ tầng kỹ thuật tham mưu, xử lý' },
+  { name: 'Ùn tắc giao thông, kẹt xe', keywords: ['ùn tắc', 'kẹt xe', 'ùn ứ', 'tắc đường', 'kẹt cứng', 'tắc nghẽn'], unit: 'Trung tâm Quản lý điều hành giao thông đô thị tham mưu, xử lý' },
+  { name: 'Huy động vốn, bán nhà ở hình thành trong tương lai', keywords: ['huy động vốn', 'nhà ở hình thành trong tương lai', 'hình thành trong tương lai', 'nhận cọc', 'góp vốn', 'bán nhà trên giấy'], unit: 'Phòng Phát triển đô thị tham mưu, xử lý' },
+  { name: 'Chất lượng, hư hỏng, xuống cấp, sụp đổ công trình', keywords: ['chất lượng công trình', 'hư hỏng', 'xuống cấp', 'sụp đổ', 'sập', 'sụp', 'nứt', 'thấm dột', 'chung cư cũ', 'nguy hiểm'], unit: 'Phòng Quản lý chất lượng công trình tham mưu, xử lý' },
+  { name: 'Xây dựng sai phép, trái phép, không phép', keywords: ['sai phép', 'trái phép', 'không phép', 'xây dựng trái phép', 'xây dựng không phép', 'sai giấy phép', 'trật tự xây dựng', 'lấn chiếm'], unit: 'Phòng Kiểm tra chuyên ngành tham mưu, xử lý' },
+  { name: 'Hư hỏng mặt đường, ổ gà', keywords: ['ổ gà', 'ổ voi', 'mặt đường', 'hư hỏng mặt đường', 'sụt lún', 'lún sụt', 'bong tróc', 'hố sâu'], unit: 'Phòng Bảo trì và Khai thác công trình giao thông tham mưu, xử lý' },
+] as const;
+
 /** place-name look-alikes that are not about the city (user feedback 16/11/2026) */
 export const LOCATION_EXCLUDE_DEFAULT = [
   'giải thưởng Hồ Chí Minh', 'đường Hồ Chí Minh', 'đường mòn Hồ Chí Minh', 'tư tưởng Hồ Chí Minh', 'Chủ tịch Hồ Chí Minh', 'lăng Chủ tịch Hồ Chí Minh', 'Bác Hồ',
@@ -276,6 +286,12 @@ export const SettingsSchema = z.object({
       maxImagesPerArticle: z.number().int().min(0).max(5).default(2),
       minImageWidth: z.number().int().min(100).max(4000).default(400),
       summaryMaxChars: z.object({ TT: z.number().default(260), TC: z.number().default(260), TL: z.number().default(330) }).default({}),
+      /** "Tồn tại cần khắc phục": suggested unit by topic (title keyword = 3, sapo = 1; strongest rule wins) */
+      assignmentRules: z
+        .array(z.object({ name: z.string().max(80), keywords: z.array(z.string()).default([]), unit: z.string().min(1).max(300) }))
+        .default(() => ASSIGNMENT_RULES_DEFAULT.map((r) => ({ ...r, keywords: [...r.keywords] }))),
+      /** when no rule matches */
+      assignmentFallback: z.string().max(300).default('giao các phòng, đơn vị tham mưu theo chức năng, nhiệm vụ.'),
     })
     .default({}),
   report: z

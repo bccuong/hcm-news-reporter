@@ -544,6 +544,7 @@ function QualityPanel({ s, up }: { s: Settings; up: Up }) {
 /* ---------------- Report ---------------- */
 function ReportPanel({ s, up }: { s: Settings; up: Up }) {
   const toast = useToast();
+  const upEditorial = (p: Partial<Settings['editorial']>) => up('editorial', p);
   const [caps, setCaps] = useState<{ pdf: boolean; soffice: string | null; powerpoint?: string | null } | null>(null);
   const [tpls, setTpls] = useState<TemplateOption[]>([]);
   useEffect(() => {
@@ -584,6 +585,33 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
           <b>Có thêm mẫu riêng của bạn:</b> báo cáo được dựng bằng cách nhân bản đúng các trang của mẫu (Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị), thay nội dung trong các khung sẵn có và giữ nguyên định dạng. Nếu mẫu khác cấu trúc, xuất báo cáo sẽ báo <b>BLOCKED</b> thay vì tạo tệp sai.
         </div>
       )}
+      <Section title="Đề xuất giao đơn vị cho tin Tồn tại cần khắc phục" help="Mỗi tin Tồn tại được gợi ý giao đơn vị của nhóm khớp nhất theo từ khóa (có trong tiêu đề = 3 điểm, chỉ trong sapo = 1 điểm). Biên tập viên vẫn sửa được từng tin.">
+        <div className="space-y-2" data-testid="assignment-rules">
+          {(s.editorial.assignmentRules ?? []).map((r, i) => {
+            const set = (p: Partial<typeof r>) => upEditorial({ assignmentRules: s.editorial.assignmentRules.map((x, j) => (j === i ? { ...x, ...p } : x)) });
+            return (
+              <div key={i} className="rounded border border-slate-200 bg-white p-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input className="input w-72" aria-label={`Nhóm ${i + 1}`} value={r.name} onChange={(e) => set({ name: e.target.value })} placeholder="Tên nhóm (ví dụ: Ngập lụt, cây xanh)" />
+                  <button className="btn-danger btn-xs ml-auto" onClick={() => upEditorial({ assignmentRules: s.editorial.assignmentRules.filter((_, j) => j !== i) })}>Xóa nhóm</button>
+                </div>
+                <div className="mt-1 text-xs text-slate-600">Từ khóa</div>
+                <ChipEditor values={r.keywords} onChange={(v) => set({ keywords: v })} placeholder="từ khóa…" />
+                <label className="mt-1 block text-xs text-slate-600">
+                  Giao (đơn vị + việc)
+                  <input className="input" aria-label={`Đơn vị nhóm ${i + 1}`} value={r.unit} onChange={(e) => set({ unit: e.target.value })} placeholder="Phòng … tham mưu, xử lý" />
+                </label>
+              </div>
+            );
+          })}
+          <button className="btn-ghost w-fit" onClick={() => upEditorial({ assignmentRules: [...(s.editorial.assignmentRules ?? []), { name: '', keywords: [], unit: '' }] })}>
+            <Plus className="h-4 w-4" /> Thêm nhóm
+          </button>
+          <Field label="Khi không khớp nhóm nào" help="Câu đề xuất chung (sau chữ 'Đề xuất:').">
+            <input className="input" value={s.editorial.assignmentFallback} onChange={(e) => upEditorial({ assignmentFallback: e.target.value })} />
+          </Field>
+        </div>
+      </Section>
       <Section title="Mẫu riêng (không bắt buộc) & thông tin cơ quan">
         <p className="text-xs">Chỉ cần khi muốn dùng một tệp .pptx khác (cùng cấu trúc mẫu Sở). Mẫu riêng đang có: <b>{s.report.templateFile || 'không có – vẫn xuất bình thường bằng các mẫu có sẵn ở trên'}</b></p>
         {api.mode !== 'local' && <p className="text-xs text-slate-600">Bản web: mẫu chỉ lưu trong <b>trình duyệt này</b> (không tải lên máy chủ hay GitHub); xuất báo cáo dựng ngay trong trình duyệt, ảnh báo gốc lấy qua máy chủ duyệt tin (cần đăng nhập). PDF: mở tệp .pptx bằng PowerPoint › Lưu thành PDF.</p>}

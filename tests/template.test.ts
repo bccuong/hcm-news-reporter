@@ -40,7 +40,9 @@ describe.skipIf(!has)('original template adapter (RPT-01/02/03 structural)', () 
     for (const stale of ['Vĩnh Hội', 'Gamuda', 'HoREA', '05/11/2026', 'can-canh-chung-cu', 'Minh họa metro', 'Ảnh minh họa', 'notesSlide']) {
       expect(allText.includes(stale), stale).toBe(false);
     }
-    expect(allText).toContain('SÁNG NGÀY 09/11/2026');
+    // any window can be reported: the cover says "NGÀY …", never "SÁNG NGÀY …" (user, 16/11/2026)
+    expect(allText).toContain('NGÀY 09/11/2026');
+    expect(allText).not.toContain('SÁNG NGÀY');
     expect(allText).toContain('ngày 09 tháng 11 năm 2026');
     expect(allText).toContain('TỒN TẠI (2/2)');
     expect(allText).toContain('https://fixture-a.example.vn/bai-1-1851101001.htm');

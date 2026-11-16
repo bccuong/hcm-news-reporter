@@ -283,6 +283,32 @@ describe('carried-over articles are not evidence of adapter drift', () => {
   });
 });
 
+describe('feed dates confirmed by the stories read in the same run', () => {
+  const F = 'https://fixture-f.example.vn';
+  const rfc = (iso: string) => new Date(iso).toUTCString().replace('GMT', '+0000');
+  const inWin = Array.from({ length: 6 }, (_, i) => ({ id: 9100010 + i, iso: `2026-11-08T${String(18 + i).padStart(2, '0')}:00:00+07:00` }));
+  const margin = Array.from({ length: 6 }, (_, i) => ({ id: 9100000 + i, iso: `2026-11-08T${String(11 + i).padStart(2, '0')}:30:00+07:00` })); // 0.5–5.5 h before the window (inside the 6 h margin)
+  const all = [...inWin, ...margin];
+  const routes: Record<string, { status: number; body: string }> = {
+    [`${F}/rss.rss`]: { status: 200, body: `<?xml version="1.0"?><rss version="2.0"><channel><title>F</title>${all.map((x) => `<item><title>Bài ${x.id}</title><link>${F}/tin/bai-so-${x.id}.htm</link><pubDate>${rfc(x.iso)}</pubDate></item>`).join('')}</channel></rss>` },
+  };
+  for (const x of all) routes[`${F}/tin/bai-so-${x.id}.htm`] = { status: 200, body: page({ title: `Bài ${x.id} về TP.HCM`, sapo: 'Sapo.', pub: x.iso, visible: '', body: P(4, 'giao thông') }) };
+  it('≥ 5 stories whose page time equals the feed date → links dated just outside the window are recorded without download', async () => {
+    const log: string[] = [];
+    const root = mkdtempSync(path.join(tmpdir(), 'hcm-'));
+    const stores = new Stores(makePaths(root), 'https://example.org');
+    const settings = defaultSettings();
+    const http = new HttpClient({ transport: fixtureTransport(routes, log), resolver: publicResolver, maxConcurrent: 4, perHost: 2, timeoutMs: 5000, maxRetries: 1, backoffBaseMs: 1, userAgent: 't', sleep: async () => {} });
+    const src = SourceSchema.parse({ id: 'fixture-f', name: 'Fixture F', baseUrl: F, rssUrls: [`${F}/rss.rss`], sitemapUrls: [], sectionUrls: [], discoveryMethods: ['rss'] });
+    await runCollection({ runId: 'run_feed', window: WINDOW, trigger: 'fixture', settings, sources: [src], stores, http });
+    const cands = (await stores.getCandidates('run_feed')).filter((c) => /bai-so-/.test(c.url));
+    expect(cands.filter((c) => c.attempts > 0)).toHaveLength(6); // only the in-window stories are read
+    const skipped = cands.filter((c) => c.reasonCode === 'FEED_DATE_CONFIRMED');
+    expect(skipped).toHaveLength(6);
+    expect(skipped.every((c) => c.state === 'outside_window' && c.attempts === 0)).toBe(true);
+  });
+});
+
 describe('links without any date (deep listing pages)', () => {
   const U2 = 'https://fixture-u.example.vn';
   const ids = Array.from({ length: 30 }, (_, i) => 9000030 - i); // listing order: newest first

@@ -340,7 +340,7 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
     const m = TEMPLATE_MAP.cover;
     const c = mk(m.slide);
     c.xml = editShape(c.xml, m.org, (sp) => setParagraphs(sp, lines(input.organization)));
-    c.xml = editShape(c.xml, m.title, (sp) => setParagraphs(sp, lines('TỔNG HỢP THÔNG TIN BÁO CHÍ', 'PHẢN ÁNH VỀ NGÀNH XÂY DỰNG', `SÁNG NGÀY ${dateLabel}`)));
+    c.xml = editShape(c.xml, m.title, (sp) => setParagraphs(sp, lines('TỔNG HỢP THÔNG TIN BÁO CHÍ', 'PHẢN ÁNH VỀ NGÀNH XÂY DỰNG', `NGÀY ${dateLabel}`)));
     c.xml = editShape(c.xml, m.summaryHeader, (sp) => setParagraphs(sp, lines(`TÓM TẮT BÌA – ${input.stories.length} TIN`)));
     for (const [g, k] of [['needs_attention', 'tt'], ['positive', 'tc'], ['neutral', 'tl']] as const) {
       c.xml = editShape(c.xml, m[k].count, (sp) => setParagraphs(sp, lines(GROUP_LABEL[g], `${by(g).length} tin`)));
@@ -423,7 +423,10 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
       c.rels.push(...keep.filter((r) => !/mailto:/.test(r)), relEl('rId4', 'hyperlink', `mailto:${input.contactEmail}`));
     } else c.rels.push(...keep);
     const groupLines: string[] = [];
-    for (const s of tt) groupLines.push(s.shortLabel, (s.proposal || 'Đầu mối đề xuất, chờ rà soát.').replace(/^Đề xuất:\s*/, ''));
+    for (const s of tt) {
+      const p = (s.proposal || 'Đầu mối đề xuất, chờ rà soát.').replace(/^Đề xuất:\s*/, '');
+      groupLines.push(s.shortLabel, p.charAt(0).toLocaleUpperCase('vi') + p.slice(1)); // "Giao Phòng …"
+    }
     c.xml = editShape(c.xml, m.groups, (sp) => setParagraphs(sp, groupLines.length ? lines(...groupLines) : lines('Không có tin Tồn tại cần khắc phục trong khung giờ này.'), (i) => i % 2));
     for (const [id, list, g] of [[m.tt, tt, 'needs_attention'], [m.tc, tc, 'positive'], [m.tl, tl, 'neutral']] as const) {
       const fitted = fittedList(c.xml, id, list, `Kiến nghị – nhóm ${GROUP_LABEL[g]}`, notes);
@@ -470,7 +473,7 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
   // layouts/master may carry a dated footer ("… SÁNG 05/11/2026"): replace stale dates with the report date
   for (const f of Object.keys(zip.files).filter((x) => /^ppt\/(slideLayouts|slideMasters)\/[^/]+\.xml$/.test(x))) {
     const x = await zip.file(f)!.async('string');
-    const y2 = x.replace(/(<a:t>[^<]*?)\b\d{2}\/\d{2}\/20\d{2}\b([^<]*<\/a:t>)/g, `$1${dateLabel}$2`);
+    const y2 = x.replace(/(<a:t>[^<]*?)\b\d{2}\/\d{2}\/20\d{2}\b([^<]*<\/a:t>)/g, `$1${dateLabel}$2`).replace(/(<a:t>[^<]*?)SÁNG\s+(?=(?:NGÀY\s+)?\d{2}\/\d{2}\/20\d{2})/g, '$1');
     if (y2 !== x) zip.file(f, y2);
   }
 

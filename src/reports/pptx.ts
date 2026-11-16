@@ -90,7 +90,7 @@ export async function buildReportPptx(input: ReportInput): Promise<Uint8Array> {
   cover.background = { color: 'FFFFFF' };
   cover.addShape('rect', { x: 0, y: 0, w: W, h: 0.35, fill: { color: NAVY } });
   cover.addText(input.organization, { x: 0.45, y: 0.6, w: W - 0.9, h: 0.4, fontFace: FONT, fontSize: 11, bold: true, color: NAVY, align: 'center' });
-  cover.addText(`TỔNG HỢP THÔNG TIN BÁO CHÍ\nPHẢN ÁNH VỀ NGÀNH XÂY DỰNG\nSÁNG NGÀY ${input.reportDateLabel}`, {
+  cover.addText(`TỔNG HỢP THÔNG TIN BÁO CHÍ\nPHẢN ÁNH VỀ NGÀNH XÂY DỰNG\nNGÀY ${input.reportDateLabel}`, {
     x: 0.45, y: 1.2, w: W - 0.9, h: 1.5, fontFace: FONT, fontSize: 20, bold: true, color: NAVY, align: 'center', valign: 'middle',
   });
   cover.addText(`Khung giờ: ${formatVn(input.window.from)} – ${formatVn(input.window.to)} (giờ Việt Nam, không gồm thời điểm kết thúc)`, {
