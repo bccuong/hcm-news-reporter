@@ -131,3 +131,33 @@ describe('defaults requested by the user (16/11/2026)', () => {
     expect(s.reportWindow.defaultPreset).toBe('today');
   });
 });
+
+describe('off-region / off-topic stories seen in the review queue (user feedback 16/11/2026)', () => {
+  const ex = (title: string, sapo: string, body = '') => judgeRelevance(title, `${sapo}\n${body}`, 'x', s, sapo);
+  it.each([
+    ['Miền Bắc sắp rét dưới 10 độ C, miền Trung mưa lớn 3 ngày', 'Dự báo thời tiết từ ngày 18.11, không khí lạnh bắt đầu ảnh hưởng đến nước ta.', 'Thời tiết Hà Nội chuyển rét. TP.HCM cuối thế kỷ 21 có thể nóng thêm.', 'NOT_GEOGRAPHICALLY_RELEVANT'],
+    ['Hà Nội quy định thế nào là người có tài năng?', 'Người có tài năng được hưởng chính sách ưu đãi.', 'Ví dụ người đạt giải thưởng Hồ Chí Minh, giải thưởng nhà nước.', 'NOT_GEOGRAPHICALLY_RELEVANT'],
+    ['Cầu Trần Hưng Đạo sau hơn một năm thi công', 'Hà NộiCầu Trần Hưng Đạo dần lộ rõ hình hài với nhiều trụ cầu chính đã hoàn thành.', '', 'NOT_GEOGRAPHICALLY_RELEVANT'],
+    ['Quảng Trị chi hơn 370 tỉ đồng chỉnh trang nhiều nghĩa trang liệt sĩ', 'Tỉnh Quảng Trị đầu tư chỉnh trang nghĩa trang.', 'Con đường Trường Sơn - đường Hồ Chí Minh và sự hy sinh của các thế hệ.', 'NOT_GEOGRAPHICALLY_RELEVANT'],
+    ['Ai sẽ trấn giữ khung thành đội tuyển Việt Nam trước Kyrgyzstan khi Lê Giang Patrik vắng mặt?', 'Việc 4 cầu thủ CLB Công an TP.HCM rời đội tuyển Việt Nam khiến HLV phải điều chỉnh.', '', 'EXCLUDED_PHRASE'],
+    ['Giá heo hơi hôm nay 16.11.2026: Nhiều địa phương chạm mốc 52.000 đồng/kg', 'Tây Ninh, TP. HCM và Vĩnh Long cùng 51.000 đồng/kg.', '', 'EXCLUDED_PHRASE'],
+    ['Microsoft bị khách hàng yêu cầu bồi thường sau sự cố toàn cầu', 'Khách hàng doanh nghiệp có thể được giảm 50% phí Microsoft 365 nếu đáp ứng điều kiện bồi hoàn.', '', 'NO_HCM_EVIDENCE'],
+    ['PGS Nguyễn Viết Nhung: Việt Nam cần xây dựng thế hệ không thuốc lá', 'Nguyên giám đốc Bệnh viện Phổi Trung ương cho rằng cần quyết liệt hơn.', '', 'NO_HCM_EVIDENCE'],
+  ])('excluded with a reason: %s', (title, sapo, body, reason) => {
+    const v = ex(title, sapo, body);
+    expect(v.status).toBe('irrelevant');
+    expect(v.reasonCode).toBe(reason);
+  });
+  it('national news of the sector is kept for review even when held in Hà Nội', () => {
+    const v = ex('Bộ trưởng Trần Hồng Minh kiểm tra công tác tổng duyệt sự kiện KHCN ngành Xây dựng 2026', 'Chiều 15/11, Bộ trưởng Bộ Xây dựng Trần Hồng Minh đã kiểm tra công tác tổng duyệt tại Hà Nội.');
+    expect(v.status).toBe('review');
+  });
+  it('place look-alikes and other areas are user settings', () => {
+    expect(s.location.excludePhrases).toContain('giải thưởng Hồ Chí Minh');
+    expect(s.location.otherProvinces).toContain('miền Bắc');
+    expect(s.keywords.excludePhrases).toContain('đội tuyển');
+    const off = structuredClone(s);
+    off.location.otherProvinces = off.location.otherProvinces.filter((p) => !/^miền /i.test(p));
+    expect(judgeRelevance('Miền Bắc sắp rét dưới 10 độ C', 'Không khí lạnh.', 'x', off, 'Không khí lạnh.').reasonCode).not.toBe('NOT_GEOGRAPHICALLY_RELEVANT');
+  });
+});

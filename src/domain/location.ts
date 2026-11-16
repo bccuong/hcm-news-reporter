@@ -1,5 +1,5 @@
 import type { Settings } from './schemas.js';
-import { findWord, normText, snippet } from './text.js';
+import { findWord, normText, snippet, blankPhrases } from './text.js';
 
 export interface LocationResult {
   status: 'hcm' | 'connected' | 'other_province' | 'unknown';
@@ -21,7 +21,15 @@ export function detectLocation(title: string, body: string, loc: Settings['locat
   return r;
 }
 
-function detectLocationInner(title: string, body: string, loc: Settings['location'], lead: string): LocationResult {
+/** "Hà NộiCầu Trần Hưng Đạo…" (a dateline glued to the sapo) → "Hà Nội Cầu …"; then place look-alikes are blanked out */
+function prep(s: string, loc: Settings['location']): string {
+  return blankPhrases(s.replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2'), loc.excludePhrases ?? []);
+}
+
+function detectLocationInner(rawTitle: string, rawBody: string, loc: Settings['location'], rawLead: string): LocationResult {
+  const title = prep(rawTitle, loc);
+  const body = prep(rawBody, loc);
+  const lead = prep(rawLead, loc);
   const text = `${title}\n${body}`;
   const leadText = `${title}\n${lead}`;
   const evidence: string[] = [];
@@ -58,10 +66,14 @@ function detectLocationInner(title: string, body: string, loc: Settings['locatio
 
   const others: string[] = [];
   for (const p of loc.otherProvinces) {
-    if (findWord(title, p) >= 0) others.push(p);
+    if (findWord(title, p) >= 0 || findWord(lead, p) >= 0) others.push(p);
   }
 
   const extra = { leadHit, distinct };
+  // the title is about another province/region and the city is not in the title/sapo → another area, even if the body mentions the city
+  if (others.length && !leadHit) {
+    return { status: 'other_province', evidence: [...evidence, `Tiêu đề/sapo nêu địa phương khác: ${others.join(', ')} – ${loc.regionName ?? 'TP.HCM'} không có ở tiêu đề/sapo`], score, ...extra };
+  }
   if (score >= 2 && !(others.length && score < 3)) {
     return { status: connected && score <= 1 ? 'connected' : 'hcm', evidence, score, ...extra };
   }

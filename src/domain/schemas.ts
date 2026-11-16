@@ -93,6 +93,16 @@ export type RulePreset = z.infer<typeof RulePresetSchema>;
 export const CategoryCode = z.enum(['LAND', 'BUILD', 'INFRA', 'TRAFFIC', 'REALESTATE', 'FLOOD', 'INVEST', 'POLICY']);
 export type CategoryCode = z.infer<typeof CategoryCode>;
 
+/** place-name look-alikes that are not about the city (user feedback 16/11/2026) */
+export const LOCATION_EXCLUDE_DEFAULT = [
+  'giải thưởng Hồ Chí Minh', 'đường Hồ Chí Minh', 'đường mòn Hồ Chí Minh', 'tư tưởng Hồ Chí Minh', 'Chủ tịch Hồ Chí Minh', 'lăng Chủ tịch Hồ Chí Minh', 'Bác Hồ',
+  'Đoàn TNCS Hồ Chí Minh', 'Đội TNTP Hồ Chí Minh', 'Học viện Chính trị quốc gia Hồ Chí Minh', 'huân chương Hồ Chí Minh',
+  'Sài Gòn - Hà Nội', 'Sài Gòn – Hà Nội', 'Hà Nội - TP HCM', 'Hà Nội - TP.HCM', 'Hà Nội - TPHCM', 'Hà Nội – TP.HCM', 'Hà Nội - Sài Gòn', 'Bắc - Nam',
+];
+/** regions that are not the city: named in a title without the city in title/sapo → other area */
+export const OTHER_REGIONS_DEFAULT = ['miền Bắc', 'miền Trung', 'Bắc Bộ', 'Trung Bộ', 'Tây Nguyên', 'Bắc Trung Bộ', 'Nam Trung Bộ'];
+/** sports results / commodity prices: never construction news (title phrases; user feedback 16/11/2026) */
+export const SPORTS_PRICES_EXCLUDE = ['đội tuyển', 'cầu thủ', 'thủ môn', 'khung thành', 'HLV', 'V-League', 'SEA Games', 'AFF Cup', 'Asian Cup', 'World Cup', 'vòng loại', 'giá heo hơi', 'giá xăng', 'giá cà phê', 'giá lúa gạo', 'lịch âm'];
 /** sector categories of the construction & transport department (what "Chính sách, pháp quy" must be about) */
 export const SECTOR_CODES: CategoryCode[] = ['LAND', 'BUILD', 'INFRA', 'TRAFFIC', 'REALESTATE', 'FLOOD', 'INVEST'];
 /**
@@ -226,6 +236,15 @@ export const SettingsSchema = z.object({
       noEvidencePolicy: z.enum(['review', 'exclude_with_reason']).default('exclude_with_reason'),
       /** HCM not in title/sapo: at least this many distinct HCM places in the body to be "ready" (else review) */
       minBodyAreasWithoutLead: z.number().int().min(1).max(10).default(2),
+      /** phrases that contain a place name but are not about the place ("giải thưởng Hồ Chí Minh", "ngân hàng Sài Gòn - Hà Nội") – ignored when looking for evidence */
+      excludePhrases: z.array(z.string()).default([...LOCATION_EXCLUDE_DEFAULT]),
+      /**
+       * no place evidence at all: kept for review only with strong sector evidence in title + sapo
+       * (keyword in title = 3, only in sapo = 1; e.g. "chống ngập" in title + "ngập" = 6) or a sector policy/law. 3 = one title keyword is enough.
+       */
+      noPlaceMinLeadScore: z.number().int().min(1).max(20).default(4),
+      /** national news of the sector itself (ministry events, sector-wide programmes): kept for review even without a place */
+      nationalSectorPhrases: z.array(z.string()).default(['ngành Xây dựng', 'Bộ Xây dựng', 'Bộ trưởng Bộ Xây dựng', 'Bộ trưởng Trần Hồng Minh', 'toàn ngành xây dựng']),
     })
     .default({}),
   categories: z.array(CategorySchema).default([]),

@@ -385,7 +385,17 @@ function LocationPanel({ s, up }: { s: Settings; up: Up }) {
           onChange={(n) => up('location', { minBodyAreasWithoutLead: n })}
           help="Ít hơn → bài vào hàng Cần kiểm tra (HCM_ONLY_IN_BODY), không bị loại."
         />
-        <ChipEditor values={s.location.otherProvinces} onChange={(v) => up('location', { otherProvinces: v })} label={`Địa phương khác (nêu trong tiêu đề mà không có bằng chứng ${R} → loại kèm lý do)`} />
+        <NumberField
+          label={`Bài không có địa danh ${R} nào: điểm lĩnh vực tối thiểu ở tiêu đề + sapo để giữ lại (Cần kiểm tra)`}
+          value={s.location.noPlaceMinLeadScore}
+          min={1}
+          max={20}
+          onChange={(n) => up('location', { noPlaceMinLeadScore: n })}
+          help="Từ khóa có trong tiêu đề = 3 điểm, chỉ có trong sapo = 1 điểm. 4 = cần thêm bằng chứng ngoài một từ ở tiêu đề; 3 = một từ ở tiêu đề là đủ. Chính sách, pháp quy của ngành luôn được giữ."
+        />
+        <ChipEditor values={s.location.otherProvinces} onChange={(v) => up('location', { otherProvinces: v })} label={`Địa phương / miền khác (nêu trong tiêu đề mà tiêu đề và sapo không có ${R} → loại kèm lý do)`} />
+        <ChipEditor values={s.location.nationalSectorPhrases ?? []} onChange={(v) => up('location', { nationalSectorPhrases: v })} label={`Cụm từ tin toàn ngành (bài không có địa danh ${R} nhưng tiêu đề/sapo có cụm này vẫn vào Cần kiểm tra, ví dụ "Bộ Xây dựng")`} />
+        <ChipEditor values={s.location.excludePhrases ?? []} onChange={(v) => up('location', { excludePhrases: v })} label={`Cụm từ không phải địa bàn (bỏ qua khi tìm ${R}, ví dụ "giải thưởng Hồ Chí Minh", "ngân hàng Sài Gòn - Hà Nội")`} />
       </Section>
       <Section
         title={`Địa danh & bí danh (${areas.length})`}

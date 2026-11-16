@@ -1,3 +1,4 @@
+import { OTHER_REGIONS_DEFAULT, SPORTS_PRICES_EXCLUDE } from './schemas.js';
 import places from './data/hcm_places.json';
 import { SettingsSchema, SourceSchema, type LocationArea, type RuleGroup, type Settings, type Source } from './schemas.js';
 import { slugify } from './text.js';
@@ -183,17 +184,17 @@ export function defaultSettings(): Settings {
         { canonical: 'metro', aliases: ['đường sắt đô thị', 'tàu điện ngầm'] },
         { canonical: 'giải phóng mặt bằng', aliases: ['GPMB', 'bồi thường, hỗ trợ, tái định cư'] },
       ],
-      excludePhrases: ['tuyển dụng', 'khuyến mãi', 'xổ số', 'pickleball', 'bóng đá', 'giải chạy', 'tennis', 'cầu lông', 'U23', 'U19', 'dự đoán tỷ số', 'giá vàng', 'giá USD'],
+      excludePhrases: ['tuyển dụng', 'khuyến mãi', 'xổ số', 'pickleball', 'bóng đá', 'giải chạy', 'tennis', 'cầu lông', 'U23', 'U19', 'dự đoán tỷ số', 'giá vàng', 'giá USD', ...SPORTS_PRICES_EXCLUDE],
       excludeUrlSections: EXCLUDE_SECTIONS,
     },
     rules: { presets: [defaultRulePreset()], activePresetId: 'preset_nganh_xay_dung' },
-    location: { areas: defaultAreas(), otherProvinces: places.other_provinces },
+    location: { areas: defaultAreas(), otherProvinces: [...places.other_provinces, ...OTHER_REGIONS_DEFAULT] },
     categories: [
       { code: 'LAND', label: 'Đất đai', priority: 1, keywords: ['thu hồi đất', 'bồi thường', 'giải phóng mặt bằng', 'GPMB', 'quy hoạch sử dụng đất', 'tái định cư', 'đất đai', 'giá đất', 'quỹ đất'] },
       { code: 'BUILD', label: 'Xây dựng', priority: 2, keywords: ['xây dựng', 'công trình', 'giấy phép xây dựng', 'chất lượng công trình', 'an toàn', 'vi phạm', 'xây dựng trái phép', 'chung cư cũ', 'cấp D', 'thi công', 'công trường', 'sập'] },
       { code: 'INFRA', label: 'Hạ tầng kỹ thuật', priority: 3, keywords: ['thoát nước', 'cấp nước', 'hạ tầng', 'cống', 'vỉa hè', 'cây xanh', 'chiếu sáng', 'công viên', 'kè', 'kênh', 'rạch'] },
       { code: 'TRAFFIC', label: 'Giao thông', priority: 4, keywords: ['giao thông', 'metro', 'đường sắt', 'cầu', 'nút giao', 'cao tốc', 'vành đai', 'ùn tắc', 'kẹt xe', 'xe buýt', 'mở rộng đường', 'đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển'] },
-      { code: 'REALESTATE', label: 'Bất động sản/nhà ở', priority: 5, keywords: ['bất động sản', 'nhà ở', 'chung cư', 'căn hộ', 'nhà ở xã hội', 'sổ hồng', 'dự án nhà ở', 'thị trường'] },
+      { code: 'REALESTATE', label: 'Bất động sản/nhà ở', priority: 5, keywords: ['bất động sản', 'nhà ở', 'chung cư', 'căn hộ', 'nhà ở xã hội', 'sổ hồng', 'dự án nhà ở', 'thị trường bất động sản', 'thị trường nhà ở', 'thị trường căn hộ'] },
       { code: 'FLOOD', label: 'Ngập lụt', priority: 6, keywords: ['ngập', 'triều cường', 'mưa lớn', 'chống ngập', 'ngập úng', 'sạt lở', 'đê'] },
       { code: 'INVEST', label: 'Đầu tư công', priority: 7, keywords: ['đầu tư công', 'giải ngân', 'vốn đầu tư', 'chủ đầu tư', 'gói thầu'] },
       { code: 'POLICY', label: 'Chính sách, pháp quy', priority: 8, keywords: ['nghị định', 'thông tư', 'dự thảo', 'luật', 'nghị quyết', 'quyết định'] },
@@ -209,7 +210,7 @@ export function defaultSettings(): Settings {
 export function settingsForNewRegion(regionName: string, aliases: string[] = []): Settings {
   const s = defaultSettings();
   const region = regionName.trim();
-  const others = [...new Set([...places.other_provinces, 'TP.HCM', 'TP Hồ Chí Minh', 'Thành phố Hồ Chí Minh'])].filter(
+  const others = [...new Set([...places.other_provinces, ...OTHER_REGIONS_DEFAULT, 'TP.HCM', 'TP Hồ Chí Minh', 'Thành phố Hồ Chí Minh'])].filter(
     (p) => ![region, ...aliases].some((x) => x.toLowerCase() === p.toLowerCase()),
   );
   return SettingsSchema.parse({

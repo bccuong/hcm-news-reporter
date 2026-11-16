@@ -41,10 +41,12 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
     evidence.push(...r.hits.slice(0, 5).map((h) => `Từ khóa "${h.via}" (${h.field})`));
   }
 
+  // national news of the sector itself (ministry events are mostly held in Hà Nội): never excluded for its place
+  const nationalSector = (settings.location.nationalSectorPhrases ?? []).find((p) => p && (findWord(title, p) >= 0 || findWord(sapo, p) >= 0));
   if (location.status === 'other_province' && settings.location.requireHcmEvidence) {
     // Explicit evidence of another province and no HCM evidence -> excluded WITH reason (visible, overridable)
     return {
-      status: location.score > 0 ? 'review' : 'irrelevant',
+      status: location.leadHit || nationalSector ? 'review' : 'irrelevant',
       reasonCode: 'NOT_GEOGRAPHICALLY_RELEVANT',
       evidence: [...evidence, ...location.evidence],
       ruleTrace,
@@ -59,7 +61,7 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
       const min = settings.rules.bodySectorScoreForReview;
       const full = min > 0 ? classifyCategory(title, body, settings.categories, sapo) : null;
       const best = full ? Math.max(0, ...Object.values(full.scores).map((v) => v ?? 0)) : 0;
-      if (full && best >= min) {
+      if (full && best >= min && (location.status === 'hcm' || location.status === 'connected')) {
         return {
           status: 'review', reasonCode: 'SECTOR_ONLY_IN_BODY',
           evidence: [...evidence, ...location.evidence, `Tiêu đề/sapo không nêu lĩnh vực nhưng thân bài có bằng chứng mạnh (điểm ${best} ≥ ${min}): ${full.evidence.filter((e) => !e.includes('không tính'))[0] ?? ''}`], ruleTrace, location,
@@ -85,7 +87,11 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
   if (location.status === 'unknown' && location.score === 0 && settings.location.noEvidencePolicy === 'exclude_with_reason') {
     // a clear sector keyword in the TITLE keeps the story reviewable even without place names (never silently lose it)
     const titleSector = classifyCategory(title, '', settings.categories);
-    const strong = Math.max(0, ...Object.values(titleSector.scores).map((v) => v ?? 0)) >= 3;
+    // strong sector evidence in title + sapo, or a sector policy/law (national rules apply to the city too);
+    // one generic title word ("bồi thường" in a Microsoft story, "xây dựng thế hệ…") is not enough
+    const leadSector = classifyCategory(title, sapo, settings.categories);
+    const best = Math.max(0, ...Object.values(leadSector.scores).map((v) => v ?? 0));
+    const strong = !!nationalSector || (titleSector.scores.POLICY ?? 0) >= 3 || (best >= 3 && best >= settings.location.noPlaceMinLeadScore);
     if (strong) {
       return { status: 'review', reasonCode: 'LOCATION_UNVERIFIED', evidence: [...evidence, ...location.evidence, `Tiêu đề có từ khóa lĩnh vực (${titleSector.evidence[0] ?? ''}) – giữ lại để kiểm tra địa bàn`], ruleTrace, location };
     }
