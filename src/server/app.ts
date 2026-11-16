@@ -21,6 +21,7 @@ import { checkPublicUrl } from '../domain/url.js';
 import { assembleStories } from '../reports/assemble.js';
 import { buildReportPptx, checkFit } from '../reports/pptx.js';
 import { buildStyledPptx } from '../reports/styles.js';
+import { buildReportPdf, PDF_FONT_FILES } from '../reports/pdf.js';
 import { templateById, TEMPLATES, UPLOAD_TEMPLATE_ID, DOCX_TEMPLATE_FILE } from '../reports/templates.js';
 import { fileURLToPath } from 'node:url';
 import { safeJoin, serialized, writeFileAtomic, writeJsonAtomic } from '../storage/files.js';
@@ -97,6 +98,8 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
   /** built-in .pptx templates: the app's web/public/templates (dev) or the built copy next to the SPA */
   const templateDirs = [...(o.webDist ? [path.join(o.webDist, 'templates')] : []), path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'public', 'templates')];
   const templatesFile = (name: string) => templateDirs.map((d2) => path.join(d2, name)).find((f) => existsSync(f)) ?? null;
+  /** fonts of the built-in PDF (Tinos, SIL OFL) shipped in web/public/fonts */
+  const fontFile = (name: string) => templateDirs.map((d2) => path.join(d2, '..', 'fonts', name)).find((f) => existsSync(f)) ?? null;
 
   /* ---------- profiles (cấu hình theo địa bàn) ---------- */
   /** a deleted profile falls back to the active one (old runs stay readable/exportable) */
@@ -361,7 +364,7 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     const s = await stores.getSettings();
     const soffice = findSoffice(s);
     const powerpoint = findPowerPoint(s);
-    return { pdf: !!(soffice || powerpoint), soffice, powerpoint, templateFile: s.report.templateFile || null, templateFidelity: !!s.report.templateFile, templateId: s.report.templateId };
+    return { pdf: s.report.pdfRenderer === 'builtin' || !!(soffice || powerpoint), pdfRenderer: s.report.pdfRenderer, soffice, powerpoint, templateFile: s.report.templateFile || null, templateFidelity: !!s.report.templateFile, templateId: s.report.templateId };
   });
   /** built-in templates (Department template from the Skill + 4 original designs) and the uploaded one, if any */
   app.get('/api/templates', async () => {
@@ -478,8 +481,9 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     }
     const pptxName = `${base}_${stamp}.pptx`;
     const files: string[] = [];
-    // PowerPoint is written when asked for (or needed for its PDF)
-    if (b.formats.includes('pptx') || b.formats.includes('pdf')) {
+    const builtinPdf = settings.report.pdfRenderer === 'builtin';
+    // PowerPoint is written when asked for (or needed for its PDF when Office/LibreOffice converts it)
+    if (b.formats.includes('pptx') || (b.formats.includes('pdf') && !builtinPdf)) {
       await writeFileAtomic(path.join(dir, pptxName), pptx);
       if (b.formats.includes('pptx')) files.push(pptxName);
     }
@@ -502,7 +506,21 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     }
     let pdfStatus = 'not_requested';
     let pdfRenderer: string | null = null;
-    if (b.formats.includes('pdf')) {
+    if (b.formats.includes('pdf') && builtinPdf) {
+      // the app's own PDF: same stories, real photos, clickable links – same file name as the .pptx / .docx
+      const ff = Object.values(PDF_FONT_FILES).map(fontFile);
+      if (ff.some((f) => !f)) pdfStatus = 'failed: thiếu phông chữ của PDF (web/public/fonts)';
+      else {
+        const [regular, bold, italic] = await Promise.all(ff.map((f) => fs.readFile(f!)));
+        const r = await buildReportPdf({ organization: settings.report.organization, reportDate: date, window: m.window, stories, contactEmail: settings.report.contactEmail, regionName: settings.location.regionName }, { regular: regular!, bold: bold!, italic: italic! });
+        imageNotes.push(...r.notes);
+        const pdfName = pptxName.replace(/\.pptx$/, '.pdf');
+        await writeFileAtomic(path.join(dir, pdfName), r.bytes);
+        files.push(pdfName);
+        pdfStatus = 'ok';
+        pdfRenderer = 'News Reporter (PDF tích hợp)';
+      }
+    } else if (b.formats.includes('pdf')) {
       const r = await convertPdf(settings, dir, pptxName);
       pdfStatus = r.status;
       pdfRenderer = r.renderer;

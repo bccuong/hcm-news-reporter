@@ -62,6 +62,10 @@ describe('Word report from the Department template', () => {
   it('Word is ticked by default; saved configs from before (only pptx) get it once', () => {
     expect(SettingsSchema.parse({}).report.outputFormats).toEqual(['pptx', 'docx']);
     expect(SettingsSchema.parse({ report: { outputFormats: ['pptx'] } }).report.outputFormats).toEqual(['pptx', 'docx']);
-    expect(SettingsSchema.parse({ report: { outputFormats: ['pptx'], outputFormatsRev: 2 } }).report.outputFormats).toEqual(['pptx']); // a later choice is kept
+    expect(SettingsSchema.parse({ report: { outputFormats: [], outputFormatsRev: 2 } }).report.outputFormats).toEqual(['pptx', 'docx']); // an empty saved list (shared web config) is ticked again
+    expect(SettingsSchema.parse({ report: { outputFormats: ['pptx'], outputFormatsRev: 3 } }).report.outputFormats).toEqual(['pptx']); // a later choice is kept
+    expect(SettingsSchema.parse({}).report.pdfRenderer).toBe('builtin');
+    expect(SettingsSchema.parse({ report: { pdfRenderer: 'auto' } }).report.pdfRenderer).toBe('builtin');
+    expect(SettingsSchema.parse({ report: { pdfRenderer: 'powerpoint' } }).report.pdfRenderer).toBe('powerpoint');
   });
 });

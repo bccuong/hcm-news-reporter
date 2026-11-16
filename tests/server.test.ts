@@ -159,6 +159,18 @@ describe('local API', () => {
     const dl = await app.inject({ method: 'GET', url: `/api/exports/${pptx}`, headers: H });
     expect(dl.statusCode).toBe(200);
     expect(dl.rawPayload.subarray(0, 2).toString()).toBe('PK');
+    // built-in PDF (no Office): pptx + docx + pdf share one file name
+    const s2 = (await app.inject({ method: 'GET', url: '/api/settings', headers: H })).json();
+    s2.report.pdfRenderer = 'builtin';
+    await app.inject({ method: 'PUT', url: '/api/settings', headers: auth, payload: { settings: s2 } });
+    const all = (await app.inject({ method: 'POST', url: `/api/runs/${runId}/export`, headers: auth, payload: { formats: ['pptx', 'docx', 'pdf'] } })).json();
+    expect(all.pdfStatus).toBe('ok');
+    const stem = (ext: string) => all.files.find((f: string) => f.endsWith(ext))?.slice(0, -ext.length);
+    expect(stem('.pptx')).toBeTruthy();
+    expect(stem('.docx')).toBe(stem('.pptx'));
+    expect(stem('.pdf')).toBe(stem('.pptx'));
+    const pdfDl = await app.inject({ method: 'GET', url: `/api/exports/${all.files.find((f: string) => f.endsWith('.pdf'))}`, headers: H });
+    expect(pdfDl.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
     // path traversal refused
     expect((await app.inject({ method: 'GET', url: '/api/exports/..%2F..%2Fconfig%2Fsettings.json', headers: H })).statusCode).toBe(400);
     // editor relevance labels → filter quality endpoint

@@ -7,7 +7,16 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13s – 4 PPTX designs reworked; 2026-11-16)
+## ▶ RESUME HERE (session 13t – built-in PDF, one file name, pptx+docx ticked; 2026-11-16)
+- User: Word file name = PowerPoint file name; .pptx + .docx ticked by default; "implement luôn library xuất pdf riêng".
+- Names: web no longer appends the design id; the old docx regex cut the name to "HCM.docx". Local + web: <base>.pptx / .docx / .pdf share one stem (local keeps its _stamp on all three).
+- Defaults: the shared web config had saved outputFormats [] → settings rev 3 re-ticks pptx+docx once (later choices kept); 'auto' PDF renderer → 'builtin'.
+- src/reports/pdf.ts (pdf-lib + @pdf-lib/fontkit, MIT; font Tinos, SIL OFL, web/public/fonts + OFL.txt): A4 document like the Department's Word report – letterhead, title, window, counts bar chart, I/II/III groups, real photos beside the text, clickable source links, "Đề xuất" boxes, reply e-mail, footer "Trang x/y"; group heading kept with its first story; stories kept on one page when they fit; non JPEG/PNG photo → note + text layout. Runs locally (no Office) and in the browser. PowerPoint/LibreOffice conversion still selectable (Cài đặt › Báo cáo & mẫu › Bộ xuất PDF).
+- Visual QA: Windows.Data.Pdf PNG render (scratchpad pdf2png.ps1) – 2 pages, Vietnamese diacritics correct.
+- Tests: typecheck, vitest 132/132 (tests/pdf.test.ts; server export pptx+docx+pdf share a name), playwright 11/11, live 8/8 (web: names equal, .pptx/.docx ticked, .pdf built in the browser with the photo).
+- Next: export a real collection to PDF and compare against the .docx side by side.
+
+## (history) Session 13s – 4 PPTX designs reworked; 2026-11-16)
 - User: the 4 app designs were sparse/disconnected. Rewrote src/reports/styles.ts: measured flow layout (no fixed 2 stories/page), cover with counts + headlines + photo, continuous groups with inline headings, 2 columns on 16:9, balanced last page, Đề xuất boxes, Kiến nghị table + totals; Ảnh lớn = photo page only for stories with a real photo. Template descriptions updated (src/reports/templates.ts).
 - Chose original designs over third-party free templates (licence/attribution on public repo).
 - Tests: typecheck, vitest 130/130, playwright 11/11, live 8/8; visual QA via PowerPoint PNG export (5/4/5/7 slides for 11 stories, no overlap).

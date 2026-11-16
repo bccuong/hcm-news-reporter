@@ -702,7 +702,7 @@ class DemoApi implements Api {
   }
   async capabilities() {
     const tpl = store.get<string>('tplName') ?? null;
-    return { pdf: false, soffice: null, templateFile: tpl, templateFidelity: !!tpl };
+    return { pdf: true, soffice: null, templateFile: tpl, templateFidelity: !!tpl };
   }
   /** article photo for the report, through the review worker (publishers do not allow cross-origin reads) */
   private async fetchImage(url: string, minWidth: number) {
@@ -746,8 +746,10 @@ class DemoApi implements Api {
     const images = new Map<string, { bytes: Uint8Array; ext: 'jpeg' | 'png'; width: number; height: number; credit?: string; sourceUrl: string }>();
     const stories = asm.stories.map((s) => ({ ...s, imageKey: null as string | null }));
     let tcFeatureKey: string | null = null;
-    const wantPptx = formats.includes('pptx') || formats.includes('pdf');
-    if (wantPptx && settings.editorial.photoPolicy !== 'link_only') {
+    const wantPptx = formats.includes('pptx');
+    // the PDF is built in this browser by the app's own PDF builder (same stories, real photos, clickable links)
+    const wantPdf = formats.includes('pdf') && settings.report.pdfRenderer !== 'none';
+    if ((wantPptx || wantPdf) && settings.editorial.photoPolicy !== 'link_only') {
       if (!this.shared?.session()) warn.push('Chưa đăng nhập người duyệt – không tải được ảnh báo gốc, các tin dùng bố cục chữ.');
       else
         for (const st of stories) {
@@ -813,7 +815,7 @@ class DemoApi implements Api {
           organization: settings.report.organization, window: w, reportDateLabel: `${d}/${mo}/${y}`, stories,
           storiesPerPage: settings.report.storiesPerPage, contactEmail: settings.report.contactEmail, regionName: settings.location.regionName,
         });
-        name = `${base}_${info.id}.pptx`;
+        name = `${base}.pptx`;
       }
     } catch (e) {
       if (!(e instanceof TemplateMismatchError)) throw e;
@@ -841,7 +843,7 @@ class DemoApi implements Api {
         try {
           const out = await buildDocxFromTemplate(new Uint8Array(await r.arrayBuffer()), { reportDate: `${y}-${mo}-${d}`, stories, contactEmail: settings.report.contactEmail });
           warn.push(...out.notes);
-          const docxName = name.replace(/(_[\w-]+)?\.pptx$/, '.docx');
+          const docxName = `${base}.docx`; // same name as the .pptx / .pdf
           save(out.bytes, docxName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
           files.push(docxName);
         } catch (e) {
@@ -850,10 +852,25 @@ class DemoApi implements Api {
         }
       }
     }
-    return {
-      ok: true, files, warnings: warn,
-      pdfStatus: formats.includes('pdf') ? 'unavailable: trình duyệt không tự chuyển PDF – mở tệp .pptx bằng PowerPoint › Lưu thành PDF (hoặc dùng bản local để xuất PDF tự động)' : 'not_requested',
-    };
+    let pdfStatus = formats.includes('pdf') ? 'unavailable: PDF đang tắt (Cài đặt › Báo cáo & mẫu › Bộ xuất PDF)' : 'not_requested';
+    if (wantPdf) {
+      const { buildReportPdf, PDF_FONT_FILES } = await import('../../src/reports/pdf');
+      const rs = await Promise.all(Object.values(PDF_FONT_FILES).map((f) => fetch(`${import.meta.env.BASE_URL}fonts/${f}`)));
+      const bad = rs.find((r) => !r.ok);
+      if (bad) pdfStatus = `failed: không tải được phông chữ của PDF (HTTP ${bad.status})`;
+      else {
+        const [regular, bold, italic] = await Promise.all(rs.map(async (r) => new Uint8Array(await r.arrayBuffer())));
+        const out = await buildReportPdf(
+          { organization: settings.report.organization, reportDate: `${y}-${mo}-${d}`, window: w, stories, contactEmail: settings.report.contactEmail, regionName: settings.location.regionName },
+          { regular: regular!, bold: bold!, italic: italic! },
+        );
+        warn.push(...out.notes);
+        save(out.bytes, `${base}.pdf`, 'application/pdf');
+        files.push(`${base}.pdf`);
+        pdfStatus = 'ok';
+      }
+    }
+    return { ok: true, files, warnings: warn, pdfStatus };
   }
   exportUrl(f: string) {
     return f;

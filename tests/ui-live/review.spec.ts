@@ -166,7 +166,7 @@ test('web = local: photos, full article text, shared settings used by the server
   // capture the generated file in the page (a real browser download makes Playwright+Edge throw at teardown)
   await page.evaluate(() => {
     // one export now downloads the .pptx AND the .docx: __dl = the PowerPoint, __docx = the Word file
-    const w = window as unknown as { __dl?: { name: string; b64: string }; __docx?: { name: string; b64: string } };
+    const w = window as unknown as { __dl?: { name: string; b64: string }; __docx?: { name: string; b64: string }; __pdf?: { name: string; b64: string } };
     HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
       const name = this.download;
       void fetch(this.href).then((r) => r.arrayBuffer()).then((buf) => {
@@ -174,6 +174,7 @@ test('web = local: photos, full article text, shared settings used by the server
         const u = new Uint8Array(buf);
         for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
         if (name.endsWith('.docx')) w.__docx = { name, b64: btoa(s) };
+        else if (name.endsWith('.pdf')) w.__pdf = { name, b64: btoa(s) };
         else w.__dl = { name, b64: btoa(s) };
       });
     };
@@ -201,7 +202,9 @@ test('web = local: photos, full article text, shared settings used by the server
   await expect(page.getByRole('checkbox', { name: '.docx' })).toBeChecked();
   await expect.poll(() => page.evaluate(() => !!(window as unknown as { __docx?: unknown }).__docx), { timeout: 30_000 }).toBe(true);
   const word = await page.evaluate(() => (window as unknown as { __docx: { name: string; b64: string } }).__docx);
-  expect(word.name).toMatch(/\.docx$/);
+  expect(word.name).toBe(out.name.replace(/\.pptx$/, '.docx')); // same file name as the PowerPoint
+  await expect(page.getByRole('checkbox', { name: '.pptx' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: '.pdf' })).not.toBeChecked();
   const wordXml = await (await JSZip.loadAsync(Buffer.from(word.b64, 'base64'))).file('word/document.xml')!.async('string');
   expect(wordXml).toContain('Mưa lớn tối 8.11');
   expect(wordXml).toContain('TỒN TẠI CẦN KHẮC PHỤC');
@@ -212,11 +215,21 @@ test('web = local: photos, full article text, shared settings used by the server
   await page.getByTestId('template-picker').locator('input[value="ban-tin"]').check();
   await expect(page.getByTestId('template-info')).toContainText('16:9');
   await page.evaluate(() => delete (window as unknown as { __dl?: unknown }).__dl);
+  // + the app's own PDF, built in the browser (no Office)
+  await page.getByRole('checkbox', { name: '.pdf' }).check();
   await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
   await expect.poll(() => page.evaluate(() => !!(window as unknown as { __dl?: unknown }).__dl), { timeout: 30_000 }).toBe(true);
   const out2 = await page.evaluate(() => (window as unknown as { __dl: { name: string; b64: string } }).__dl);
-  expect(out2.name).toContain('ban-tin');
+  expect(out2.name).toBe(out.name); // the design is not appended to the name: .pptx / .docx / .pdf share one name
   const zip2 = await JSZip.loadAsync(Buffer.from(out2.b64, 'base64'));
+  const sz = /<p:sldSz cx="(\d+)" cy="(\d+)"/.exec(await zip2.file('ppt/presentation.xml')!.async('string'))!;
+  expect(Number(sz[1]) / Number(sz[2])).toBeCloseTo(16 / 9, 1); // landscape 16:9 = "Bản tin hiện đại"
+  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __pdf?: unknown }).__pdf), { timeout: 30_000 }).toBe(true);
+  const pdf = await page.evaluate(() => (window as unknown as { __pdf: { name: string; b64: string } }).__pdf);
+  expect(pdf.name).toBe(out.name.replace(/\.pptx$/, '.pdf'));
+  const pdfBytes = Buffer.from(pdf.b64, 'base64');
+  expect(pdfBytes.subarray(0, 5).toString()).toBe('%PDF-');
+  expect(pdfBytes.toString('latin1')).toContain('/Subtype /Image'); // the real photo is in the PDF
   expect(await hasPhoto(zip2)).toBe(true);
   await page.unrouteAll({ behavior: 'ignoreErrors' });
 });

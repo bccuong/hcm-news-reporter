@@ -299,7 +299,12 @@ export const SettingsSchema = z.object({
       // Word export (16/11/2026): a saved config from before it, with the old default ["pptx"], gets "docx" ticked once
       if (!v || typeof v !== 'object') return v;
       const o = v as Record<string, unknown>;
-      if (o.outputFormatsRev === undefined && Array.isArray(o.outputFormats) && o.outputFormats.join() === 'pptx') return { ...o, outputFormats: ['pptx', 'docx'], outputFormatsRev: 2 };
+      // rev 3 (16/11/2026): .pptx + .docx always ticked by default (a shared web config had saved an empty list);
+      // the PDF now comes from the app's own PDF builder unless PowerPoint/LibreOffice was chosen explicitly
+      if (typeof o.outputFormatsRev !== 'number' || o.outputFormatsRev < 3) {
+        const cur = Array.isArray(o.outputFormats) ? (o.outputFormats as string[]) : [];
+        return { ...o, outputFormats: [...new Set(['pptx', 'docx', ...cur])], outputFormatsRev: 3, pdfRenderer: o.pdfRenderer === undefined || o.pdfRenderer === 'auto' ? 'builtin' : o.pdfRenderer };
+      }
       return o;
     },
     z.object({
@@ -311,11 +316,12 @@ export const SettingsSchema = z.object({
       templateFile: z.string().default(''),
       /** files produced by "Xuất báo cáo": PowerPoint, Word (Department .docx template), PDF of the PowerPoint */
       outputFormats: z.array(z.enum(['pptx', 'docx', 'pdf'])).default(['pptx', 'docx']),
-      outputFormatsRev: z.number().int().default(2),
+      outputFormatsRev: z.number().int().default(3),
       filenamePattern: z.string().default('HCM_Diem_tin_{date}_{from}-{to}'),
       storiesPerPage: z.number().int().min(1).max(4).default(2),
       overflowPolicy: z.enum(['new_slide', 'warn_only']).default('new_slide'),
-      pdfRenderer: z.enum(['auto', 'powerpoint', 'libreoffice', 'none']).default('auto'),
+      /** builtin = the app's own PDF (src/reports/pdf.ts, no Office needed); the others convert the PowerPoint file */
+      pdfRenderer: z.enum(['builtin', 'auto', 'powerpoint', 'libreoffice', 'none']).default('builtin'),
       libreOfficePath: z.string().default(''),
       powerPointPath: z.string().default(''),
       contactEmail: z.string().default(''),
