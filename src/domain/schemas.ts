@@ -100,7 +100,7 @@ export const LOCATION_EXCLUDE_DEFAULT = [
   'Sài Gòn - Hà Nội', 'Sài Gòn – Hà Nội', 'Hà Nội - TP HCM', 'Hà Nội - TP.HCM', 'Hà Nội - TPHCM', 'Hà Nội – TP.HCM', 'Hà Nội - Sài Gòn', 'Bắc - Nam',
 ];
 /** regions that are not the city: named in a title without the city in title/sapo → other area */
-export const OTHER_REGIONS_DEFAULT = ['miền Bắc', 'miền Trung', 'Bắc Bộ', 'Trung Bộ', 'Tây Nguyên', 'Bắc Trung Bộ', 'Nam Trung Bộ'];
+export const OTHER_REGIONS_DEFAULT = ['miền Bắc', 'miền Trung', 'Bắc Bộ', 'Trung Bộ', 'Tây Nguyên', 'Bắc Trung Bộ', 'Nam Trung Bộ', 'sông Hồng'];
 /** sports results / commodity prices: never construction news (title phrases; user feedback 16/11/2026) */
 export const SPORTS_PRICES_EXCLUDE = ['đội tuyển', 'cầu thủ', 'thủ môn', 'khung thành', 'HLV', 'V-League', 'SEA Games', 'AFF Cup', 'Asian Cup', 'World Cup', 'vòng loại', 'giá heo hơi', 'giá xăng', 'giá cà phê', 'giá lúa gạo', 'lịch âm'];
 /** sector categories of the construction & transport department (what "Chính sách, pháp quy" must be about) */
