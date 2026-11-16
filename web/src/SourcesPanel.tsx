@@ -59,7 +59,7 @@ export function SourcesPanel({ sources, setSources }: { sources: Source[]; setSo
                 </div>
                 <div className="text-xs text-slate-500">
                   {s.fetchMode === 'manual_only' ? <span className="text-amber-700">Chỉ nhập link thủ công · </span> : null}
-                  RSS {s.rssUrls.length} · Sitemap {s.sitemapUrls.length} · Chuyên mục {s.sectionUrls.length} · tối đa {s.crawlLimits.maxListingPages} trang / {s.crawlLimits.maxArticleFetches} bài · nguồn gốc: {s.origin}
+                  RSS {s.rssUrls.length} · Sitemap {s.sitemapUrls.length} · Chuyên mục {s.sectionUrls.length} · tối đa {s.crawlLimits.maxListingPages} trang / {s.crawlLimits.perRunArticles ?? 'giới hạn chung'} bài mỗi lượt · nguồn gốc: {s.origin}
                 </div>
               </div>
               <button className="btn-ghost btn-xs" disabled={busy === s.id} onClick={() => test(s)}>
@@ -147,7 +147,19 @@ function SourceEditor({ s, onChange }: { s: Source; onChange: (p: Partial<Source
       <UrlList label="Trang tìm kiếm của báo (nếu được phép)" values={s.searchUrls} onChange={(v) => onChange({ searchUrls: v })} verified={s.verifiedRoutes} />
       <NumberField label="Tối đa trang danh sách / lượt" value={s.crawlLimits.maxListingPages} min={1} max={500} onChange={(n) => lim({ maxListingPages: n })} help="Đạt giới hạn → cảnh báo 'chưa quét hết'" />
       <NumberField label="Độ sâu phân trang" value={s.crawlLimits.maxDepth} min={0} max={10} onChange={(n) => lim({ maxDepth: n })} />
-      <NumberField label="Tối đa bài tải / lượt" value={s.crawlLimits.maxArticleFetches} min={1} max={2000} onChange={(n) => lim({ maxArticleFetches: n })} />
+      <Field label="Số bài tải tối đa mỗi lượt cho báo này" help="Để trống = theo giới hạn chung (Cài đặt › Hiệu năng). Báo lớn nhiều link (VnExpress) nên đặt cao hơn để không còn link chờ tải.">
+        <input
+          className="input w-32"
+          type="number"
+          min={1}
+          max={500}
+          placeholder="theo chung"
+          aria-label="Số bài tải tối đa mỗi lượt cho báo này"
+          value={s.crawlLimits.perRunArticles ?? ''}
+          onChange={(e) => lim({ perRunArticles: e.target.value === '' ? null : Math.max(1, Math.min(500, e.target.valueAsNumber || 1)) })}
+        />
+      </Field>
+      <NumberField label="Giới hạn kỹ thuật bài tải / lượt" value={s.crawlLimits.maxArticleFetches} min={1} max={2000} onChange={(n) => lim({ maxArticleFetches: n })} />
       <Toggle checked={s.crawlLimits.followPagination} onChange={(v) => lim({ followPagination: v })} label="Theo link phân trang (Trang sau)" />
       <NumberField label="Kết nối đồng thời tới báo" value={s.maxConcurrency} min={1} max={8} onChange={(n) => onChange({ maxConcurrency: n })} />
       <NumberField label="Nghỉ giữa 2 lần gọi" value={s.pauseMs} min={0} max={30000} step={100} suffix="ms" onChange={(n) => onChange({ pauseMs: n })} />

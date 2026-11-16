@@ -30,6 +30,8 @@ export const SourceSchema = z.object({
       maxListingPages: z.number().int().min(1).max(500).default(30),
       maxDepth: z.number().int().min(0).max(10).default(2),
       maxArticleFetches: z.number().int().min(1).max(2000).default(300),
+      /** articles per run for THIS publisher; null = the shared limit (Cài đặt › Hiệu năng). Big publishers (VnExpress) need more */
+      perRunArticles: z.number().int().min(1).max(500).nullable().default(null),
       followPagination: z.boolean().default(true),
     })
     .default({}),

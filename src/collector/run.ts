@@ -292,8 +292,8 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
 
     // Triage + fetch
     let fetches = 0;
-    // global per-publisher limit (Cài đặt › Hiệu năng); a source can only lower it
-    const cap = Math.min(src.crawlLimits.maxArticleFetches, settings.collection.maxArticlesPerSource);
+    // per-publisher limit: the source's own value when set (Sửa nguồn), else the shared one (Cài đặt › Hiệu năng); never above the technical cap
+    const cap = Math.min(src.crawlLimits.maxArticleFetches, src.crawlLimits.perRunArticles ?? settings.collection.maxArticlesPerSource);
     const winFrom = new Date(ctx.window.from).getTime();
     const winTo = new Date(ctx.window.to).getTime();
     /** fetch order under a limit: dated inside the window (newest first) → undated → dated outside */
@@ -301,7 +301,8 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
       const fd = c.discoveredVia.map((d) => d.feedPublishedAt).find(Boolean);
       const hint = fd ? null : urlDateHint(c.url);
       const t = fd ? new Date(fd).getTime() : hint ? new Date(`${hint}T12:00:00+07:00`).getTime() : NaN;
-      if (Number.isNaN(t)) return [1, 0];
+      // no date: newest publisher id first (ids in article URLs grow over time) – the limit goes to recent links, not deep listing pages
+      if (Number.isNaN(t)) return [1, -(Number(/(\d{6,})(?:\.\w+)?(?:[?#].*)?$/.exec(c.url)?.[1] ?? 0))];
       return [t >= winFrom && t < winTo ? 0 : 2, -t];
     };
     const todo = mine

@@ -7,7 +7,12 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13l – source test/detect on the web; refresh a daily period; 2026-11-16)
+## ▶ RESUME HERE (session 13m – per-publisher article limit; VnExpress 150; 2026-11-16)
+- User: only VnExpress still "chạm giới hạn tải". Live analysis of 2026-11-16: 149 links pending – 78 RSS-dated but all OUTSIDE the window (within the 6 h verification margin or after the window end), 71 undated from deep listing pages (/bat-dong-san/chinh-sach-p3 …, weeks old). In-window VnExpress stories were already read; publisher ids in URLs are NOT safe to date stories (a 16/11 00:00 story had an old id).
+- Done: `crawlLimits.perRunArticles` (Sửa nguồn › "Số bài tải tối đa mỗi lượt cho báo này"; empty = shared limit) overrides the shared 50/publisher; undated links are fetched newest publisher id first. Saved web config: VnExpress = 150.
+- Tests: typecheck, vitest 114/114, playwright 11/11, live E2E 7/7.
+
+## (history) Session 13l – source test/detect on the web; refresh a daily period; 2026-11-16)
 - User: 2 sources "bóc tách suy giảm" (= the stale false flags of the frozen 2026-11-16 period, Thanh Niên + SGGP) and "Thử nguồn" said local-only.
 - "Dò cấu trúc tự động" and "Thử thu thập" now work on the web: the collector's own discovery + extraction (src/collector/probe.ts) run in the browser; pages fetched through the review worker `GET /fetch?url=` (reviewers only; public http(s) pages only – private/local hosts and IP literals refused, redirects re-checked hop by hop, text/HTML/XML only, ≤ 3 MB, 15 s). Worker deployed (version aec9c21f); real check: Thanh Niên RSS 60 items, SGGP RSS 50 items. run.ts now imports EventEmitter as a type only (browser bundle).
 - "Thu thập" with exactly the window of a published DAILY period refreshes that period in place (continued + re-classified) instead of creating a duplicate custom period – used to clear the stale flags of 2026-11-16.

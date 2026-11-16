@@ -134,6 +134,22 @@ describe('collection run with candidate ledger (DIS-01..07, LED-01/02, UI-03)', 
     if (fd) expect(Date.parse(fd) >= Date.parse(WINDOW.from) && Date.parse(fd) < Date.parse(WINDOW.to)).toBe(true);
   });
 
+  it("a publisher's own limit overrides the shared one (big publishers such as VnExpress)", async () => {
+    const { stores, settings, http } = setup();
+    settings.collection.maxArticlesPerSource = 1;
+    const src = fixtureSources()[0]!;
+    src.crawlLimits.perRunArticles = 4;
+    await runCollection({ runId: 'run_own_cap', window: WINDOW, trigger: 'fixture', settings, sources: [src], stores, http });
+    expect((await stores.getCandidates('run_own_cap')).filter((c) => c.attempts > 0)).toHaveLength(4);
+    // empty (null) = the shared limit again
+    const s2 = setup();
+    s2.settings.collection.maxArticlesPerSource = 1;
+    const src2 = fixtureSources()[0]!;
+    src2.crawlLimits.perRunArticles = null;
+    await runCollection({ runId: 'run_shared_cap', window: WINDOW, trigger: 'fixture', settings: s2.settings, sources: [src2], stores: s2.stores, http: s2.http });
+    expect((await s2.stores.getCandidates('run_shared_cap')).filter((c) => c.attempts > 0)).toHaveLength(1);
+  });
+
   it('recovers after interruption and retry delta is visible (LED-01, LED-03)', async () => {
     const { stores, settings, http } = setup();
     const ctl = new AbortController();
