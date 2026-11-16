@@ -292,8 +292,9 @@ export async function runCollection(ctx: RunContext): Promise<RunManifest> {
 
     // Triage + fetch
     let fetches = 0;
-    // per-publisher limit: the source's own value when set (Sửa nguồn), else the shared one (Cài đặt › Hiệu năng); never above the technical cap
-    const cap = Math.min(src.crawlLimits.maxArticleFetches, src.crawlLimits.perRunArticles ?? settings.collection.maxArticlesPerSource);
+    // per-publisher limit: the source's own value when set (Sửa nguồn) decides; otherwise the shared one (Cài đặt › Hiệu năng),
+    // lowered by the older per-source field "maxArticleFetches" if that is smaller
+    const cap = src.crawlLimits.perRunArticles ?? Math.min(src.crawlLimits.maxArticleFetches, settings.collection.maxArticlesPerSource);
     const winFrom = new Date(ctx.window.from).getTime();
     const winTo = new Date(ctx.window.to).getTime();
     /** fetch order under a limit: dated inside the window (newest first) → undated → dated outside */

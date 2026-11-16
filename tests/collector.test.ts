@@ -139,6 +139,7 @@ describe('collection run with candidate ledger (DIS-01..07, LED-01/02, UI-03)', 
     settings.collection.maxArticlesPerSource = 1;
     const src = fixtureSources()[0]!;
     src.crawlLimits.perRunArticles = 4;
+    src.crawlLimits.maxArticleFetches = 2; // an older, smaller per-source value does not cap the publisher's own limit
     await runCollection({ runId: 'run_own_cap', window: WINDOW, trigger: 'fixture', settings, sources: [src], stores, http });
     expect((await stores.getCandidates('run_own_cap')).filter((c) => c.attempts > 0)).toHaveLength(4);
     // empty (null) = the shared limit again

@@ -159,7 +159,9 @@ function SourceEditor({ s, onChange }: { s: Source; onChange: (p: Partial<Source
           onChange={(e) => lim({ perRunArticles: e.target.value === '' ? null : Math.max(1, Math.min(500, e.target.valueAsNumber || 1)) })}
         />
       </Field>
-      <NumberField label="Giới hạn kỹ thuật bài tải / lượt" value={s.crawlLimits.maxArticleFetches} min={1} max={2000} onChange={(n) => lim({ maxArticleFetches: n })} />
+      {s.crawlLimits.perRunArticles == null && (
+        <NumberField label="Mức trần khi dùng giới hạn chung (bài / lượt)" value={s.crawlLimits.maxArticleFetches} min={1} max={2000} onChange={(n) => lim({ maxArticleFetches: n })} help="Chỉ dùng khi ô trên để trống: giới hạn chung không vượt quá mức này cho báo này." />
+      )}
       <Toggle checked={s.crawlLimits.followPagination} onChange={(v) => lim({ followPagination: v })} label="Theo link phân trang (Trang sau)" />
       <NumberField label="Kết nối đồng thời tới báo" value={s.maxConcurrency} min={1} max={8} onChange={(n) => onChange({ maxConcurrency: n })} />
       <NumberField label="Nghỉ giữa 2 lần gọi" value={s.pauseMs} min={0} max={30000} step={100} suffix="ms" onChange={(n) => onChange({ pauseMs: n })} />
