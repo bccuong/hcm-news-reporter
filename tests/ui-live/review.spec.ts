@@ -117,7 +117,7 @@ test('web = local: photos, full article text, shared settings used by the server
   // publisher photo links load straight from the publisher in the browser (fixture domains are served here)
   await page.route(/^https:\/\/fixture-[a-z]\.example\.vn\/img\//, (r) => r.fulfill({ body: png, contentType: 'image/png' }).catch(() => {})); // a photo may still be loading when the page navigates
   await page.goto('');
-  const card = page.locator('article').filter({ hasText: 'Mưa lớn tối 8.11 khiến' }).first();
+  const card = page.locator('article').filter({ hasText: 'khiến nhiều tuyến đường ở phường Hiệp Bình' }).first();
   const thumb = card.locator('img').first();
   await expect(thumb).toBeVisible();
   await expect.poll(() => thumb.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(1200);
@@ -250,5 +250,5 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ho
   // back to TP.HCM: its published data is shown again
   await page.getByLabel('Cấu hình (profile)').selectOption('hcm');
   await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('hcm');
-  await expect(page.locator('article').filter({ hasText: 'Mưa lớn tối 8.11 khiến' }).first()).toBeVisible();
+  await expect(page.locator('article').filter({ hasText: 'khiến nhiều tuyến đường ở phường Hiệp Bình' }).first()).toBeVisible();
 });

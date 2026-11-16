@@ -125,3 +125,9 @@ describe('saved keyword lists receive new default keywords once (user approved 1
     expect(SettingsSchema.parse(saved).categories.find((c) => c.code === 'TRAFFIC')!.keywords).not.toContain('sân bay');
   });
 });
+
+describe('defaults requested by the user (16/11/2026)', () => {
+  it('the window preset when the app opens is "Hôm nay"', () => {
+    expect(s.reportWindow.defaultPreset).toBe('today');
+  });
+});

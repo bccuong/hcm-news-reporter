@@ -267,6 +267,15 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
 
   // select all → every ready story goes to the report; unselect all → none
   await page.getByRole('button', { name: /^Bài sẵn sàng/ }).click();
+  // newest first by default (metro 21:00 before flood 19:30), flip with the sort button
+  await expect(page.locator('article h3').first()).toContainText('Khánh thành nhà ga metro');
+  await page.getByTestId('sort-toggle').click();
+  await expect(page.getByTestId('sort-toggle')).toContainText('Cũ nhất trước');
+  await expect(page.locator('article h3').last()).toContainText('Khánh thành nhà ga metro');
+  await page.getByTestId('sort-toggle').click();
+  // per-publisher tiles of the viewed period
+  await expect(page.getByTestId('source-strip')).toContainText('Nguồn tin trong kỳ');
+  await expect(page.getByTestId('source-tile-fixture-a')).toContainText('sẵn sàng');
   const bar = page.getByTestId('bulk-bar');
   await bar.getByLabel('Chọn tất cả bài đang hiển thị').click(); // saved story by story, the box follows
   await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(`Xuất báo cáo (${ready0})`);

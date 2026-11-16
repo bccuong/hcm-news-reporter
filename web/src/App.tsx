@@ -61,11 +61,10 @@ export function App() {
 
   const applyPreset = useCallback((p: typeof preset, s: Settings) => {
     setPreset(p);
-    const now = new Date();
-    const { startClock: a, endClock: b } = s.reportWindow;
-    const w = p === 'today' ? todayWindow(now, a, b) : p === 'yesterday' ? yesterdayWindow(now, a, b) : p === 'custom' && s.reportWindow.customFrom ? { from: s.reportWindow.customFrom, to: s.reportWindow.customTo } : lastCompletedWindow(now, a, b);
+    const w = presetWindow(p, s);
     setFrom(vnIsoToLocalInput(w.from));
     setTo(vnIsoToLocalInput(w.to));
+    return w;
   }, []);
 
   const loadRun = useCallback(async (id: string) => {
@@ -85,10 +84,13 @@ export function App() {
         setSettings(s);
         setSources(src);
         setRuns(rs);
-        applyPreset(s.reportWindow.defaultPreset, s);
-        if (rs[0]) {
-          setRunId(rs[0].runId);
-          await loadRun(rs[0].runId);
+        const w = applyPreset(s.reportWindow.defaultPreset, s);
+        // open the saved run of the default window (e.g. "Hôm nay"); otherwise the most recent one
+        const same = rs.find((r) => Date.parse(r.window.from) === Date.parse(w.from) && Date.parse(r.window.to) === Date.parse(w.to));
+        const first = same ?? rs[0];
+        if (first) {
+          setRunId(first.runId);
+          await loadRun(first.runId);
         }
         if (api.mode === 'local' && s.startup.autoCollectLastCompletedWindow && navigator.onLine) {
           const w = lastCompletedWindow(new Date(), s.reportWindow.startClock, s.reportWindow.endClock);
@@ -486,24 +488,8 @@ export function App() {
           </section>
         )}
 
-        {/* source strip */}
-        {run && (
-          <section className="flex flex-wrap items-center gap-2">
-            {/* the numbers belong to the period being viewed and its LAST run (they do not reset between periods' runs) */}
-            <span className="text-xs text-slate-500" data-testid="source-strip-caption">
-              Từng báo – kỳ {formatVn(run.window.from)} → {formatVn(run.window.to)}
-              {run.finishedAt ? ` · lượt cuối ${formatVn(run.finishedAt)}` : ''}
-              {run.notes?.some((x) => x.startsWith('Kỳ đang diễn ra')) ? ' · đang diễn ra, cập nhật mỗi giờ' : api.mode === 'live' && !run.active ? ' · kỳ đã chốt' : ''}:
-            </span>
-            {run.sources.map((s) => (
-              <span key={s.sourceId} className={`chip ${s.status === 'ok' ? 'border-green-300 bg-green-50 text-green-800' : s.status === 'partial' ? 'border-amber-300 bg-amber-50 text-amber-800' : s.status === 'failed' ? 'border-red-300 bg-red-50 text-red-800' : s.status === 'running' ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>
-                <b>{s.sourceName}</b> · {SRC_STATUS[s.status] ?? s.status} · {s.candidates} link{s.limitReached ? ' · chạm giới hạn' : ''}
-                {s.adapter?.status === 'degraded' && <span className="font-bold text-red-700"> · bóc tách suy giảm</span>}
-              </span>
-            ))}
-            {run.active && <span className="chip border-blue-300 bg-blue-50 text-blue-800"><RefreshCw className="h-3 w-3 animate-spin" /> đang chạy</span>}
-          </section>
-        )}
+        {/* sources of the viewed period: one tile per publisher */}
+        {run && <SourceStrip run={run} arts={arts} ready={ready} onOpen={() => setTab('coverage')} />}
 
         {/* metrics */}
         <section className="grid grid-cols-2 gap-3 md:grid-cols-6">
@@ -611,6 +597,82 @@ function MergePanel({ primaryId, arts, reviews, onMerge, onSplit }: { primaryId:
   );
 }
 
+/** Per-publisher summary of the viewed period (its last run): status, links found, extracted and ready stories, warnings. */
+function SourceStrip({ run, arts, ready, onOpen }: { run: RunInfo; arts: Article[]; ready: Article[]; onOpen: () => void }) {
+  const live = run.notes?.some((x) => x.startsWith('Kỳ đang diễn ra'));
+  const extracted = new Map<string, number>();
+  for (const a of arts) extracted.set(a.sourceId, (extracted.get(a.sourceId) ?? 0) + 1);
+  const readyBy = new Map<string, number>();
+  for (const a of ready) readyBy.set(a.sourceId, (readyBy.get(a.sourceId) ?? 0) + 1);
+  const DOT: Record<string, string> = { ok: 'bg-green-500', partial: 'bg-amber-500', failed: 'bg-red-500', running: 'bg-blue-500 animate-pulse', pending: 'bg-slate-300', cancelled: 'bg-slate-400' };
+  const shown = run.sources.filter((s) => s.status !== 'skipped_disabled');
+  const off = run.sources.length - shown.length;
+  return (
+    <section className="card p-3" data-testid="source-strip">
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-sm font-semibold text-navy-800">Nguồn tin trong kỳ</h2>
+        <span className="text-xs text-slate-500" data-testid="source-strip-caption">
+          {formatVn(run.window.from)} → {formatVn(run.window.to)}
+          {run.finishedAt ? ` · lượt cuối ${formatVn(run.finishedAt)}` : ''}
+        </span>
+        {run.active ? (
+          <span className="chip border-blue-300 bg-blue-50 text-blue-800"><RefreshCw className="h-3 w-3 animate-spin" /> đang chạy</span>
+        ) : live ? (
+          <span className="chip border-sky-300 bg-sky-50 text-sky-800">đang diễn ra · cập nhật mỗi giờ</span>
+        ) : api.mode === 'live' ? (
+          <span className="chip border-slate-300 bg-slate-50 text-slate-600">kỳ đã chốt</span>
+        ) : null}
+        <button className="ml-auto text-xs text-blue-700 underline" onClick={onOpen}>Chi tiết độ phủ →</button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {shown.map((s) => {
+          const warn = [
+            s.adapter?.status === 'degraded' && { t: 'bóc tách suy giảm', c: 'text-red-700', d: s.adapter.reasons.join('; ') },
+            s.limitReached && { t: 'chạm giới hạn tải', c: 'text-amber-700', d: 'Còn link chưa tải trong lượt này (Cài đặt › Hiệu năng)' },
+            s.status === 'failed' && { t: 'lỗi', c: 'text-red-700', d: s.error ?? '' },
+          ].filter(Boolean) as Array<{ t: string; c: string; d: string }>;
+          return (
+            <button
+              key={s.sourceId}
+              onClick={onOpen}
+              title={[`${s.sourceName}: ${SRC_STATUS[s.status] ?? s.status}`, ...warn.map((w) => `${w.t}${w.d ? ` – ${w.d}` : ''}`)].join('\n')}
+              className={`rounded border bg-white px-2.5 py-2 text-left transition hover:border-navy-300 hover:shadow-sm ${warn.length ? 'border-amber-200' : 'border-slate-200'}`}
+              data-testid={`source-tile-${s.sourceId}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[s.status] ?? 'bg-slate-300'}`} />
+                <span className="truncate text-sm font-semibold text-slate-800">{s.sourceName}</span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span className="text-lg font-bold tabular-nums text-slate-800">{readyBy.get(s.sourceId) ?? 0}</span>
+                <span className="text-[11px] text-slate-500">sẵn sàng</span>
+              </div>
+              <div className="text-[11px] tabular-nums text-slate-500">{s.candidates} link · {extracted.get(s.sourceId) ?? 0} bài đã đọc</div>
+              <div className="mt-0.5 min-h-[1rem] text-[11px] font-medium">
+                {warn.length ? (
+                  warn.map((w) => <span key={w.t} className={`mr-1.5 ${w.c}`}>⚠ {w.t}</span>)
+                ) : s.status === 'ok' ? (
+                  <span className="text-green-700">✓ OK</span>
+                ) : (
+                  <span className={s.status === 'partial' ? 'text-amber-700' : 'text-slate-600'}>{SRC_STATUS[s.status] ?? s.status}</span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {off > 0 && <p className="mt-1.5 text-[11px] text-slate-500">{off} nguồn đang tắt (Cài đặt › Nguồn tin).</p>}
+    </section>
+  );
+}
+
+/** window of a preset ("Kỳ gần nhất", "Hôm nay", "Hôm qua", saved custom) */
+function presetWindow(p: 'last_completed' | 'today' | 'yesterday' | 'custom', s: Settings): { from: string; to: string } {
+  const now = new Date();
+  const { startClock: a, endClock: b } = s.reportWindow;
+  return p === 'today' ? todayWindow(now, a, b) : p === 'yesterday' ? yesterdayWindow(now, a, b) : p === 'custom' && s.reportWindow.customFrom ? { from: s.reportWindow.customFrom, to: s.reportWindow.customTo } : lastCompletedWindow(now, a, b);
+}
+
 const SRC_STATUS: Record<string, string> = { ok: 'OK', partial: 'Một phần', failed: 'Lỗi', running: 'Đang chạy', pending: 'Chờ', skipped_disabled: 'Đã tắt', manual_only: 'Nhập thủ công', cancelled: 'Đã hủy' };
 
 function Metric({ label, value, tone }: { label: string; value: number; tone?: 'green' | 'amber' | 'red' | 'navy' }) {
@@ -627,7 +689,16 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
   const [q, setQ] = useState('');
   const [bulk, setBulk] = useState<string | null>(null);
   const [cat, setCat] = useState<string>('all');
-  const shown = list.filter((a) => (!q || a.title.toLowerCase().includes(q.toLowerCase())) && (cat === 'all' || (reviews[a.id]?.primaryCategory ?? a.primaryCategory) === cat));
+  // newest first by default (stories without a publication time last); the editor can flip it
+  const [newestFirst, setNewestFirst] = useState(true);
+  const ts = (a: Article) => (a.publishedAt ? Date.parse(a.publishedAt) : NaN);
+  const shown = list
+    .filter((a) => (!q || a.title.toLowerCase().includes(q.toLowerCase())) && (cat === 'all' || (reviews[a.id]?.primaryCategory ?? a.primaryCategory) === cat))
+    .sort((x, y) => {
+      const a = ts(x), b = ts(y);
+      if (Number.isNaN(a) || Number.isNaN(b)) return Number.isNaN(a) ? (Number.isNaN(b) ? 0 : 1) : -1;
+      return newestFirst ? b - a : a - b;
+    });
   const catLabel = (c: string | null | undefined) => settings?.categories.find((x) => x.code === c)?.label ?? 'Chưa phân loại';
   // bulk actions apply to the stories SHOWN (search + sector filter); stories merged into another one are skipped
   const selectable = shown.filter((a) => !reviews[a.id]?.groupId);
@@ -651,6 +722,9 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
         {settings?.categories.filter((c) => c.enabled).map((c) => (
           <button key={c.code} className={`chip ${cat === c.code ? 'border-navy-700 bg-navy-700 text-white' : 'border-slate-300 bg-white'}`} onClick={() => setCat(c.code)}>{c.label}</button>
         ))}
+        <button className="btn-ghost btn-xs ml-auto" onClick={() => setNewestFirst((v) => !v)} title="Đổi thứ tự theo giờ đăng" data-testid="sort-toggle">
+          {newestFirst ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />} {newestFirst ? 'Mới nhất trước' : 'Cũ nhất trước'}
+        </button>
       </div>
       {selectable.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm" data-testid="bulk-bar">

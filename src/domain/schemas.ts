@@ -167,7 +167,7 @@ export const SettingsSchema = z.object({
     .object({
       startClock: clock.default('17:00'),
       endClock: clock.default('08:00'),
-      defaultPreset: z.enum(['last_completed', 'today', 'yesterday', 'custom']).default('last_completed'),
+      defaultPreset: z.enum(['last_completed', 'today', 'yesterday', 'custom']).default('today'),
       customFrom: z.string().default(''),
       customTo: z.string().default(''),
       lookbackMarginHours: z.number().min(0).max(72).default(6),

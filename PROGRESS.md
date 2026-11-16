@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13h – action row under each story; source-strip caption; 2026-11-16)
+## ▶ RESUME HERE (session 13i – newest first, default "Hôm nay", source tiles; 2026-11-16)
+- Story lists sorted newest → oldest by publication time (unknown time last), toggle "Mới nhất trước / Cũ nhất trước" (`sort-toggle`).
+- Default window preset = "Hôm nay" (schema default; saved web config TP.HCM updated 11:58 VN by "Claude (theo yêu cầu của Cường)", restorable in history). On open the app shows the saved run of that window if one exists, otherwise the most recent run.
+- Per-publisher strip redesigned as `SourceStrip`: card "Nguồn tin trong kỳ" (period, last run, đang chạy / đang diễn ra / kỳ đã chốt, link to Độ phủ) with one tile per publisher (status dot, ready count, links, stories read, warnings: bóc tách suy giảm / chạm giới hạn tải / lỗi); disabled sources summarised. Screenshot `docs/screenshots/bulk-select.png`.
+- Tests: typecheck, vitest 100/100, playwright 11/11, live E2E 5/5 (fixed a test selector that matched publisher D's story first once sorted).
+
+## (history) Session 13h – action row under each story; source-strip caption; 2026-11-16)
 - User: buttons below each story instead of the right column → one row (Xem chi tiết · Bài gốc · ✓ Liên quan · ✗ Không · team votes · → Sẵn sàng / ↩ Trả về … Loại at the far right), `data-testid="story-actions"`.
 - User: "per-publisher stats don't reset after each collection?" – they belong to the viewed period and its last run; period 2026-11-16 was frozen at 10:00, so its 09:59 numbers (incl. the false "bóc tách suy giảm" for Thanh Niên/SGGP, fixed in 6578f69 after that run) stay. Added a caption before the source chips: "Từng báo – kỳ … · lượt cuối … · đang diễn ra / kỳ đã chốt". Offered (not done): clean re-collection of 16/11 via web "Thu thập" (custom period).
 - Tests: typecheck, vitest 99/99, playwright 11/11, live E2E 5/5.
