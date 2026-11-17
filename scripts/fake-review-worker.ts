@@ -29,13 +29,14 @@ const LIVE = path.resolve('dist/pages/live/hcm');
 const runs: Array<{ id: number; status: string; conclusion: string | null; created_at: string; updated_at: string; event: string; display_title: string; html_url: string }> = [];
 const stamp = (iso: string) => iso.slice(0, 16).replace(/[-:T]/g, '');
 
-function publishCustom(from: string, to: string, by: string) {
+function publishCustom(from: string, to: string, by: string, scheduled?: string) {
   const index = JSON.parse(readFileSync(path.join(LIVE, 'index.json'), 'utf8'));
   const base = JSON.parse(readFileSync(path.join(LIVE, '2026-11-09.json'), 'utf8'));
   const key = `custom-${stamp(from)}-${stamp(to)}`;
   const window = { from: from.replace('+07:00', ':00+07:00'), to: to.replace('+07:00', ':00+07:00') };
-  writeFileSync(path.join(LIVE, `${key}.json`), JSON.stringify({ ...base, key, custom: true, requestedBy: by, manifest: { ...base.manifest, window } }));
-  index.days.unshift({ ...index.days[0], key, file: `${key}.json`, custom: true, requestedBy: by, window, generatedAt: new Date().toISOString() });
+  writeFileSync(path.join(LIVE, `${key}.json`), JSON.stringify({ ...base, key, custom: true, requestedBy: by, scheduled, manifest: { ...base.manifest, window } }));
+  index.days.unshift({ ...index.days[0], key, file: `${key}.json`, custom: true, requestedBy: scheduled ? undefined : by, scheduled, window, generatedAt: new Date().toISOString() });
+  index.generatedAt = new Date().toISOString(); // like the real publication: the site's "cập nhật lúc" moves
   writeFileSync(path.join(LIVE, 'index.json'), JSON.stringify(index));
 }
 
@@ -121,6 +122,18 @@ createServer(async (req, res) => {
   if (req.url === '/__png') {
     res.writeHead(200, { 'content-type': 'image/png' });
     return res.end(Buffer.from(PNG));
+  }
+  // a scheduled run (worker cron) that publishes a new period when it finishes – the open page must pick it up by itself
+  if (req.url === '/__scheduled-run') {
+    const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'workflow_dispatch', display_title: `${AUTO_TITLE} 16:30 – 2026-11-10T08:01+07:00 → 2026-11-10T16:30+07:00 [hcm]`, html_url: 'https://github.com/bccuong/news-reporter/actions' };
+    runs.unshift(run);
+    setTimeout(() => {
+      publishCustom('2026-11-10T08:01+07:00', '2026-11-10T16:30+07:00', '', '16:30');
+      run.status = 'completed';
+      run.conclusion = 'success';
+    }, 8000);
+    res.writeHead(200);
+    return res.end('ok');
   }
   if (req.url === '/__deploy') {
     const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'push', display_title: 'Live data – collection & GitHub Pages deploy', html_url: 'https://github.com/bccuong/news-reporter/actions' };

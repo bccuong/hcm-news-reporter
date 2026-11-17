@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14i – export of the 4 designs failed in a page left open; 2026-11-17)
+## ▶ RESUME HERE (session 14j – page did not show a finished run until F5; 2026-11-17)
+- Cause: the open page looked for new data only every 5 min, and GitHub Pages' CDN serves `index.json` / day files up to 10 min old; also the "changed?" check read a React state updater that does not run at once in async code.
+- Fix (web/src/App.tsx `checkNewData`, web/src/api.ts): `index.json?t=<now>`, day files `?v=<generatedAt>`; last `generatedAt` kept in a ref; when the server goes from busy to idle the page checks every 15 s for 4 min. Viewing the latest period → the new one opens ("Có kỳ mới … – đã mở"); viewing an older one → it is refreshed and a toast says a new period exists. Worker cron now :02/:07… (scheduled runs dispatch 08:02 / 16:32).
+- Tests: fake worker `/__scheduled-run`; live test "after a scheduled run finishes, the open page shows the new period by itself (no F5)". vitest 153/153, test:ui 12/12, test:ui:live 12/12, build OK.
+- Next step: watch the next 08:02 run on the live site to confirm the page refreshes by itself.
+
+## (history) Session 14i – export of the 4 designs failed in a page left open; 2026-11-17)
 - Cause: the designs (styles.ts), PDF and Word are loaded on demand; a tab opened before a new publication still asked for the old chunk name (assets/styles-CsElt2lx.js → 404), "Failed to fetch dynamically imported module". The Skill template is in the main bundle, so it still worked.
 - Fix: web/src/main.tsx handles vite:preloadError – reload once (guard: not twice within 60 s), App shows "Trang vừa được cập nhật lên phiên bản mới – vui lòng thực hiện lại thao tác vừa rồi". Pages open before this fix still need one F5.
 - Test: live E2E with the design chunk answering 404 once → reload + message → export produces the .pptx. vitest 153/153, playwright 12/12, live 11/11.

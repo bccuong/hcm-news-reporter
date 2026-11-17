@@ -206,29 +206,56 @@ export function App() {
     };
   }, [runId, loadRun]);
 
-  // live (GitHub Pages) mode: show last update and check for a newer hourly dataset every 5 minutes
+  // live (GitHub Pages) mode: show the last update and pick up newly published data – every 5 minutes, and every 15 s for
+  // 4 minutes right after the collection server finished a run (scheduled 08:00 / 16:30, "Thu thập", a deploy)
   const [live, setLive] = useState<{ generatedAt: string; schedule: string } | null>(null);
+  const viewedRunIdRef = useRef<string | null>(null);
+  viewedRunIdRef.current = runId;
+  const runsRef = useRef<RunInfo[]>([]);
+  runsRef.current = runs;
+  const liveAtRef = useRef<string | null>(null);
+  const checkNewData = useCallback(async () => {
+    if (api.mode !== 'live' || !api.meta) return false;
+    api.refresh?.();
+    const m = await api.meta().catch(() => null);
+    if (!m) return false;
+    // compare with a ref: a state updater is not run at once inside async code, so it cannot report the change
+    const prevAt = liveAtRef.current;
+    liveAtRef.current = m.generatedAt;
+    setLive(m);
+    if (!prevAt || prevAt === m.generatedAt) return false;
+    const before = runsRef.current;
+    const viewedLatest = !viewedRunIdRef.current || latestRun(before)?.runId === viewedRunIdRef.current;
+    const rs = await api.listRuns();
+    setRuns(rs);
+    const newest = latestRun(rs);
+    const isNew = newest && !before.some((r) => r.runId === newest.runId);
+    if (newest && viewedLatest) {
+      // the reviewer was on the most recent period: open the new / updated one
+      shownWindowOf.current = null;
+      setRunId(newest.runId);
+      loadRun(newest.runId).catch(() => {});
+      toast('info', isNew ? `Có kỳ mới ${runLabel(newest)} – đã mở` : `Đã cập nhật dữ liệu (${formatVn(m.generatedAt)})`);
+    } else if (viewedRunIdRef.current) {
+      // reviewing another period: keep it open, refresh its data, just say a new one is there
+      loadRun(viewedRunIdRef.current).catch(() => {});
+      if (isNew && newest) toast('info', `Có kỳ mới ${runLabel(newest)} – chọn ở "Lượt đã lưu" để xem`);
+    }
+    return true;
+  }, [loadRun, toast]);
   useEffect(() => {
     if (api.mode !== 'live' || !api.meta) return;
-    api.meta().then(setLive).catch(() => {});
-    const t = setInterval(async () => {
-      api.refresh?.();
-      const m = await api.meta!().catch(() => null);
-      if (!m) return;
-      setLive((prev) => {
-        if (prev && prev.generatedAt !== m.generatedAt) {
-          toast('info', `Có dữ liệu mới (cập nhật ${formatVn(m.generatedAt)}) – đang tải lại`);
-          api.listRuns().then((rs) => {
-            setRuns(rs);
-            if (rs[0]) setRunId(rs[0].runId);
-            if (rs[0]) loadRun(rs[0].runId).catch(() => {});
-          });
-        }
-        return m;
-      });
-    }, 5 * 60_000);
+    api
+      .meta()
+      .then((m) => {
+        if (!m) return;
+        liveAtRef.current ??= m.generatedAt;
+        setLive(m);
+      })
+      .catch(() => {});
+    const t = setInterval(() => void checkNewData(), 5 * 60_000);
     return () => clearInterval(t);
-  }, [loadRun, toast]);
+  }, [checkNewData]);
 
   const windowIso = useMemo(() => {
     try {
@@ -351,6 +378,24 @@ export function App() {
     }
   }, []);
   const serverRunning = (server?.running.length ?? 0) > 0;
+  // the server just finished a run: its data reaches the site within a minute or two – look every 15 s for 4 minutes
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    const finished = wasRunning.current && !serverRunning;
+    wasRunning.current = serverRunning;
+    if (!finished) return;
+    let tries = 0;
+    let stop = false;
+    const tick = async () => {
+      if (stop) return;
+      if ((await checkNewData()) || ++tries >= 16) return;
+      setTimeout(() => void tick(), 15_000);
+    };
+    setTimeout(() => void tick(), 5_000);
+    return () => {
+      stop = true;
+    };
+  }, [serverRunning, checkNewData]);
   useEffect(() => {
     if (!api.shared) return;
     loadServer();

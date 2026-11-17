@@ -349,14 +349,14 @@ class DemoApi implements Api {
   }
   private liveIndex() {
     // a profile without published data yet (new profile) → no periods; a static host may answer with an HTML page
-    this.index ??= fetch(`${this.liveDir}index.json`, { cache: 'no-cache' })
+    this.index ??= fetch(`${this.liveDir}index.json?t=${Date.now()}`, { cache: 'no-cache' })
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null);
     return this.index;
   }
   private latestId = '';
   /** runId → published file + report date (daily periods and on-demand "custom" windows) */
-  private runMeta = new Map<string, { file: string; reportDate: string }>();
+  private runMeta = new Map<string, { file: string; reportDate: string; v?: string }>();
   private reportDateOf(runId: string) {
     return this.runMeta.get(runId)?.reportDate ?? runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
   }
@@ -370,7 +370,7 @@ class DemoApi implements Api {
       const file = this.runMeta.get(runId)?.file ?? `${runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')}.json`;
       this.bundles.set(
         runId,
-        fetch(`${this.liveDir}${file}`, { cache: 'no-cache' })
+        fetch(`${this.liveDir}${file}?v=${encodeURIComponent(this.runMeta.get(runId)?.v ?? '')}`, { cache: 'no-cache' })
           .then((r) => r.json())
           .then((d: any) => ({ manifest: d.manifest, candidates: d.candidates.map((c: Candidate) => ({ ...c, history: [] })), articles: d.articles.map((a: any) => fromPublic(a, runId, d.generatedAt)) })),
       );
@@ -589,7 +589,7 @@ class DemoApi implements Api {
     const runs = days.map((d) => {
       const key: string = d.key ?? d.reportDate;
       const runId = `run_live_${key.replace(/[^0-9a-z]/gi, '')}`;
-      this.runMeta.set(runId, { file: d.file ?? `${d.reportDate}.json`, reportDate: d.reportDate });
+      this.runMeta.set(runId, { file: d.file ?? `${d.reportDate}.json`, reportDate: d.reportDate, v: d.generatedAt });
       const notes = [...(d.provisional ? ['Kỳ đang diễn ra – tạm thời'] : []), ...(d.scheduled ? [`Thu thập theo lịch ${d.scheduled}`] : d.custom ? [`Thu thập theo yêu cầu${d.requestedBy ? ` (${d.requestedBy})` : ''}`] : [])];
       return {
         runId, createdAt: d.generatedAt, finishedAt: d.generatedAt, window: d.window, trigger: (d.custom ? 'manual' : 'auto') as 'manual' | 'auto',

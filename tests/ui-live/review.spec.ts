@@ -568,3 +568,17 @@ test('a page opened before a new version reloads itself when an on-demand part i
   await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __files: string[] }).__files), { timeout: 30_000 }).toEqual([expect.stringMatching(/\.pptx$/)]);
 });
+
+test('after a scheduled run finishes, the open page shows the new period by itself (no F5)', async ({ page, request }) => {
+  test.setTimeout(90_000);
+  await page.goto('');
+  await expect(page.getByTestId('run-picker')).toBeVisible();
+  await request.get('http://127.0.0.1:5181/__scheduled-run');
+  await page.reload(); // the page sees the server busy with the scheduled run
+  await expect(page.getByTestId('server-busy')).toContainText('lượt tự động theo lịch');
+  // no reload from here on: the run finishes, the page looks for the new data and opens it
+  await expect(page.getByTestId('server-idle')).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByTestId('run-picker')).toContainText('10/11 · 08:01–16:30', { timeout: 40_000 });
+  await expect(page.getByTestId('run-picker')).toContainText('lịch 16:30');
+  await expect(page.getByText(/Có kỳ mới 10\/11 · 08:01–16:30 – đã mở/)).toBeVisible();
+});
