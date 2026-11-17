@@ -204,6 +204,19 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await story.getByRole('button', { name: 'Tách ra' }).click();
   await expect(page.getByText(/^Nguồn: Báo mẫu thử A ·/)).toBeVisible();
   await expect(story).toContainText('Gợi ý cùng sự kiện');
+
+  // merged again: in the story list the merged one is not counted by "Chọn tất cả" – the bar says so, and "Tách" is on the card
+  await story.getByRole('button', { name: 'Gộp vào tin này' }).click();
+  await expect(page.getByText('Đã gộp nguồn vào tin')).toBeVisible();
+  let list = page.getByRole('button', { name: /^Bài sẵn sàng/ });
+  await list.click();
+  if (!(await page.getByTestId('merged-note').isVisible())) {
+    list = page.getByRole('button', { name: /^Cần kiểm tra/ });
+    await list.click();
+  }
+  await expect(page.getByTestId('merged-note')).toHaveText('+ 1 bài đã gộp vào tin khác');
+  await page.getByRole('button', { name: 'Tách', exact: true }).click();
+  await expect(page.getByTestId('merged-note')).toBeHidden();
 });
 
 test('Editor feedback: label ready / excluded stories → filter quality card (precision, missed stories)', async ({ page }) => {

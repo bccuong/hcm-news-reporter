@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14k – Hỏi nhanh closes after its round; stories must be placed in the city; 2026-11-17)
+## ▶ RESUME HERE (session 14l – ESC closes panels; merged story count explained; 2026-11-17)
+- ESC (web/src/ui.tsx `useEscape`): closes the top-most of Chi tiết bài / Biên tập (Inspector), Cài đặt (same as X: asks when unsaved), Hỏi nhanh, đăng nhập; a small menu (Loại reasons, Lượt đã lưu) closes first via preventDefault.
+- "Bài sẵn sàng 21 / Chọn tất cả (20)": not a bug – in the 17/11 16:30 period "Thêm 8 thang máy … Bến Thành - Suối Tiên" (VnExpress) was merged at 16:57 into "Metro số 1 lắp 8 thang máy …" (Báo Xây dựng); a merged secondary is not selectable. The bar now says "+ N bài đã gộp vào tin khác" and the card chip has "Tách".
+- Tests: UI test for ESC (detail, settings, unsaved confirm) and the merged note + Tách; test:ui 13/13, vitest 162/162, test:ui:live 12/12, build OK.
+- Next step: check the 08:02 period on 18/11 for stories outside HCM.
+
+## (history) Session 14k – Hỏi nhanh closes after its round; stories must be placed in the city; 2026-11-17)
 - Hỏi nhanh (web/src/App.tsx): one round of at most 8 stories per period, fixed when computed (answering no longer pulls the next 8, so the card never closed); "Bỏ qua" counts; when done the card says "đã chấm xong kỳ này" for 4 s, then hides; hidden while the dialog is open.
 - Location (src/domain/location.ts, relevance.ts, schemas.ts, Settings › Địa điểm › Nâng cao):
   - a ward/landmark followed by "(tỉnh X)" / ", X" of another province is not the city's (ward names repeat since the 2025 mergers);

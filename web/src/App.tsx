@@ -1267,6 +1267,11 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
             />
             Chọn tất cả ({selectable.length}{shown.length < list.length ? ' đang hiển thị' : ''})
           </label>
+          {shown.length > selectable.length && (
+            <span className="text-xs text-purple-700" data-testid="merged-note" title="Bài đã gộp làm nguồn phụ của tin khác đi cùng tin chính trong báo cáo, không chọn riêng. Bấm Tách trên bài để chọn riêng.">
+              + {shown.length - selectable.length} bài đã gộp vào tin khác
+            </span>
+          )}
           <span className="text-slate-500">· đã chọn {nSel}</span>
           {nSel > 0 && (
             <button className="btn-ghost btn-xs" disabled={!!bulk} onClick={() => void runBulk('Đang bỏ chọn…', selectable.filter((a) => reviews[a.id]?.included).map((a) => a.id), () => ({ included: false }))}>
@@ -1325,7 +1330,10 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                   {asm && <span className={`chip ${ASSESS_COLOR[asm]}`}>{ASSESSMENT_LABEL[asm]}{!r?.assessment && ' (gợi ý)'}</span>}
                   {c && <StateChip state={c.state} />}
                   {r?.groupId ? (
-                    <span className="chip border-purple-400 bg-purple-100 text-purple-900">đã gộp làm nguồn phụ</span>
+                    <span className="chip border-purple-400 bg-purple-100 text-purple-900">
+                      đã gộp làm nguồn phụ
+                      <button className="ml-1 font-semibold underline" onClick={() => onPatch(a.id, { groupId: null })} title="Tách ra thành tin riêng (chọn được riêng)">Tách</button>
+                    </span>
                   ) : a.duplicateGroupId ? (
                     <span className="chip border-purple-300 bg-purple-50 text-purple-800">cùng sự kiện?</span>
                   ) : null}
