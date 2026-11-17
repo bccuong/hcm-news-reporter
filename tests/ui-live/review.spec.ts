@@ -66,7 +66,7 @@ test('automatic collection at 08:00 / 16:30 (ticked per profile) + busy server i
   const afternoon = strip.getByLabel('Tự động lúc 16:30');
   await expect(morning).not.toBeChecked();
   await expect(afternoon).not.toBeChecked();
-  await expect(strip).toContainText('17:00 hôm qua → 08:00 hôm nay');
+  await expect(strip).toContainText('17:00 hôm qua → 08:00 hôm nay (gồm phút 08:00)');
   await expect(strip).toContainText('08:01 → 16:30 hôm nay');
   await expect(page.getByTestId('server-idle')).toBeVisible();
   await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập đang TẮT');

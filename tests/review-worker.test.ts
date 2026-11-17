@@ -137,13 +137,13 @@ describe('shared review worker', () => {
       expect(await scheduledCollect(e, gh, at('2026-11-17T10:05'))).toBeNull(); // window closed (+2 h)
       expect(calls).toEqual([]);
       expect(await scheduledCollect(e, gh, at('2026-11-17T08:02'))).toMatchObject({ result: 'dispatched', profiles: ['hcm'], slot: '08:00' });
-      expect(dispatched()[0]).toEqual({ trigger: 'schedule', slot: '08:00', from: '2026-11-16T17:00+07:00', to: '2026-11-17T08:00+07:00', profile: 'hcm', requested_by: '' });
+      expect(dispatched()[0]).toEqual({ trigger: 'schedule', slot: '08:00', from: '2026-11-16T17:00+07:00', to: '2026-11-17T08:01+07:00', profile: 'hcm', requested_by: '' });
       expect(await scheduledCollect(e, gh, at('2026-11-17T08:07'))).toBeNull(); // already done today
       expect(await scheduledCollect(e, gh, at('2026-11-17T16:35'))).toMatchObject({ result: 'dispatched', slot: '16:30' });
-      expect(dispatched()[1]).toMatchObject({ from: '2026-11-17T08:01+07:00', to: '2026-11-17T16:30+07:00' });
+      expect(dispatched()[1]).toMatchObject({ from: '2026-11-17T08:01+07:00', to: '2026-11-17T16:30+07:00' }); // joins the morning period: no minute missed
       // next day again
       expect(await scheduledCollect(e, gh, at('2026-11-18T08:10'))).toMatchObject({ result: 'dispatched' });
-      expect(dispatched()[2]).toMatchObject({ from: '2026-11-17T17:00+07:00', to: '2026-11-18T08:00+07:00' });
+      expect(dispatched()[2]).toMatchObject({ from: '2026-11-17T17:00+07:00', to: '2026-11-18T08:01+07:00' }); // the minute 08:00 belongs to the morning period
       // unticked → no run
       await setSlot(e, 'afternoon', false);
       expect(await scheduledCollect(e, gh, at('2026-11-18T16:40'))).toBeNull();

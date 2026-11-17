@@ -11,11 +11,14 @@ export interface ScheduleSlot {
   /** window: day offset from the run day + clock time */
   from: { day: number; time: string };
   to: { day: number; time: string };
+  /** what the window covers, as shown on the web */
   label: string;
 }
+// The two windows join without a gap: the morning one includes the minute 08:00 (to = 08:01, not included),
+// the afternoon one starts at 08:01 (user, 17/11/2026).
 export const SCHEDULE_SLOTS: readonly ScheduleSlot[] = [
-  { id: 'morning', at: '08:00', from: { day: -1, time: '17:00' }, to: { day: 0, time: '08:00' }, label: 'Chạy lúc 08:00: 17:00 hôm qua → 08:00 hôm nay' },
-  { id: 'afternoon', at: '16:30', from: { day: 0, time: '08:01' }, to: { day: 0, time: '16:30' }, label: 'Chạy lúc 16:30: 08:01 → 16:30 hôm nay' },
+  { id: 'morning', at: '08:00', from: { day: -1, time: '17:00' }, to: { day: 0, time: '08:01' }, label: 'kỳ 17:00 hôm qua → 08:00 hôm nay (gồm phút 08:00)' },
+  { id: 'afternoon', at: '16:30', from: { day: 0, time: '08:01' }, to: { day: 0, time: '16:30' }, label: 'kỳ 08:01 → 16:30 hôm nay' },
 ];
 export type ScheduleState = Partial<Record<ScheduleSlot['id'], boolean>>;
 

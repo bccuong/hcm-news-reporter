@@ -11,7 +11,7 @@
 - User: instead of "Tự động thu thập mỗi giờ", two ticks per profile: 08:00 → 17:00 yesterday..08:00 today; 16:30 → 08:01..16:30 today.
 - src/domain/schedule.ts (slots, windows, due check, next run) shared by worker + web. Worker cron now every 5 min (wrangler.toml); outside 08:02–10:00 / 16:32–18:30 it returns without KV; inside it dispatches pages.yml with trigger=schedule, slot, from/to, profile – one profile per tick, once per profile/day (KV sched:<pid>:<slot>:<date>, TTL 3 days), busy server → next tick retries. POST /auto now {slot, enabled}. Profile.schedule {morning, afternoon}; old hourly autoCollect no longer used by the cron.
 - pages.yml: run-name "Thu thập theo lịch 08:00: …", input slot → cloud-collect --scheduled (note "Thu thập theo lịch 08:00", index day.scheduled); web run chip "lịch 08:00"; banner shows the ticked times.
-- Known: 08:00–08:01 gap between the two windows ("to" excluded) as requested by the user – mentioned to them.
+- Windows join without a gap (user 17/11): morning 17:00 → 08:01 (includes the minute 08:00), afternoon 08:01 → 16:30.
 - Tests: vitest 137/137 (worker: windows, once per day, busy retry, per profile), playwright 11/11, live 8/8.
 
 ## (history) Session 13x – ↑/↓ in Xuất báo cáo did nothing; 2026-11-16)

@@ -1662,7 +1662,7 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
         {SCHEDULE_SLOTS.map((s) => (
           <label key={s.id} className="inline-flex cursor-pointer items-center gap-2">
             <input type="checkbox" className="h-4 w-4" checked={!!prof?.schedule?.[s.id]} disabled={!server.collectEnabled} onChange={(e) => onToggle(s, e.target.checked)} aria-label={`Tự động lúc ${s.at}`} />
-            <span><b>{s.at}</b> – kỳ {s.from.day ? `${s.from.time} hôm qua` : s.from.time} → {s.to.time} hôm nay</span>
+            <span><b>{s.at}</b> – {s.label}</span>
           </label>
         ))}
       </div>

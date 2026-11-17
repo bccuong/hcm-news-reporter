@@ -3,7 +3,7 @@ run-name: ${{ inputs.trigger == 'schedule' && format('Thu thập theo lịch {0}
 
 # Automatic runs are NOT a GitHub `schedule:` (often late or skipped). The Cloudflare review worker's cron (every 5 min)
 # dispatches this workflow with trigger=schedule + the window of a fixed time ticked on the web for a profile
-# (08:00: 17:00 yesterday → 08:00; 16:30: 08:01 → 16:30 – src/domain/schedule.ts), once per profile and day.
+# (08:00: 17:00 yesterday → 08:01, i.e. 08:00 included; 16:30: 08:01 → 16:30 – src/domain/schedule.ts), once per profile and day.
 on:
   push:
     branches: [main]
