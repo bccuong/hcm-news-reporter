@@ -435,24 +435,34 @@ export function App() {
   const reviewQueue = reviewPool.filter((a) => !isOut(a));
   const selected = Object.values(reviews).filter((r) => r.included).length;
   // "Hỏi nhanh": stories nobody judged yet that the filter is least sure about
+  // the filter is replayed ONCE per period (when the page is idle), not after every answer: answering only removes stories
+  const [uncertain, setUncertain] = useState<UncertainStory[]>([]);
+  useEffect(() => {
+    setUncertain([]);
+    if (!settings || !arts.length) return;
+    const timer = setTimeout(() => {
+      try {
+        setUncertain(uncertainStories(arts, settings, new Set(), 40));
+      } catch {
+        setUncertain([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [arts, settings]);
   const askable = useMemo(() => {
-    if (!settings || !arts.length) return [] as UncertainStory[];
-    const skip = new Set(arts.filter((a) => { const r = reviews[a.id]; return !!(r?.relevanceLabel || r?.included || r?.excludedByEditor || r?.promotedToReady || r?.groupId || votes[a.id]?.length); }).map((a) => a.id));
-    try {
-      return uncertainStories(arts, settings, skip, 8);
-    } catch {
-      return [];
-    }
-  }, [arts, settings, reviews, votes]);
+    const judged = (id: string) => { const r = reviews[id]; return !!(r?.relevanceLabel || r?.included || r?.excludedByEditor || r?.promotedToReady || r?.groupId || votes[id]?.length); };
+    return uncertain.filter((x) => !judged(x.article.id)).slice(0, 8);
+  }, [uncertain, reviews, votes]);
   const [asking, setAsking] = useState<UncertainStory[] | null>(null);
   const startAsk = () => {
     if (api.shared && !api.shared.session()) return setLoginOpen(true);
     setAsking(askable);
   };
-  const answerAsk = async (x: UncertainStory, relevant: boolean) => {
+  const answerAsk = (x: UncertainStory, relevant: boolean) => {
     if (api.shared && !api.shared.session()) return (setLoginOpen(true), false);
-    // ✗ on a ready story also takes it out of the list (as "✗ Không" does); ✓ on an excluded story records the miss
-    await guardedPatch(x.article.id, relevant ? { relevanceLabel: 'relevant' } : x.status === 'relevant' ? { relevanceLabel: 'irrelevant', included: false, excludedByEditor: true, excludeReason: 'off_topic' } : { relevanceLabel: 'irrelevant' });
+    // ✗ on a ready story also takes it out of the list (as "✗ Không" does); ✓ on an excluded story records the miss.
+    // Not awaited: the next story shows at once; a failed save is reported and reverted by patch()
+    void guardedPatch(x.article.id, relevant ? { relevanceLabel: 'relevant' } : x.status === 'relevant' ? { relevanceLabel: 'irrelevant', included: false, excludedByEditor: true, excludeReason: 'off_topic' } : { relevanceLabel: 'irrelevant' });
     return true;
   };
 
@@ -925,20 +935,15 @@ function RemoveButton({ title, onRemove, className = '' }: { title: string; onRe
 }
 
 /** "Hỏi nhanh": one story at a time, the ones the filter is least sure about; every answer is a ✓/✗ vote of the team */
-function QuickAsk({ items, onAnswer, onClose }: { items: UncertainStory[]; onAnswer: (x: UncertainStory, relevant: boolean) => Promise<boolean>; onClose: () => void }) {
+function QuickAsk({ items, onAnswer, onClose }: { items: UncertainStory[]; onAnswer: (x: UncertainStory, relevant: boolean) => boolean; onClose: () => void }) {
   const [i, setI] = useState(0);
   const [done, setDone] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const busy = false;
   const x = items[i];
-  const answer = async (rel: boolean) => {
+  const answer = (rel: boolean) => {
     if (!x) return;
-    setBusy(true);
-    try {
-      if (await onAnswer(x, rel)) setDone((n) => n + 1);
-      else return onClose();
-    } finally {
-      setBusy(false);
-    }
+    if (!onAnswer(x, rel)) return onClose(); // no reviewer session: the login dialog opens
+    setDone((n) => n + 1);
     setI((n) => n + 1);
   };
   useEffect(() => {

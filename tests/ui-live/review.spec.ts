@@ -499,3 +499,41 @@ test('daily suggestions: published by the nightly job, applied (then saved) or d
   await expect(other.getByRole('dialog', { name: 'Cài đặt' }).getByTestId('suggestion').filter({ hasText: 'trung tâm thương mại' })).toHaveCount(0);
   await other.close();
 });
+
+test('Hỏi nhanh: an answer moves on at once (save in the background), every vote is saved even when answering fast', async ({ page, request }) => {
+  // a slow network to the review worker (~800 ms per request)
+  await page.route('http://127.0.0.1:5181/labels', async (route) => {
+    if (route.request().method() === 'POST') await new Promise((r) => setTimeout(r, 800));
+    await route.continue();
+  });
+  await page.goto('');
+  await login(page, 'Người duyệt Q', 'HCM-TEST-CODE');
+  const card = page.getByTestId('quick-ask');
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await card.getByRole('button', { name: 'Bắt đầu' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Hỏi nhanh' });
+  const total = Number(/\/ (\d+)/.exec(await dlg.innerText())![1]);
+  const titles: string[] = [];
+  for (let i = 0; i < total; i++) {
+    const story = dlg.getByTestId('quick-ask-story');
+    titles.push((await story.locator('h3').innerText()).trim());
+    const t0 = Date.now();
+    await dlg.getByRole('button', { name: i % 2 ? '✗ Không' : '✓ Liên quan' }).click();
+    // the next story (or the end) shows without waiting for the save
+    if (i < total - 1) await expect(dlg.getByTestId('quick-ask-story').locator('h3')).not.toHaveText(titles[i]!, { timeout: 500 });
+    else await expect(dlg).toContainText(`Đã chấm ${total} bài`, { timeout: 500 });
+    expect(Date.now() - t0).toBeLessThan(700);
+  }
+  await dlg.getByRole('button', { name: 'Xong' }).click();
+  // all votes reach the worker (sent one after another in the background)
+  await expect.poll(async () => {
+    const days = ['2026-11-08', '2026-11-09'];
+    let n = 0;
+    for (const d of days) {
+      const r = await request.get(`http://127.0.0.1:5181/labels?date=${d}`, { headers: { 'x-review-code': 'HCM-TEST-CODE' } });
+      const v = (await r.json()) as { votes?: Record<string, Array<{ r: string }>> };
+      n += Object.values(v.votes ?? {}).filter((list) => list.some((x) => x.r === 'Người duyệt Q')).length;
+    }
+    return n;
+  }, { timeout: 20_000 }).toBe(total);
+});

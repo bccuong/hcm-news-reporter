@@ -806,7 +806,14 @@ class DemoApi implements Api {
       },
     };
   }
-  private async sharedPost(body: Record<string, unknown>) {
+  /** votes are sent one after another (the worker keeps one value per day: two saves at once could overwrite each other) */
+  private labelChain: Promise<unknown> = Promise.resolve();
+  private sharedPost(body: Record<string, unknown>) {
+    const next = this.labelChain.catch(() => undefined).then(() => this.sharedPostNow(body));
+    this.labelChain = next;
+    return next;
+  }
+  private async sharedPostNow(body: Record<string, unknown>) {
     const s = store.get<{ name: string; code: string }>('reviewer');
     if (!s) throw new ApiError('Hãy đăng nhập người duyệt (tên + mã truy cập) để lưu đánh giá cho cả nhóm');
     const r = await fetch(`${this.reviewApi}/labels`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, reviewer: s.name }) });

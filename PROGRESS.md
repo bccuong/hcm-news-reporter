@@ -7,7 +7,12 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14g – place suggestions, quality per period chart; 2026-11-17)
+## ▶ RESUME HERE (session 14h – Hỏi nhanh froze after each answer; 2026-11-17)
+- Causes: the dialog awaited the save (0.5–1 s per vote) with the buttons disabled, and every answer re-ran the filter on all stories of the period (uncertainStories in a useMemo depending on reviews/votes) on the main thread.
+- Fix: the uncertain stories are computed once per period after load (setTimeout, 40 candidates), answering only filters out judged stories; an answer moves to the next story at once and the save runs in the background (patch() reverts and reports on failure); votes are posted one after another (api.ts labelChain) so the worker's per-day aggregate never loses a vote when answering fast.
+- Test: live "Hỏi nhanh" with 800 ms simulated latency – next story < 0.7 s, all votes reach the worker. vitest 153/153, playwright 12/12, live 10/10.
+
+## (history) Session 14g – place suggestions, quality per period chart; 2026-11-17)
 - Suggestions kind "place" (suggest.ts placesOf/withPlace): relevant stories held back because the city was not recognised → "<phường|xã|đường|khu đô thị|chợ|cầu|kênh|…> <Proper Name>" phrases they share, added to Địa điểm as a landmark; same replay rule (≥ 2 judged stories fixed, none broken). Worker/server accept the kind; Settings shows it with a map pin. Merged provinces (Bình Dương, Bà Rịa – Vũng Tàu) were checked: already TP.HCM areas.
 - Độ phủ & nguồn › Chất lượng bộ lọc: line chart per period (Đúng chủ đề / Không bỏ sót, one % axis, palette validated with the dataviz validator: #2a78d6/#eb6834 all checks PASS, direct end labels de-overlapped, hover tooltip, table view); periods with < 3 judged stories left out. Web: team votes are used when logged in. Rendered and checked on the live site (158 judged stories, 5 periods).
 - Note: the chart shows the filter as it was at collection time; today's keyword changes apply from the next collection.
