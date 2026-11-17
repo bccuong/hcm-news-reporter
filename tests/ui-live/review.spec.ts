@@ -290,8 +290,12 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ow
   await expect(own).toContainText('Đà Nẵng');
   for (const l of ['Nguồn tin', 'Từ khóa & quy tắc', 'Địa điểm', 'Lĩnh vực']) await expect(own.getByRole('button', { name: l, exact: true })).toBeVisible();
   await own.getByRole('button', { name: 'Lĩnh vực', exact: true }).click();
-  // "Chính sách, pháp quy" counts only with a construction/transport sector in the title/sapo – a UI setting, not a file
+  // basic view: name, on/off and keywords; the requirement is shown as a small "cần kèm" chip
   const pol = dlg2.getByTestId('category-POLICY');
+  await expect(pol).toContainText('cần kèm: Xây dựng / Giao thông');
+  await expect(pol.getByRole('group', { name: /Lĩnh vực bắt buộc đi kèm/ })).toHaveCount(0);
+  // "Chính sách, pháp quy" counts only with a construction/transport sector in the title/sapo – a UI setting (Nâng cao), not a file
+  await dlg2.getByRole('switch', { name: 'Nâng cao' }).click();
   await expect(pol.getByRole('group', { name: /Lĩnh vực bắt buộc đi kèm/ }).getByLabel('Xây dựng')).toBeChecked();
   await expect(pol.getByRole('group', { name: /Lĩnh vực bắt buộc đi kèm/ }).getByLabel('Giao thông')).toBeChecked();
   await dlg2.getByTestId('category-TRAFFIC').locator('summary').click();

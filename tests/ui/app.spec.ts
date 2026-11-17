@@ -279,9 +279,9 @@ test('Profiles: create Hà Nội from the defaults, its own settings and runs, c
   await expect(dlg.getByTestId('nav-profile-hcm')).toContainText('TP.HCM'); // the other profile, one click away
   // its settings: region Hà Nội, location filter
   await dlg.getByRole('button', { name: 'Địa điểm', exact: true }).click();
-  await expect(dlg.getByLabel('Tên địa bàn (hiển thị trong ứng dụng và báo cáo)')).toHaveValue('Hà Nội');
+  await expect(dlg.getByLabel(/^Tên địa bàn/)).toHaveValue('Hà Nội');
   await dlg.getByLabel('Câu thử địa bàn').fill('Ùn tắc kéo dài ở Thủ đô sáng nay');
-  await expect(dlg.getByText('Kết quả: Hà Nội')).toBeVisible();
+  await expect(dlg.getByText('Kết quả:')).toContainText('✓ Hà Nội');
   await page.screenshot({ path: 'docs/screenshots/profiles-tree.png' });
   await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
   await expect(page.getByLabel('Lượt đã lưu')).toHaveCount(0); // TP.HCM runs are not listed under Hà Nội
@@ -294,7 +294,7 @@ test('Profiles: create Hà Nội from the defaults, its own settings and runs, c
   await dlg.getByTestId('nav-profile-hcm').click();
   await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('hcm');
   await expect(dlg.getByTestId('nav-this-profile')).toContainText('TP.HCM');
-  await expect(dlg.getByLabel('Tên địa bàn (hiển thị trong ứng dụng và báo cáo)')).toHaveValue('TP.HCM');
+  await expect(dlg.getByLabel(/^Tên địa bàn/)).toHaveValue('TP.HCM');
 
   // clone TP.HCM without switching: it appears in the tree
   await dlg.getByRole('button', { name: 'Tổng quan', exact: true }).click();

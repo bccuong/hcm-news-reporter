@@ -224,15 +224,15 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
             ) : nav === 'rules' ? (
               <RulesPanel s={s} setS={setS} sources={src} advanced={advanced} />
             ) : nav === 'location' ? (
-              <LocationPanel s={s} up={up} />
+              <LocationPanel s={s} up={up} advanced={advanced} />
             ) : nav === 'categories' ? (
-              <CategoriesPanel s={s} setS={setS} />
+              <CategoriesPanel s={s} setS={setS} advanced={advanced} />
             ) : nav === 'time' ? (
               <TimePanel s={s} up={up} />
             ) : nav === 'quality' ? (
               <QualityPanel s={s} up={up} />
             ) : nav === 'report' ? (
-              <ReportPanel s={s} up={up} />
+              <ReportPanel s={s} up={up} advanced={advanced} />
             ) : nav === 'performance' ? (
               <PerfPanel s={s} up={up} />
             ) : (
@@ -426,7 +426,7 @@ function RulesPanel({ s, setS, sources, advanced }: { s: Settings; setS: (fn: (p
 const KIND_LABEL: Record<LocationArea['kind'], string> = {
   city: 'Thành phố', ward: 'Phường', commune: 'Xã', special_zone: 'Đặc khu', landmark: 'Địa danh/công trình', legacy_district: 'Quận/huyện cũ', custom: 'Tùy chỉnh', connected_area: 'Liên vùng (cần kiểm tra)',
 };
-function LocationPanel({ s, up }: { s: Settings; up: Up }) {
+function LocationPanel({ s, up, advanced }: { s: Settings; up: Up; advanced: boolean }) {
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<string>('all');
   const [test, setTest] = useState('Kẹt xe kéo dài trên đường Phạm Văn Đồng');
@@ -437,17 +437,23 @@ function LocationPanel({ s, up }: { s: Settings; up: Up }) {
   const R = s.location.regionName;
   return (
     <div>
-      <Section title="Địa bàn của cấu hình">
-        <Field label="Tên địa bàn (hiển thị trong ứng dụng và báo cáo)" help="Ví dụ TP.HCM, Hà Nội, Đà Nẵng. Bộ lọc dùng danh sách địa danh & bí danh bên dưới, không chỉ tên này."><input className="input" value={R} onChange={(e) => up('location', { regionName: e.target.value })} /></Field>
+      <Section title="Địa bàn">
+        <Field label="Tên địa bàn" help="Ví dụ TP.HCM, Hà Nội, Đà Nẵng – hiện trong ứng dụng và báo cáo. Bộ lọc dùng danh sách địa danh & bí danh bên dưới."><input className="input" value={R} onChange={(e) => up('location', { regionName: e.target.value })} /></Field>
       </Section>
-      <Section title="Kiểm tra nhanh">
+      <Section title="Thử một câu" help="Gõ một tiêu đề để xem bộ lọc nhận ra địa bàn thế nào.">
         <input className="input" value={test} onChange={(e) => setTest(e.target.value)} aria-label="Câu thử địa bàn" />
-        <p className="text-xs">
-          Kết quả: <b>{r.status === 'hcm' ? R : r.status === 'connected' ? 'Liên vùng – cần kiểm tra' : r.status === 'other_province' ? 'Địa phương khác' : 'Chưa rõ – vào hàng Cần kiểm tra'}</b>
-          <br />
-          {r.evidence.join(' · ')}
+        <p className="flex flex-wrap items-center gap-2 text-sm">
+          Kết quả:{' '}
+          <span className={`chip text-xs font-semibold ${r.status === 'hcm' ? 'border-green-300 bg-green-50 text-green-800' : r.status === 'other_province' ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-800'}`}>
+            {r.status === 'hcm' ? `✓ ${R}` : r.status === 'connected' ? 'Liên vùng – cần kiểm tra' : r.status === 'other_province' ? '✗ Địa phương khác' : 'Chưa rõ – vào hàng Cần kiểm tra'}
+          </span>
+          <span className="text-xs text-slate-500">{r.evidence.join(' · ')}</span>
         </p>
       </Section>
+      {!advanced && (
+        <p className="mb-4 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">Bật <b>Nâng cao</b> (cột trái) để chỉnh quy tắc địa bàn (bắt buộc có địa danh, tin liên vùng, địa phương khác, cụm từ không phải địa danh).</p>
+      )}
+      {advanced && (
       <Section title="Quy tắc địa bàn">
         <Toggle checked={s.location.requireHcmEvidence} onChange={(v) => up('location', { requireHcmEvidence: v })} label={`Bắt buộc có bằng chứng địa bàn ${R} để vào nhóm sẵn sàng (không có → Cần kiểm tra, không bị bỏ)`} />
         <Toggle checked={s.location.connectedAreasForReview} onChange={(v) => up('location', { connectedAreasForReview: v })} label="Dự án liên vùng (Vành đai 3, Long Thành…) đưa vào Cần kiểm tra" />
@@ -477,6 +483,7 @@ function LocationPanel({ s, up }: { s: Settings; up: Up }) {
         <ChipEditor values={s.location.nationalSectorPhrases ?? []} onChange={(v) => up('location', { nationalSectorPhrases: v })} label={`Cụm từ tin toàn ngành (bài không có địa danh ${R} nhưng tiêu đề/sapo có cụm này vẫn vào Cần kiểm tra, ví dụ "Bộ Xây dựng")`} />
         <ChipEditor values={s.location.excludePhrases ?? []} onChange={(v) => up('location', { excludePhrases: v })} label={`Cụm từ không phải địa bàn (bỏ qua khi tìm ${R}, ví dụ "giải thưởng Hồ Chí Minh", "ngân hàng Sài Gòn - Hà Nội")`} />
       </Section>
+      )}
       <Section
         title={`Địa danh & bí danh (${areas.length})`}
         help="Nguồn: danh sách đơn vị hành chính (NQ 1685/NQ-UBTVQH15). Tên dễ nhầm cần tiền tố phường/xã."
@@ -509,18 +516,35 @@ function LocationPanel({ s, up }: { s: Settings; up: Up }) {
 }
 
 /* ---------------- Categories ---------------- */
-function CategoriesPanel({ s, setS }: { s: Settings; setS: (fn: (p: Settings | null) => Settings | null) => void }) {
+function CategoriesPanel({ s, setS, advanced }: { s: Settings; setS: (fn: (p: Settings | null) => Settings | null) => void; advanced: boolean }) {
   const set = (code: string, p: Partial<Settings['categories'][number]>) => setS((x) => (x ? { ...x, categories: x.categories.map((c) => (c.code === code ? { ...c, ...p } : c)) } : x));
   return (
-    <Section title="Lĩnh vực chuyên môn" help="Chỉ là gợi ý phân loại theo từ khóa; biên tập viên luôn có thể đổi. Tính chất tin (Tồn tại/Tích cực/Trung lập) được phân loại độc lập.">
+    <div>
+    <Section title="Lĩnh vực" help="Bài được xếp vào lĩnh vực có từ khóa khớp nhiều nhất (chỉ là gợi ý, biên tập viên luôn đổi được). Tắt một lĩnh vực để không dùng nữa.">
+      <div className="grid gap-2">
       {[...s.categories].sort((a, b) => a.priority - b.priority).map((c) => (
-        <div key={c.code} className="rounded border border-slate-200 bg-white p-2" data-testid={`category-${c.code}`}>
-          <div className="grid gap-2 md:grid-cols-[auto_12rem_6rem_1fr]">
-            <Toggle checked={c.enabled} onChange={(v) => set(c.code, { enabled: v })} label={c.code} />
-            <input className="input" value={c.label} onChange={(e) => set(c.code, { label: e.target.value })} aria-label="Tên lĩnh vực" />
-            <input className="input" type="number" min={1} max={99} value={c.priority} onChange={(e) => set(c.code, { priority: e.target.valueAsNumber })} aria-label="Ưu tiên" />
-            <ChipEditor values={c.keywords} onChange={(v) => set(c.code, { keywords: v })} placeholder="từ khóa lĩnh vực…" />
+        <div key={c.code} className={`card animate-in p-3 ${c.enabled ? '' : 'bg-slate-50 opacity-70'}`} data-testid={`category-${c.code}`}>
+          <div className="mb-2 flex flex-wrap items-center gap-3">
+            <Toggle checked={c.enabled} onChange={(v) => set(c.code, { enabled: v })} label="" />
+            {advanced ? (
+              <>
+                <input className="input w-56" value={c.label} onChange={(e) => set(c.code, { label: e.target.value })} aria-label="Tên lĩnh vực" />
+                <label className="flex items-center gap-1 text-xs text-slate-500">
+                  Ưu tiên <input className="input w-16" type="number" min={1} max={99} value={c.priority} onChange={(e) => set(c.code, { priority: e.target.valueAsNumber })} aria-label="Ưu tiên" />
+                </label>
+                <span className="chip border-slate-200 bg-slate-50 font-mono text-[10px] text-slate-500">{c.code}</span>
+              </>
+            ) : (
+              <span className="font-semibold text-slate-800">{c.label}</span>
+            )}
+            {(c.requiresCategories ?? []).length > 0 && (
+              <span className="chip border-sky-200 bg-sky-50 text-[11px] text-sky-800" title="Chỉ tính khi tiêu đề/sapo có lĩnh vực đi kèm">
+                cần kèm: {c.requiresCategories.map((r) => s.categories.find((o) => o.code === r)?.label ?? r).join(' / ')}
+              </span>
+            )}
           </div>
+          <ChipEditor values={c.keywords} onChange={(v) => set(c.code, { keywords: v })} placeholder="thêm từ khóa…" />
+          {advanced && (
           <details className="mt-1" open={(c.requiresCategories ?? []).length > 0}>
             <summary className="cursor-pointer text-xs text-slate-600">
               Điều kiện thêm{(c.requiresCategories ?? []).length ? ` · chỉ tính khi tiêu đề/sapo có lĩnh vực khác (${c.requiresCategories.length})` : ''}{(c.excludePhrases ?? []).length ? ` · bỏ qua ${c.excludePhrases.length} cụm từ` : ''}
@@ -549,9 +573,15 @@ function CategoriesPanel({ s, setS }: { s: Settings; setS: (fn: (p: Settings | n
               </div>
             </div>
           </details>
+          )}
         </div>
       ))}
+      </div>
     </Section>
+      {!advanced && (
+        <p className="mb-4 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">Bật <b>Nâng cao</b> (cột trái) để đổi tên, thứ tự ưu tiên, lĩnh vực bắt buộc đi kèm và cụm từ bỏ qua của từng lĩnh vực.</p>
+      )}
+    </div>
   );
 }
 
@@ -622,7 +652,7 @@ function QualityPanel({ s, up }: { s: Settings; up: Up }) {
 }
 
 /* ---------------- Report ---------------- */
-function ReportPanel({ s, up }: { s: Settings; up: Up }) {
+function ReportPanel({ s, up, advanced }: { s: Settings; up: Up; advanced: boolean }) {
   const toast = useToast();
   const upEditorial = (p: Partial<Settings['editorial']>) => up('editorial', p);
   const [caps, setCaps] = useState<{ pdf: boolean; soffice: string | null; powerpoint?: string | null } | null>(null);
@@ -646,10 +676,10 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
   };
   return (
     <div>
-      <Section title={`Mẫu báo cáo có sẵn (${tpls.length})`} help="Mẫu Sở Xây dựng TP.HCM có sẵn trong ứng dụng – không cần tải gì. Tích mẫu mặc định; khi xuất vẫn tích được mẫu khác cho từng lần.">
+      <Section title="Mẫu mặc định" help="Mẫu dùng khi xuất báo cáo; lúc xuất vẫn chọn được mẫu khác cho từng lần.">
         <div className="space-y-1.5" role="radiogroup" aria-label="Mẫu mặc định khi xuất" data-testid="default-template-picker">
           {tpls.map((x) => (
-            <label key={x.id} className={`flex cursor-pointer items-start gap-2 rounded border p-2 text-sm ${x.id === s.report.templateId ? 'border-teal-600 bg-teal-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+            <label key={x.id} className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 text-sm transition ${x.id === s.report.templateId ? 'border-teal-600 bg-teal-50 shadow-sm' : 'border-slate-200 bg-white hover:border-teal-300'}`}>
               <input type="radio" name="default-template" className="mt-1" value={x.id} checked={x.id === s.report.templateId} onChange={() => up('report', { templateId: x.id })} aria-label={x.name} />
               <span>
                 <span className="font-medium">{x.name}</span>
@@ -659,6 +689,27 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
             </label>
           ))}
         </div>
+        <label className="btn-ghost mt-2 w-fit cursor-pointer rounded-full text-xs" title="Chỉ cần khi muốn dùng một tệp .pptx khác (cùng cấu trúc mẫu Sở)">
+          <FileUp className="h-3.5 w-3.5" /> Dùng tệp mẫu .pptx riêng…
+          <input type="file" accept=".pptx" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+        </label>
+      </Section>
+      <Section title="Thông tin trên báo cáo">
+        <Field label="Tên cơ quan trên bìa"><input className="input" value={s.report.organization} onChange={(e) => up('report', { organization: e.target.value })} /></Field>
+        <Field label="Email phúc đáp (trang Kiến nghị)"><input className="input" value={s.report.contactEmail} onChange={(e) => up('report', { contactEmail: e.target.value })} /></Field>
+        <div>
+          <span className="label">Tệp xuất ra (tích sẵn khi xuất)</span>
+          <div className="flex flex-wrap gap-2">
+            {(['pptx', 'docx', 'pdf'] as const).map((f) => {
+              const on = s.report.outputFormats.includes(f);
+              return (
+                <label key={f} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition ${on ? 'border-teal-600 bg-teal-50 text-teal-900' : 'border-slate-200 bg-white text-slate-600'}`}>
+                  <input type="checkbox" className="accent-teal-600" checked={on} onChange={(e) => up('report', { outputFormats: e.target.checked ? [...s.report.outputFormats, f] : s.report.outputFormats.filter((x) => x !== f) })} /> .{f}
+                </label>
+              );
+            })}
+          </div>
+        </div>
       </Section>
       {s.report.templateFile && (
         <div className="mb-4 rounded border border-green-300 bg-green-50 p-3 text-xs text-green-900">
@@ -666,7 +717,9 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
         </div>
       )}
       <Section title="Đề xuất giao đơn vị cho tin Tồn tại cần khắc phục" help="Mỗi tin Tồn tại được gợi ý giao đơn vị của nhóm khớp nhất theo từ khóa (có trong tiêu đề = 3 điểm, chỉ trong sapo = 1 điểm). Biên tập viên vẫn sửa được từng tin.">
-        <div className="space-y-2" data-testid="assignment-rules">
+        <details>
+        <summary className="cursor-pointer select-none text-sm text-teal-700">{(s.editorial.assignmentRules ?? []).length} nhóm đơn vị – bấm để xem / sửa</summary>
+        <div className="mt-2 space-y-2" data-testid="assignment-rules">
           {(s.editorial.assignmentRules ?? []).map((r, i) => {
             const set = (p: Partial<typeof r>) => upEditorial({ assignmentRules: s.editorial.assignmentRules.map((x, j) => (j === i ? { ...x, ...p } : x)) });
             return (
@@ -691,26 +744,20 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
             <input className="input" value={s.editorial.assignmentFallback} onChange={(e) => upEditorial({ assignmentFallback: e.target.value })} />
           </Field>
         </div>
+        </details>
       </Section>
-      <Section title="Mẫu riêng (không bắt buộc) & thông tin cơ quan">
-        <p className="text-xs">Chỉ cần khi muốn dùng một tệp .pptx khác (cùng cấu trúc mẫu Sở). Mẫu riêng đang có: <b>{s.report.templateFile || 'không có – vẫn xuất bình thường bằng các mẫu có sẵn ở trên'}</b></p>
-        {api.mode !== 'local' && <p className="text-xs text-slate-600">Bản web: mẫu chỉ lưu trong <b>trình duyệt này</b> (không tải lên máy chủ); xuất báo cáo dựng ngay trong trình duyệt, ảnh báo gốc lấy qua máy chủ duyệt tin (cần đăng nhập). PDF: mở tệp .pptx bằng PowerPoint › Lưu thành PDF.</p>}
-        <label className="btn-ghost w-fit cursor-pointer">
-          <FileUp className="h-4 w-4" /> Tải mẫu .pptx
-          <input type="file" accept=".pptx" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-        </label>
-        <Field label="Dòng mô tả dưới tên ứng dụng"><input className="input" value={s.report.subtitle} onChange={(e) => up('report', { subtitle: e.target.value })} /></Field>
-        <Field label="Tên cơ quan trên bìa"><input className="input" value={s.report.organization} onChange={(e) => up('report', { organization: e.target.value })} /></Field>
-        <Field label="Email phúc đáp (trang Kiến nghị)"><input className="input" value={s.report.contactEmail} onChange={(e) => up('report', { contactEmail: e.target.value })} /></Field>
+      {!advanced && (
+        <p className="mb-4 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">Bật <b>Nâng cao</b> (cột trái) để chỉnh tên tệp, số tin mỗi trang, bộ xuất PDF và các tùy chọn khác.</p>
+      )}
+      {advanced && (
+      <>
+      <Section title="Trình bày">
+        <p className="text-xs">Mẫu riêng đang có: <b>{s.report.templateFile || 'không có – vẫn xuất bình thường bằng các mẫu có sẵn'}</b>{api.mode !== 'local' ? ' (bản web: mẫu riêng chỉ lưu trong trình duyệt này)' : ''}</p>
+        <Field label="Tên hiển thị trên đầu trang"><input className="input" value={s.report.subtitle} onChange={(e) => up('report', { subtitle: e.target.value })} /></Field>
         <NumberField label="Số tin mỗi trang" value={s.report.storiesPerPage} min={1} max={4} onChange={(n) => up('report', { storiesPerPage: n })} />
         <Select label="Khi nội dung quá dài" value={s.report.overflowPolicy} onChange={(v) => up('report', { overflowPolicy: v })} options={[['new_slide', 'Thêm trang cùng loại'], ['warn_only', 'Chỉ cảnh báo, người duyệt rút gọn']]} />
       </Section>
-      <Section title="Xuất tệp">
-        <div className="flex gap-4">
-          {(['pptx', 'docx', 'pdf'] as const).map((f) => (
-            <label key={f} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={s.report.outputFormats.includes(f)} onChange={(e) => up('report', { outputFormats: e.target.checked ? [...s.report.outputFormats, f] : s.report.outputFormats.filter((x) => x !== f) })} /> .{f}</label>
-          ))}
-        </div>
+      <Section title="Tệp & PDF">
         <Field label="Mẫu tên tệp" help="{date} = ngày báo cáo, {from}/{to} = giờ khung (HHmm)" error={!s.report.filenamePattern.includes('{date}') ? 'Nên có {date} để tránh trùng tên' : null}>
           <input className="input font-mono text-xs" value={s.report.filenamePattern} onChange={(e) => up('report', { filenamePattern: e.target.value })} />
         </Field>
@@ -718,13 +765,17 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
         <Field label="Đường dẫn POWERPNT.EXE (tùy chọn)"><input className="input font-mono text-xs" placeholder="C:\Program Files (x86)\Microsoft Office\root\Office16\POWERPNT.EXE" value={s.report.powerPointPath} onChange={(e) => up('report', { powerPointPath: e.target.value })} /></Field>
         <Field label="Đường dẫn soffice.exe (tùy chọn)"><input className="input font-mono text-xs" placeholder="C:\Program Files\LibreOffice\program\soffice.exe" value={s.report.libreOfficePath} onChange={(e) => up('report', { libreOfficePath: e.target.value })} /></Field>
         <p className="text-xs">
-          {caps
+          {s.report.pdfRenderer === 'builtin'
+            ? 'PDF dùng bộ xuất tích hợp sẵn – không cần PowerPoint hay LibreOffice.'
+            : caps
             ? caps.pdf
               ? [caps.powerpoint && `Microsoft PowerPoint: ${caps.powerpoint}`, caps.soffice && `LibreOffice: ${caps.soffice}`].filter(Boolean).join(' · ')
               : 'Chưa tìm thấy PowerPoint hay LibreOffice – xuất PDF sẽ báo không khả dụng.'
             : 'Không kiểm tra được bộ chuyển PDF.'}
         </p>
       </Section>
+      </>
+      )}
     </div>
   );
 }

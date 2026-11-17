@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14c – filter words checked on the team labels; Settings step 2 = Từ khóa & quy tắc; 2026-11-17)
+## ▶ RESUME HERE (session 14d – Settings step 3: Địa điểm, Lĩnh vực, Báo cáo & mẫu; 2026-11-17)
+- Địa điểm: basic = region name, "Thử một câu" with a coloured result chip, places & aliases list; rules (bắt buộc địa danh, liên vùng, địa phương khác, cụm từ…) under Nâng cao.
+- Lĩnh vực: basic = card per sector with switch, name and keyword chips + "cần kèm: …" chip; name/priority/code, required sectors and ignored phrases under Nâng cao.
+- Báo cáo & mẫu: basic = default template cards (+ "Dùng tệp mẫu .pptx riêng…"), organisation, reply e-mail, output-file pills, assignment groups folded; subtitle, stories per page, overflow, file name pattern, PDF renderer/paths under Nâng cao (PDF note now mentions the built-in PDF).
+- Tests: vitest 143/143, playwright 12/12, live 8/8.
+- Next: optional polish of article cards (fewer chips) and Inspector; keep re-running scripts/eval-filter.ts as labels grow.
+
+## (history) Session 14c – filter words checked on the team labels; Settings step 2 = Từ khóa & quy tắc; 2026-11-17)
 - User's list (TPHCM; xây dựng, bất động sản, nhà ở, hạ tầng, giao thông, kẹt xe, ngập lụt, mưa, triều cường, xây dựng sai phép, không phép, chất lượng công trình): "mưa" (only "mưa lớn"), "sai phép", "không phép" were missing.
 - New tool: scripts/eval-filter.ts replays the filter on every published story and scores it on labels/labels.json (precision of "Sẵn sàng", recall = labelled-relevant not excluded). Before: 93% / 81% (1,021 stories, 111 labels). After: 100% (30/30) / 93% (39/42); the 3 left: other province, UK, a traffic fine without sector words.
 - Changes (schemas.ts, one-time upgrades of saved configs; defaults.ts for new ones): category keywords rev 3 (BUILD + sai phép/không phép/trật tự xây dựng/quy hoạch đô thị…/mất an toàn; FLOOD + mưa, ngập lụt; REALESTATE + nhà xã hội, nhà xưởng; TRAFFIC + CSGT, vi phạm/tai nạn giao thông, phạt nguội), removals ("vi phạm", "an toàn" from BUILD), INFRA: requirement dropped again (it lost "Công viên Thiên niên kỷ…", in the department's sample report) and look-alikes excluded (hạ tầng số/sạc…, kênh truyền hình/đầu tư…, Rạch Giá/Rạch Dừa…); INVEST/POLICY keep BUILD/TRAFFIC. Topic words + default rule terms (topicRev / presetRev 2), title exclusion "Điểm tin".
