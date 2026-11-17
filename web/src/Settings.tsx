@@ -9,7 +9,7 @@ import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type Profil
 import { applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
 import { RuleBuilder } from './RuleBuilder';
 import { SourcesPanel } from './SourcesPanel';
-import { ChipEditor, Field, NumberField, Section, Select, Toggle, useToast } from './ui';
+import { ChipEditor, Field, NumberField, Section, Select, Toggle, useEscape, useToast } from './ui';
 
 const NAV = [
   ['profiles', 'Tổng quan'],
@@ -94,6 +94,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
     }, 400);
     return () => clearTimeout(timer);
   }, [dirtyS, gold, saved, validation]);
+  useEscape(() => close(), open); // same as the X button (asks before dropping unsaved changes)
   if (!open) return null;
 
   /** open another profile: it becomes the active one, the page reloads and Settings reopen on the same section */

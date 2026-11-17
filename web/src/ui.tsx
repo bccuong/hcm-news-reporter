@@ -1,5 +1,33 @@
 import { HelpCircle, Plus, X } from 'lucide-react';
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+
+/**
+ * ESC closes the top-most open panel / dialog (Chi tiết bài, Cài đặt, Hỏi nhanh, đăng nhập) exactly like its X button.
+ * Panels register in open order; one key press closes only the last one. A small menu open inside a panel handles its
+ * own ESC first and calls preventDefault(), so the panel under it stays open.
+ */
+const escStack: Array<{ current: () => void }> = [];
+let escBound = false;
+export function useEscape(onEscape: () => void, active = true) {
+  const ref = useRef(onEscape);
+  ref.current = onEscape;
+  useEffect(() => {
+    if (!active) return;
+    if (!escBound) {
+      escBound = true;
+      window.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || !escStack.length) return;
+        e.preventDefault();
+        escStack[escStack.length - 1]!.current();
+      });
+    }
+    escStack.push(ref);
+    return () => {
+      const i = escStack.lastIndexOf(ref);
+      if (i >= 0) escStack.splice(i, 1);
+    };
+  }, [active]);
+}
 
 /* ---------------- Toasts ---------------- */
 type Toast = { id: number; kind: 'ok' | 'err' | 'info'; text: string };

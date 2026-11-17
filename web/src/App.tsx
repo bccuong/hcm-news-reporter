@@ -9,7 +9,7 @@ import { nextRun, SCHEDULE_SLOTS, type ScheduleSlot } from '../../src/domain/sch
 import { uncertainStories, type UncertainStory } from '../../src/domain/suggest';
 import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
-import { STATE_LABEL, StateChip, useToast } from './ui';
+import { STATE_LABEL, StateChip, useEscape, useToast } from './ui';
 
 type Tab = 'articles' | 'review' | 'coverage' | 'export';
 const ASSESS: EditorialAssessment[] = ['needs_attention', 'positive', 'neutral'];
@@ -993,7 +993,10 @@ function RemoveButton({ title, onRemove, className = '' }: { title: string; onRe
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false);
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) {
+        if (e instanceof KeyboardEvent) e.preventDefault();
+        setOpen(false);
+      }
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', close);
@@ -1031,13 +1034,7 @@ function QuickAsk({ items, onAnswer, onSkip, onClose }: { items: UncertainStory[
     setDone((n) => n + 1);
     setI((n) => n + 1);
   };
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', k);
-    return () => document.removeEventListener('keydown', k);
-  }, [onClose]);
+  useEscape(onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3" role="dialog" aria-modal="true" aria-label="Hỏi nhanh">
       <div className="animate-in w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl">
@@ -1122,7 +1119,10 @@ function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { r
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false);
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) {
+        if (e instanceof KeyboardEvent) e.preventDefault();
+        setOpen(false);
+      }
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', close);
@@ -1393,6 +1393,7 @@ function ReviewerLogin({ onClose, onLogin }: { onClose: () => void; onLogin: (na
   const [code, setCode] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useEscape(onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Đăng nhập người duyệt">
       <form
@@ -1776,6 +1777,7 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
   const save = () => onPatch({ title, summary, shortLabel: short, proposal });
   // "Tồn tại cần khắc phục": unit suggested from the topic (Cài đặt › Báo cáo & mẫu › Đề xuất giao đơn vị)
   const suggested = suggestAssignment({ title, sapo: a.sapo }, settings);
+  useEscape(onClose);
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/30" role="dialog" aria-modal="true" aria-label="Chi tiết bài">
       <div className="flex h-full w-full max-w-[1200px] flex-col bg-white shadow-2xl">

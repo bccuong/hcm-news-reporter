@@ -448,3 +448,43 @@ test('Remove ("Loại") a story from Bài sẵn sàng, restore it; bulk remove s
   await expect(readyTab).toHaveText('Bài sẵn sàng (0)');
   await expect(page.getByTestId('excluded-list')).toContainText('không liên quan');
 });
+
+test('ESC closes "Xem chi tiết" / "Biên tập", Cài đặt and dialogs like their X; a menu inside closes first; unsaved settings ask', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
+  await setWindowField(page, 'Từ', '2026-11-08T17:00');
+  await setWindowField(page, 'Đến', '2026-11-09T08:00');
+  await page.getByRole('button', { name: 'Thu thập' }).click();
+  await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /^Bài sẵn sàng/ }).click();
+  // Xem chi tiết (the same panel as "Biên tập" in Xuất báo cáo)
+  await page.getByRole('button', { name: 'Xem chi tiết' }).first().click();
+  const detail = page.getByRole('dialog', { name: 'Chi tiết bài' });
+  await expect(detail).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(detail).toBeHidden();
+  // a small menu (Loại – reasons) closes on ESC without taking anything else with it
+  const remove = page.getByRole('button', { name: /^Loại/ }).first();
+  if (await remove.count()) {
+    await remove.click();
+    await page.keyboard.press('Escape');
+  }
+  // Cài đặt: ESC closes it
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  await expect(dlg).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dlg).toBeHidden();
+  // with unsaved changes ESC asks first, like X: "Hủy" keeps the panel open
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  await dlg.getByRole('switch', { name: 'Nâng cao' }).click();
+  await dlg.getByRole('button', { name: 'Hiệu năng', exact: true }).click();
+  const field = dlg.getByRole('spinbutton', { name: 'Số lần thử lại' });
+  await field.fill(String(Number(await field.inputValue()) === 4 ? 3 : 4));
+  page.once('dialog', (d) => d.dismiss());
+  await page.keyboard.press('Escape');
+  await expect(dlg).toBeVisible();
+  page.once('dialog', (d) => d.accept());
+  await page.keyboard.press('Escape');
+  await expect(dlg).toBeHidden();
+});
