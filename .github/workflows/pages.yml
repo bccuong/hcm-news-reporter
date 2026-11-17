@@ -1,5 +1,5 @@
 name: Live data – collection & GitHub Pages deploy
-run-name: ${{ inputs.trigger == 'schedule' && format('Thu thập theo lịch {0}: {1} → {2} [{3}]', inputs.slot, inputs.from, inputs.to, inputs.profile) || inputs.from && format('Thu thập theo yêu cầu {0} → {1} ({2}) [{3}]', inputs.from, inputs.to, inputs.requested_by, inputs.profile) || inputs.trigger == 'auto' && 'Thu thập tự động hằng giờ' || 'Live data – collection & GitHub Pages deploy' }}
+run-name: ${{ inputs.trigger == 'schedule' && format('Thu thập theo lịch {0} – {1} → {2} [{3}]', inputs.slot, inputs.from, inputs.to, inputs.profile) || inputs.from && format('Thu thập theo yêu cầu {0} → {1} ({2}) [{3}]', inputs.from, inputs.to, inputs.requested_by, inputs.profile) || inputs.trigger == 'auto' && 'Thu thập tự động hằng giờ' || 'Live data – collection & GitHub Pages deploy' }}
 
 # Automatic runs are NOT a GitHub `schedule:` (often late or skipped). The Cloudflare review worker's cron (every 5 min)
 # dispatches this workflow with trigger=schedule + the window of a fixed time ticked on the web for a profile

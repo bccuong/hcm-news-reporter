@@ -93,7 +93,7 @@ const fakeGitHub = async (url: string, init?: RequestInit): Promise<Response> =>
   if (url.endsWith('/dispatches')) {
     const { inputs } = JSON.parse(String(init?.body));
     const auto = inputs.trigger === 'auto';
-    const title = inputs.trigger === 'schedule' ? `${AUTO_TITLE} ${inputs.slot}: ${inputs.from} → ${inputs.to} [${inputs.profile}]` : auto ? AUTO_TITLE : `Thu thập theo yêu cầu ${inputs.from} → ${inputs.to} (${inputs.requested_by})`;
+    const title = inputs.trigger === 'schedule' ? `${AUTO_TITLE} ${inputs.slot} – ${inputs.from} → ${inputs.to} [${inputs.profile}]` : auto ? AUTO_TITLE : `Thu thập theo yêu cầu ${inputs.from} → ${inputs.to} (${inputs.requested_by})`;
     const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'workflow_dispatch', display_title: title, html_url: 'https://github.com/bccuong/news-reporter/actions' };
     runs.unshift(run);
     setTimeout(() => {
