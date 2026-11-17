@@ -144,6 +144,19 @@ export function App() {
     setReviews(rv);
   }, []);
 
+  // after an automatic reload for a new version (main.tsx, vite:preloadError): say why, once
+  useEffect(() => {
+    try {
+      const at = Number(sessionStorage.getItem('hcm-updated-reload') ?? 0);
+      if (at && Date.now() - at < 120_000 && sessionStorage.getItem('hcm-updated-shown') !== String(at)) {
+        sessionStorage.setItem('hcm-updated-shown', String(at));
+        toast('info', 'Trang vừa được cập nhật lên phiên bản mới – vui lòng thực hiện lại thao tác vừa rồi (ví dụ bấm Xuất báo cáo).');
+      }
+    } catch {
+      /* private mode */
+    }
+  }, [toast]);
+
   // startup: local state first, then optional auto-collect (once per window, server-enforced)
   useEffect(() => {
     (async () => {

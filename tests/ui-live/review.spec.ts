@@ -540,3 +540,31 @@ test('Hỏi nhanh: an answer moves on at once (save in the background), every vo
     return n;
   }, { timeout: 20_000 }).toBe(total);
 });
+
+test('a page opened before a new version reloads itself when an on-demand part is gone, then the export works', async ({ page }) => {
+  // downloads are captured in the page (survives the reload)
+  await page.addInitScript(() => {
+    const w = window as unknown as { __files?: string[] };
+    w.__files = [];
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      if (this.download) w.__files!.push(this.download);
+    };
+  });
+  // the design part of the OLD version is gone after a publication (404 once, like a page left open)
+  let gone = true;
+  await page.route(/\/assets\/styles-[^/]+\.js$/, async (route) => (gone ? (gone = false, route.fulfill({ status: 404, body: 'Not Found' })) : route.continue()));
+  await page.goto('');
+  await login(page, 'Người duyệt U', 'HCM-TEST-CODE');
+  await page.locator('article input[type=checkbox]').first().check();
+  await page.getByRole('button', { name: /^Xuất báo cáo/ }).click();
+  await page.getByTestId('template-picker').locator('input[value="toi-gian"]').check();
+  await page.getByRole('checkbox', { name: '.docx' }).uncheck();
+  await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
+  // reloaded once, with the reason
+  await expect(page.getByText(/Trang vừa được cập nhật lên phiên bản mới/)).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: /^Xuất báo cáo/ }).click();
+  await page.getByTestId('template-picker').locator('input[value="toi-gian"]').check();
+  await page.getByRole('checkbox', { name: '.docx' }).uncheck();
+  await page.getByRole('button', { name: 'Xuất báo cáo', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __files: string[] }).__files), { timeout: 30_000 }).toEqual([expect.stringMatching(/\.pptx$/)]);
+});

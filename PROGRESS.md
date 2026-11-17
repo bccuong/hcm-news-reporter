@@ -7,7 +7,12 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14h – Hỏi nhanh froze after each answer; 2026-11-17)
+## ▶ RESUME HERE (session 14i – export of the 4 designs failed in a page left open; 2026-11-17)
+- Cause: the designs (styles.ts), PDF and Word are loaded on demand; a tab opened before a new publication still asked for the old chunk name (assets/styles-CsElt2lx.js → 404), "Failed to fetch dynamically imported module". The Skill template is in the main bundle, so it still worked.
+- Fix: web/src/main.tsx handles vite:preloadError – reload once (guard: not twice within 60 s), App shows "Trang vừa được cập nhật lên phiên bản mới – vui lòng thực hiện lại thao tác vừa rồi". Pages open before this fix still need one F5.
+- Test: live E2E with the design chunk answering 404 once → reload + message → export produces the .pptx. vitest 153/153, playwright 12/12, live 11/11.
+
+## (history) Session 14h – Hỏi nhanh froze after each answer; 2026-11-17)
 - Causes: the dialog awaited the save (0.5–1 s per vote) with the buttons disabled, and every answer re-ran the filter on all stories of the period (uncertainStories in a useMemo depending on reviews/votes) on the main thread.
 - Fix: the uncertain stories are computed once per period after load (setTimeout, 40 candidates), answering only filters out judged stories; an answer moves to the next story at once and the save runs in the background (patch() reverts and reports on failure); votes are posted one after another (api.ts labelChain) so the worker's per-day aggregate never loses a vote when answering fast.
 - Test: live "Hỏi nhanh" with 800 ms simulated latency – next story < 0.7 s, all votes reach the worker. vitest 153/153, playwright 12/12, live 10/10.
