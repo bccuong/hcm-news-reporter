@@ -15,7 +15,7 @@ concurrency:
 jobs:
   pull:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,6 +28,13 @@ jobs:
           REVIEW_API_URL: ${{ vars.REVIEW_API_URL }}
           EXPORT_TOKEN: ${{ secrets.EXPORT_TOKEN }}
         run: npx tsx scripts/pull-labels.ts
+      # daily filter suggestions learned from the labels + review decisions (Cài đặt › Gợi ý cải thiện); never blocks the commit
+      - name: Daily filter suggestions
+        continue-on-error: true
+        env:
+          REVIEW_API_URL: ${{ vars.REVIEW_API_URL }}
+          EXPORT_TOKEN: ${{ secrets.EXPORT_TOKEN }}
+        run: npx tsx scripts/suggest-filter.ts
       - name: Commit if changed
         run: |
           git config user.name "github-actions[bot]"

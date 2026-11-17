@@ -2,7 +2,7 @@ import { classifyCategory, suggestAssessment } from './classify.js';
 import { detectLocation } from './location.js';
 import { evaluateRule } from './rules.js';
 import type { Article, Settings } from './schemas.js';
-import { findWord } from './text.js';
+import { findPhraseNotName, findWord } from './text.js';
 
 export interface RelevanceVerdict {
   status: 'relevant' | 'review' | 'irrelevant';
@@ -28,7 +28,7 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
   let ruleTrace: string[] = [];
 
   for (const p of settings.keywords.excludePhrases) {
-    if (p && findWord(title, p) >= 0) {
+    if (p && findPhraseNotName(title, p) >= 0) {
       return { status: 'irrelevant', reasonCode: 'EXCLUDED_PHRASE', evidence: [`Tiêu đề chứa cụm loại trừ "${p}"`], ruleTrace, location };
     }
   }

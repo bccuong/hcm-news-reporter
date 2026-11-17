@@ -18,6 +18,23 @@ export function findWord(haystack: string, needle: string): number {
   return m ? m.index : -1;
 }
 
+/**
+ * Like findWord, but an occurrence whose later words are capitalised while the phrase's are not is a proper name, not
+ * the phrase: the exclusion "cầu thủ" (football) must not drop "Khởi công cầu Thủ Thiêm 4" or "cầu Thủ Đức".
+ */
+export function findPhraseNotName(haystack: string, needle: string): number {
+  const n = needle.normalize('NFC').trim();
+  if (!n) return -1;
+  const nw = n.split(/\s+/);
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(n).replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}])`, 'giu');
+  for (const m of haystack.normalize('NFC').matchAll(re)) {
+    const ws = m[0].split(/\s+/);
+    const name = ws.some((w, i) => i > 0 && /^\p{Lu}/u.test(w) && !/^\p{Lu}/u.test(nw[i] ?? ''));
+    if (!name) return m.index ?? 0;
+  }
+  return -1;
+}
+
 /** Blanks out every whole-phrase occurrence of `phrases` (same matching as findWord); returns normalised text. */
 export function blankPhrases(haystack: string, phrases: string[]): string {
   let t = normText(haystack);

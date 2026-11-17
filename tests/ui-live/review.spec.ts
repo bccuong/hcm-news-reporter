@@ -438,3 +438,44 @@ test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; pic
   await page.getByRole('button', { name: 'Khôi phục' }).click(); // the list stays open
   await expect(rows.filter({ hasText: '08/11 18:00 → 09/11 07:00' })).toHaveCount(1);
 });
+
+test('daily suggestions: published by the nightly job, applied (then saved) or dismissed for the whole team', async ({ page, request, browser }) => {
+  // what scripts/suggest-filter.ts publishes after the nightly label pull
+  const items = [
+    { id: 'include:lối đi bộ', kind: 'include', phrase: 'lối đi bộ', category: 'INFRA', fixes: 2, sideEffects: 0, examples: ['Cử tri kiến nghị lát lại lối đi bộ', 'Lát đá lại lối đi bộ phố Nguyễn Huệ'], sideExamples: [] },
+    { id: 'exclude_title:trung tâm thương mại', kind: 'exclude_title', phrase: 'trung tâm thương mại', fixes: 2, sideEffects: 1, examples: ['Xây trung tâm thương mại 20 tầng', 'Khởi công trung tâm thương mại mới'], sideExamples: ['Trung tâm thương mại cũ xuống cấp'] },
+  ];
+  const pub = await request.post('http://127.0.0.1:5181/suggestions', { headers: { authorization: 'Bearer test-export-token' }, data: { profile: 'hcm', generatedAt: '2026-11-17T16:35:00Z', basis: { stories: 120, votes: 30, decisions: 12 }, items } });
+  expect(pub.status()).toBe(200);
+  await page.goto('');
+  await login(page, 'Người duyệt S', 'HCM-TEST-CODE');
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  await expect(dlg.getByTestId('suggest-count')).toHaveText('2'); // badge in the menu
+  await dlg.getByRole('button', { name: /^Gợi ý cải thiện/ }).click();
+  await expect(dlg.getByTestId('suggest-basis')).toContainText('Học từ 30 phiếu ✓/✗ và 12 quyết định duyệt');
+  const cards = dlg.getByTestId('suggestion');
+  await expect(cards).toHaveCount(2);
+  await expect(cards.first()).toContainText('Giữ lại 2 bài nhóm đánh giá liên quan nhưng đang bị loại');
+  await expect(cards.nth(1)).toContainText('ảnh hưởng thêm 1 bài chưa chấm');
+  // apply the first one → it is in the filter words; Lưu makes it the shared configuration
+  await cards.first().getByRole('button', { name: 'Áp dụng' }).click();
+  await expect(dlg.getByTestId('save-bar')).toBeVisible();
+  await dlg.getByRole('button', { name: 'Từ khóa & quy tắc', exact: true }).click();
+  await expect(dlg.getByTestId('basic-include')).toContainText('lối đi bộ');
+  await dlg.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await expect(page.getByText('Đã lưu cài đặt')).toBeVisible();
+  const cfg = (await (await request.get('http://127.0.0.1:5181/config')).json()).config;
+  expect(JSON.stringify(cfg.settings.rules)).toContain('lối đi bộ');
+  expect(cfg.settings.categories.find((c: { code: string }) => c.code === 'INFRA').keywords).toContain('lối đi bộ');
+  // dismiss the second one: gone for everyone
+  await dlg.getByRole('button', { name: /^Gợi ý cải thiện/ }).click();
+  await dlg.getByTestId('suggestion').filter({ hasText: 'trung tâm thương mại' }).getByRole('button', { name: 'Bỏ qua' }).click();
+  await expect(dlg.getByTestId('suggestion').filter({ hasText: 'trung tâm thương mại' })).toHaveCount(0);
+  const other = await (await browser.newContext()).newPage();
+  await other.goto(page.url());
+  await other.getByRole('button', { name: 'Cài đặt' }).click();
+  await other.getByRole('dialog', { name: 'Cài đặt' }).getByRole('button', { name: /^Gợi ý cải thiện/ }).click();
+  await expect(other.getByRole('dialog', { name: 'Cài đặt' }).getByTestId('suggestion').filter({ hasText: 'trung tâm thương mại' })).toHaveCount(0);
+  await other.close();
+});

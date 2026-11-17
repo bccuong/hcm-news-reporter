@@ -502,6 +502,12 @@ async function readLegacyReviews(env: Env, pid: string, period: string): Promise
   return out;
 }
 
+export interface Suggestions { generatedAt: string | null; basis: unknown; items: Array<{ id: string } & Record<string, unknown>>; dismissed: string[] }
+async function readSuggestions(env: Env, pid: string): Promise<Suggestions> {
+  const v = await env.REVIEWS.get(`sug:${pid}`);
+  return v ? { generatedAt: null, basis: null, items: [], dismissed: [], ...(JSON.parse(v) as Partial<Suggestions>) } : { generatedAt: null, basis: null, items: [], dismissed: [] };
+}
+
 export interface HiddenRun { runId: string; by: string; at: string }
 async function readHiddenRuns(env: Env, pid: string): Promise<HiddenRun[]> {
   const v = await env.REVIEWS.get(`hid:${pid}`);
@@ -568,6 +574,26 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     return json({ hidden: await readHiddenRuns(env, pid) }, 200, h);
   }
 
+  // daily filter suggestions (scripts/suggest-filter.ts): public read, minus the ones the team dismissed
+  if (url.pathname === '/suggestions' && req.method === 'GET') {
+    const pid = url.searchParams.get('profile') ?? DEFAULT_PROFILE;
+    if (!PROFILE_ID.test(pid)) return json({ error: 'INVALID_PROFILE' }, 400, h);
+    const s = await readSuggestions(env, pid);
+    return json({ ...s, items: s.items.filter((x) => !s.dismissed.includes(x.id)) }, 200, h);
+  }
+  // published by the nightly job (bearer token, never sent to browsers); the team's dismissals are kept
+  if (url.pathname === '/suggestions' && req.method === 'POST') {
+    if (!safeEqual((req.headers.get('authorization') ?? '').trim(), `Bearer ${(env.EXPORT_TOKEN ?? '').trim()}`)) return json({ error: 'UNAUTHORIZED' }, 401, {});
+    if (Number(req.headers.get('content-length') ?? 0) > 200_000) return json({ error: 'TOO_LARGE' }, 413, {});
+    const b = (await req.json().catch(() => null)) as { profile?: string; generatedAt?: string; basis?: unknown; items?: unknown } | null;
+    const pid = String(b?.profile ?? DEFAULT_PROFILE);
+    if (!PROFILE_ID.test(pid) || !Array.isArray(b?.items)) return json({ error: 'INVALID' }, 400, {});
+    const items = (b!.items as Array<Record<string, unknown>>).slice(0, 30).filter((x) => typeof x.id === 'string' && (x.kind === 'include' || x.kind === 'exclude_title') && typeof x.phrase === 'string' && x.phrase.length <= 80);
+    const prev = await readSuggestions(env, pid);
+    await env.REVIEWS.put(`sug:${pid}`, JSON.stringify({ generatedAt: String(b!.generatedAt ?? new Date().toISOString()), basis: b!.basis ?? null, items, dismissed: prev.dismissed }));
+    return json({ ok: true, count: items.length }, 200, {});
+  }
+
   // nightly export for the GitHub Action (bearer token, never sent to browsers)
   if (url.pathname === '/export' && req.method === 'GET') {
     const auth = req.headers.get('authorization') ?? '';
@@ -611,6 +637,19 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     list[i] = { ...list[i]!, autoCollect: false, schedule: { ...list[i]!.schedule, [slot.id]: b.enabled }, autoBy: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', autoAt: new Date().toISOString() };
     await saveProfiles(env, list);
     return json({ ok: true, profile: list[i] }, 200, h);
+  }
+
+  // "Bỏ qua" a suggestion: hidden for the whole team, never proposed again
+  if (url.pathname === '/suggestions/dismiss' && req.method === 'POST') {
+    const b = (await req.json().catch(() => null)) as { profile?: string; id?: string; reviewer?: string } | null;
+    const pid = String(b?.profile ?? DEFAULT_PROFILE);
+    const id = String(b?.id ?? '');
+    if (!PROFILE_ID.test(pid) || !/^(include|exclude_title):.{1,80}$/.test(id)) return json({ error: 'INVALID' }, 400, h);
+    if (!String(b?.reviewer ?? '').trim()) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
+    const s = await readSuggestions(env, pid);
+    if (!s.dismissed.includes(id)) s.dismissed = [...s.dismissed, id].slice(-500);
+    await env.REVIEWS.put(`sug:${pid}`, JSON.stringify(s));
+    return json({ ok: true }, 200, h);
   }
 
   if (url.pathname === '/runs/hide' && req.method === 'POST') {

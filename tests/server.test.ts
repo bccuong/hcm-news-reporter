@@ -182,6 +182,14 @@ describe('local API', () => {
     expect(q.missed.map((m: any) => m.articleId)).toContain(hanoi.id);
     // review persisted for offline reopen
     expect((await app.inject({ method: 'GET', url: `/api/runs/${runId}/review`, headers: H })).json()[flood.id].changes.length).toBeGreaterThan(0);
+    // daily suggestions (local app: computed from the reviews on this computer); "Bỏ qua" needs the token
+    const sg = (await app.inject({ method: 'GET', url: '/api/suggestions', headers: H })).json();
+    expect(sg.basis.stories).toBeGreaterThan(0);
+    expect(sg.basis.votes).toBeGreaterThanOrEqual(1); // the "relevant" label given above
+    expect(Array.isArray(sg.items)).toBe(true);
+    expect((await app.inject({ method: 'POST', url: '/api/suggestions/dismiss', headers: H, payload: { id: 'include:lối đi bộ' } })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'POST', url: '/api/suggestions/dismiss', headers: auth, payload: { id: 'include:lối đi bộ' } })).json().ok).toBe(true);
+    expect((await app.inject({ method: 'POST', url: '/api/suggestions/dismiss', headers: auth, payload: { id: '../x' } })).statusCode).toBe(400);
     // "Lượt đã lưu" › Xoá: token required, the run disappears, exported files stay
     expect((await app.inject({ method: 'DELETE', url: `/api/runs/${runId}`, headers: H, payload: {} })).statusCode).toBe(401);
     expect((await app.inject({ method: 'DELETE', url: '/api/runs/run_nope', headers: auth, payload: {} })).statusCode).toBe(404);

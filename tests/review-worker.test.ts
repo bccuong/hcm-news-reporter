@@ -319,6 +319,25 @@ describe('shared review worker', () => {
       expect((await rv(e, { profile: 'hcm', period: P, items: [{ articleId: 'a_1111abcd1111', patch: { hacked: 1 } }], reviewer: 'B' })).status).toBe(400);
       expect((await read(e)).reviews['a_1111abcd1111'].included).toBe(false);
     });
+    it('daily suggestions: the nightly job publishes (token), everyone reads, a reviewer dismisses for the team', async () => {
+      const e = env();
+      const pub = (items: unknown[], token = 'export-secret') => handle(new Request('https://w.example/suggestions', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'hcm', generatedAt: '2026-11-17T16:35:00Z', basis: { votes: 3 }, items }) }), e);
+      const read = async () => (await (await handle(new Request('https://w.example/suggestions?profile=hcm', { headers: { origin: ORIGIN } }), e)).json()) as { items: Array<{ id: string }>; generatedAt: string; dismissed: string[] };
+      const items = [{ id: 'include:lối đi bộ', kind: 'include', phrase: 'lối đi bộ', fixes: 2 }, { id: 'exclude_title:giá vàng', kind: 'exclude_title', phrase: 'giá vàng', fixes: 3 }, { id: 'bad', kind: 'other', phrase: 'x' }];
+      expect((await pub(items, 'wrong')).status).toBe(401);
+      expect((await pub(items)).status).toBe(200);
+      expect((await read()).items.map((i) => i.id)).toEqual(['include:lối đi bộ', 'exclude_title:giá vàng']); // invalid item dropped
+      const dis = (id: string, code = 'HCM-test-1234') => handle(new Request('https://w.example/suggestions/dismiss', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'hcm', id, reviewer: 'A' }) }), e);
+      expect((await dis('exclude_title:giá vàng', 'wrong')).status).toBe(401);
+      expect((await dis('../x')).status).toBe(400);
+      expect((await dis('exclude_title:giá vàng')).status).toBe(200);
+      expect((await read()).items.map((i) => i.id)).toEqual(['include:lối đi bộ']);
+      // the next nightly publication keeps the team's dismissals
+      await pub(items);
+      const after = await read();
+      expect(after.dismissed).toEqual(['exclude_title:giá vàng']);
+      expect(after.items.map((i) => i.id)).toEqual(['include:lối đi bộ']);
+    });
     it('saved runs removed by a reviewer: hidden for everyone (public read), restorable, reviewers only', async () => {
       const e = env();
       const hide = (body: unknown, code = 'HCM-test-1234') => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);

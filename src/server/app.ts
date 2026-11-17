@@ -15,13 +15,14 @@ import { parseWebsitesTxt } from '../domain/defaults.js';
 import { computeRelevanceQuality } from '../domain/quality.js';
 import { judgeRelevance } from '../domain/relevance.js';
 import { evaluateRule, validateRule } from '../domain/rules.js';
-import { DEFAULT_PROFILE_ID, RuleNodeSchema, SourceSchema, type Settings, type Source } from '../domain/schemas.js';
+import { DEFAULT_PROFILE_ID, RuleNodeSchema, SourceSchema, type Article, type Settings, type Source } from '../domain/schemas.js';
 import { lastCompletedWindow, validateWindow, vnDate, type ReportWindow } from '../domain/timeWindow.js';
 import { checkPublicUrl } from '../domain/url.js';
 import { assembleStories } from '../reports/assemble.js';
 import { buildReportPptx, checkFit } from '../reports/pptx.js';
 import { buildStyledPptx } from '../reports/styles.js';
 import { buildReportPdf, PDF_FONT_FILES } from '../reports/pdf.js';
+import { suggestFilter, type Judged } from '../domain/suggest.js';
 import { templateById, TEMPLATES, UPLOAD_TEMPLATE_ID, DOCX_TEMPLATE_FILE } from '../reports/templates.js';
 import { fileURLToPath } from 'node:url';
 import { safeJoin, serialized, writeFileAtomic, writeJsonAtomic } from '../storage/files.js';
@@ -275,6 +276,43 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     a.events.on('event', on);
     req.raw.on('close', () => a.events.off('event', on));
   });
+  /* ---------- daily filter suggestions (local app: computed on demand from the reviews on this computer) ---------- */
+  const dismissedFile = (pid: string) => safeJoin(paths.data, `suggestions-dismissed-${pid}.json`);
+  const readDismissed = async (pid: string): Promise<string[]> => {
+    try {
+      return JSON.parse(await fs.readFile(dismissedFile(pid), 'utf8')) as string[];
+    } catch {
+      return [];
+    }
+  };
+  app.get('/api/suggestions', async () => {
+    const pid = (await stores.getProfiles()).activeId;
+    const settings = await stores.getSettings(pid);
+    const runs = (await stores.listRuns()).filter((r) => (r.profileId ?? DEFAULT_PROFILE_ID) === pid).slice(0, 14);
+    const articles = new Map<string, Article>();
+    const judged = new Map<string, Judged>();
+    let votes = 0, decisions = 0;
+    for (const r of runs) {
+      for (const a of await stores.getArticles(r.runId)) if (!articles.has(a.id)) articles.set(a.id, a);
+      for (const [id, d] of Object.entries(await stores.getReview(r.runId))) {
+        if (judged.get(id)?.why === 'label') continue;
+        if (d.relevanceLabel) (judged.set(id, { relevant: d.relevanceLabel === 'relevant', why: 'label', category: d.primaryCategory ?? null }), votes++);
+        else if (judged.has(id)) continue;
+        else if (d.excludedByEditor) (judged.set(id, { relevant: false, why: 'decision' }), decisions++);
+        else if (d.included || d.promotedToReady || d.groupId) (judged.set(id, { relevant: true, why: 'decision' }), decisions++);
+      }
+    }
+    const items = suggestFilter([...articles.values()], judged, settings, { dismissed: await readDismissed(pid) });
+    return { generatedAt: new Date().toISOString(), basis: { stories: articles.size, votes, decisions }, items };
+  });
+  app.post('/api/suggestions/dismiss', async (req) => {
+    const b = z.object({ id: z.string().regex(/^(include|exclude_title):.{1,80}$/) }).parse(req.body);
+    const pid = (await stores.getProfiles()).activeId;
+    const list = await readDismissed(pid);
+    if (!list.includes(b.id)) await writeJsonAtomic(dismissedFile(pid), [...list, b.id].slice(-500));
+    return { ok: true };
+  });
+
   /** "Lượt đã lưu" › Xoá: removes a saved run (not while it is running); exported reports are kept */
   app.delete('/api/runs/:id', async (req) => {
     const id = (req.params as { id: string }).id;

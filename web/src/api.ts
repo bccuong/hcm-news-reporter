@@ -1,4 +1,5 @@
 import { defaultSettings, defaultSources, parseWebsitesTxt, settingsForNewRegion } from '../../src/domain/defaults';
+import type { FilterSuggestion } from '../../src/domain/suggest';
 import type { ScheduleSlot, ScheduleState } from '../../src/domain/schedule';
 import { evaluateRule, validateRule } from '../../src/domain/rules';
 import { judgeRelevance } from '../../src/domain/relevance';
@@ -45,6 +46,10 @@ export interface Api {
   backup(): Promise<unknown>;
   restore(b: unknown): Promise<void>;
   listRuns(): Promise<RunInfo[]>;
+  /** daily filter suggestions learned from the team's review (web: published nightly; local: computed on this computer) */
+  suggestions?(): Promise<SuggestionsState>;
+  /** "Bỏ qua": never proposed again (web: for the whole team, needs a reviewer session) */
+  dismissSuggestion?(id: string): Promise<void>;
   /** "Lượt đã lưu" › Xoá – local: deletes the saved run; web: hides it for the whole team (reviewer login, can be restored) */
   deleteRun?(id: string): Promise<void>;
   /** web only: runs removed by a reviewer, newest removal first, to restore them */
@@ -80,6 +85,7 @@ function pickShared(p: Partial<ReviewDecision>): Partial<ReviewDecision> {
 }
 
 type HiddenRunRef = { runId: string; by: string; at: string };
+export interface SuggestionsState { generatedAt: string | null; basis: { stories: number; votes: number; decisions: number } | null; items: FilterSuggestion[] }
 export type ExportFormat = 'pptx' | 'docx' | 'pdf';
 
 export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: string | null; a: string | null; n: string; t: string }
@@ -157,6 +163,8 @@ class LocalApi implements Api {
     return rs.filter((r) => (r.profileId ?? 'hcm') === p.activeId);
   };
   deleteRun = async (id: string) => void (await this.req('DELETE', `/api/runs/${id}`, {}));
+  suggestions = () => this.req<SuggestionsState>('GET', '/api/suggestions');
+  dismissSuggestion = async (id: string) => void (await this.req('POST', '/api/suggestions/dismiss', { id }));
   startRun = (window: ReportWindow, trigger: 'manual' | 'auto') => this.req<{ runId?: string; skipped?: string }>('POST', '/api/runs', { window, trigger });
   getRun = (id: string) => this.req<RunInfo>('GET', `/api/runs/${id}`);
   cancel = async (id: string) => void (await this.req('POST', `/api/runs/${id}/cancel`, {}));
@@ -544,6 +552,17 @@ class DemoApi implements Api {
   }
   async deleteRun(id: string) {
     await this.setHidden(id, true);
+  }
+  async suggestions(): Promise<SuggestionsState> {
+    if (!this.reviewApi || this.mode !== 'live') return { generatedAt: null, basis: null, items: [] };
+    const r = await fetch(`${this.reviewApi}/suggestions?profile=${encodeURIComponent(this.pid)}`, { cache: 'no-cache' });
+    if (!r.ok) throw new ApiError(`Không tải được gợi ý (HTTP ${r.status})`);
+    return (await r.json()) as SuggestionsState;
+  }
+  async dismissSuggestion(id: string) {
+    const s = this.who('bỏ qua gợi ý');
+    const r = await fetch(`${this.reviewApi}/suggestions/dismiss`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ profile: this.pid, id, reviewer: s.name }) });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không lưu được');
   }
   async restoreRun(id: string) {
     await this.setHidden(id, false);

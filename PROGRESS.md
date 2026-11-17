@@ -7,7 +7,15 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14d – Settings step 3: Địa điểm, Lĩnh vực, Báo cáo & mẫu; 2026-11-17)
+## ▶ RESUME HERE (session 14e – daily filter suggestions learned from the team review; 2026-11-17)
+- src/domain/suggest.ts: ground truth = majority ✓/✗ votes, else review decisions (chosen / moved to Sẵn sàng / merged = relevant, "Loại" = not relevant). Candidate 2–4 word phrases (no function words at the ends, no digits/city, not cutting a frequent compound such as "xây dựng") from wrongly filtered stories; each replayed on the stories it touches. Kept only if it fixes ≥ 2 judged stories and breaks none; one per story; side effects on unjudged stories reported. Kinds: include (rule word + a sector – reviewers' sector, else the body's, else Xây dựng) and exclude_title.
+- Nightly: .github/workflows/labels.yml runs scripts/suggest-filter.ts after the label pull (continue-on-error) → worker POST /suggestions (EXPORT_TOKEN), GET /suggestions (public, minus dismissed), POST /suggestions/dismiss (reviewer, whole team). Local app: GET /api/suggestions computes on demand from the local reviews; dismissals in data/suggestions-dismissed-<profile>.json.
+- Settings › Gợi ý cải thiện (basic, count badge): cards with what they fix, side effects, examples, sector picker, Áp dụng (draft → Lưu) / Bỏ qua.
+- Filter fix found while testing: title exclusions no longer match proper names ("cầu thủ" dropped "cầu Thủ Thiêm 4" / "cầu Thủ Đức") – text.findPhraseNotName.
+- Real data (1,021 stories, 101 votes + 94 decisions): 0 suggestions at the ≥2 threshold today (the remaining misses are single stories); 6 at threshold 1 were one-off wordings.
+- Tests: vitest 149/149 (suggest engine, worker endpoints, server endpoint), playwright 12/12, live 9/9 (publish → badge → apply → saved shared config; dismiss for another browser).
+
+## (history) Session 14d – Settings step 3: Địa điểm, Lĩnh vực, Báo cáo & mẫu; 2026-11-17)
 - Địa điểm: basic = region name, "Thử một câu" with a coloured result chip, places & aliases list; rules (bắt buộc địa danh, liên vùng, địa phương khác, cụm từ…) under Nâng cao.
 - Lĩnh vực: basic = card per sector with switch, name and keyword chips + "cần kèm: …" chip; name/priority/code, required sectors and ignored phrases under Nâng cao.
 - Báo cáo & mẫu: basic = default template cards (+ "Dùng tệp mẫu .pptx riêng…"), organisation, reply e-mail, output-file pills, assignment groups folded; subtitle, stories per page, overflow, file name pattern, PDF renderer/paths under Nâng cao (PDF note now mentions the built-in PDF).
