@@ -614,7 +614,7 @@ function ReportPanel({ s, up }: { s: Settings; up: Up }) {
       </Section>
       <Section title="Mẫu riêng (không bắt buộc) & thông tin cơ quan">
         <p className="text-xs">Chỉ cần khi muốn dùng một tệp .pptx khác (cùng cấu trúc mẫu Sở). Mẫu riêng đang có: <b>{s.report.templateFile || 'không có – vẫn xuất bình thường bằng các mẫu có sẵn ở trên'}</b></p>
-        {api.mode !== 'local' && <p className="text-xs text-slate-600">Bản web: mẫu chỉ lưu trong <b>trình duyệt này</b> (không tải lên máy chủ hay GitHub); xuất báo cáo dựng ngay trong trình duyệt, ảnh báo gốc lấy qua máy chủ duyệt tin (cần đăng nhập). PDF: mở tệp .pptx bằng PowerPoint › Lưu thành PDF.</p>}
+        {api.mode !== 'local' && <p className="text-xs text-slate-600">Bản web: mẫu chỉ lưu trong <b>trình duyệt này</b> (không tải lên máy chủ); xuất báo cáo dựng ngay trong trình duyệt, ảnh báo gốc lấy qua máy chủ duyệt tin (cần đăng nhập). PDF: mở tệp .pptx bằng PowerPoint › Lưu thành PDF.</p>}
         <label className="btn-ghost w-fit cursor-pointer">
           <FileUp className="h-4 w-4" /> Tải mẫu .pptx
           <input type="file" accept=".pptx" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />

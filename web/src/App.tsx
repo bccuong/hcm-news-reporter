@@ -249,7 +249,7 @@ export function App() {
       const r = await api.startRun(windowIso, 'manual');
       if (r.remote) {
         setRemote({ from: windowIso.from, to: windowIso.to, at: Date.now(), status: 'đã gửi yêu cầu', url: null });
-        toast('info', `Đã gửi yêu cầu thu thập ${formatVn(windowIso.from)} → ${formatVn(windowIso.to)} lên máy chủ GitHub (thường 5–10 phút)`);
+        toast('info', `Đã gửi yêu cầu thu thập ${formatVn(windowIso.from)} → ${formatVn(windowIso.to)} lên máy chủ thu thập (thường 5–10 phút)`);
         return;
       }
       if (r.runId) {
@@ -293,7 +293,7 @@ export function App() {
       try {
         const st = await api.shared!.collectStatus();
         const run = st.runs.find((x) => (x.kind ? x.kind === 'request' : x.event === 'workflow_dispatch') && Date.parse(x.createdAt) >= remote.at - 90_000);
-        if (!run) return setRemote((r) => (r ? { ...r, status: 'đang chờ GitHub nhận yêu cầu' } : r));
+        if (!run) return setRemote((r) => (r ? { ...r, status: 'đang chờ máy chủ nhận yêu cầu' } : r));
         if (run.status !== 'completed') {
           return setRemote((r) => (r ? { ...r, status: run.status === 'queued' ? 'đang xếp hàng' : 'đang thu thập', url: run.url } : r));
         }
@@ -436,13 +436,13 @@ export function App() {
     <div className="min-h-screen">
       {api.mode === 'demo' && (
         <div className="bg-amber-100 px-4 py-1.5 text-center text-xs text-amber-900">
-          <b>BẢN DEMO trên GitHub Pages</b> – dữ liệu là bài <b>mẫu thử tổng hợp</b> (fixture, không phải tin thật) chạy qua đúng bộ thu thập/bóc tách của ứng dụng. Cài đặt lưu trong trình duyệt này. Thu thập báo thật cần bản local trên Windows.
+          <b>BẢN DEMO</b> – dữ liệu là bài <b>mẫu thử tổng hợp</b> (fixture, không phải tin thật) chạy qua đúng bộ thu thập/bóc tách của ứng dụng. Cài đặt lưu trong trình duyệt này. Thu thập báo thật cần bản local trên Windows.
         </div>
       )}
       {api.mode === 'live' && (
         <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
-          <b>DỮ LIỆU THẬT</b> – {autoTimes ? `tự động thu thập lúc ${autoTimes} trên máy chủ GitHub` : 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}.
-          {api.shared ? <> Đăng nhập để <b>chọn khung giờ và bấm Thu thập</b> (chạy trên máy chủ GitHub, 5–10 phút) và duyệt tin: ✓/✗, sửa lĩnh vực/tính chất, góp ý.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
+          <b>DỮ LIỆU THẬT</b> – {autoTimes ? `tự động thu thập lúc ${autoTimes}` : 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}.
+          {api.shared ? <> Đăng nhập để <b>chọn khung giờ và bấm Thu thập</b> (chạy trên máy chủ, 5–10 phút) và duyệt tin: ✓/✗, sửa lĩnh vực/tính chất, góp ý.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
         </div>
       )}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
@@ -530,7 +530,7 @@ export function App() {
                 api.mode === 'live'
                   ? busyRun
                     ? 'Máy chủ đang chạy một lượt thu thập khác – nút mở lại khi lượt đó xong'
-                    : 'Thu thập trên máy chủ GitHub (5–10 phút), tối đa 72 giờ mỗi lần; cần đăng nhập người duyệt'
+                    : 'Thu thập trên máy chủ (5–10 phút), tối đa 72 giờ mỗi lần; cần đăng nhập người duyệt'
                   : api.mode === 'demo'
                     ? 'Bản demo không thu thập báo thật'
                     : ''
@@ -554,9 +554,8 @@ export function App() {
           <section className="card flex flex-wrap items-center gap-3 border-blue-300 bg-blue-50 p-3 text-sm text-blue-900" data-testid="remote-collect">
             <RefreshCw className="h-4 w-4 animate-spin" />
             <span>
-              Đang thu thập trên máy chủ GitHub: <b>{formatVn(remote.from)} → {formatVn(remote.to)}</b> · {remote.status} · gửi lúc {new Date(remote.at).toLocaleTimeString('vi-VN')} (thường 5–10 phút; trang tự mở kết quả khi xong)
+              Đang thu thập trên máy chủ: <b>{formatVn(remote.from)} → {formatVn(remote.to)}</b> · {remote.status} · gửi lúc {new Date(remote.at).toLocaleTimeString('vi-VN')} (thường 5–10 phút; trang tự mở kết quả khi xong)
             </span>
-            {remote.url && <a className="underline" href={remote.url} target="_blank" rel="noreferrer">xem chi tiết trên GitHub</a>}
           </section>
         )}
 
@@ -799,6 +798,10 @@ function runLabel(r: { window: { from: string; to: string } }): string {
   const dm = (d?: string) => (d ?? '').slice(0, 5);
   return fd === td ? `${dm(fd)} · ${fh}–${th}` : `${dm(fd)} ${fh} → ${dm(td)} ${th}`;
 }
+/** requests sent for a reviewer by the assistant were recorded as "Claude (cho X)": shown as X */
+function personName(s: string): string {
+  return s.replace(/^Claude \(cho (.+)\)$/, '$1').trim();
+}
 /** who / how: "tự động", the reviewer who asked for it, "đang diễn ra", or a local status */
 function runTag(r: RunInfo): { text: string; tone: string } {
   if (r.active) return { text: 'đang chạy', tone: 'border-blue-300 bg-blue-50 text-blue-800' };
@@ -808,7 +811,7 @@ function runTag(r: RunInfo): { text: string; tone: string } {
   // "Thu thập theo yêu cầu (Cường)" / "… (Claude (cho Cường))" / "… của Cường trên web." → the requester
   const req = r.notes.map((x) => /theo yêu cầu(?: của)?\s*(.*)$/i.exec(x)).find(Boolean);
   if (req) {
-    const who = (req[1] ?? '').replace(/\s*trên web\.?$/, '').replace(/^\((.*)\)$/, '$1').trim();
+    const who = personName((req[1] ?? '').replace(/\s*trên web\.?$/, '').replace(/^\((.*)\)$/, '$1').trim());
     return { text: who || 'theo yêu cầu', tone: 'border-violet-200 bg-violet-50 text-violet-800' };
   }
   if (r.status && r.status !== 'completed') return { text: STATUS_VN[r.status] ?? r.status, tone: 'border-amber-300 bg-amber-50 text-amber-800' };
@@ -1647,14 +1650,13 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
 
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
 const RUN_KIND: Record<string, string> = { auto: 'lượt tự động theo lịch', request: 'lượt thu thập theo yêu cầu', deploy: 'cập nhật phần mềm & dữ liệu (sau khi đẩy mã mới)' };
-const LAST_AUTO: Record<string, string> = { dispatched: 'đã chạy', off: 'bỏ qua vì đang tắt', busy: 'máy chủ bận – sẽ thử lại sau 5 phút', error: 'lỗi', not_configured: 'chưa cấu hình' };
 
 /** web: hourly automatic switch + what the collection server is doing now */
 function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerStatus; profileId: string; remote: boolean; onToggle: (slot: ScheduleSlot, on: boolean) => void }) {
   const prof = server.profiles.find((p) => p.id === profileId);
   const next = nextRun(prof?.schedule, new Date());
   const run = server.running[0];
-  const who = run?.kind === 'request' ? /\(([^)]*)\)(?:\s*\[[^\]]*\])?\s*$/.exec(run.title)?.[1] : undefined;
+  const who = run?.kind === 'request' ? personName(/\((.*)\)(?:\s*\[[^\]]*\])?\s*$/.exec(run.title)?.[1] ?? '') || undefined : undefined;
   return (
     <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm" data-testid="server-status">
       <div className="flex flex-col gap-1" data-testid="auto-schedule">
@@ -1669,8 +1671,6 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
       {prof && <span className="chip border-slate-300 bg-slate-50 text-xs">cấu hình: <b>{prof.name}</b></span>}
       <span className="text-xs text-slate-500" data-testid="auto-info">
         {next ? <>Lượt tự động kế tiếp: <b>{next.slot.at} {new Date(next.at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</b> (dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại)</> : <>Không hẹn giờ – chỉ thu thập khi có người bấm <b>Thu thập</b></>}
-        {prof?.autoBy && prof.autoAt && <> · {prof.autoBy} đổi lúc {hhmm(prof.autoAt)} {new Date(prof.autoAt).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</>}
-        {server.lastAuto && <> · lần tự động gần nhất{server.lastAuto.slot ? ` (lịch ${server.lastAuto.slot})` : ''} {hhmm(server.lastAuto.at)}: {LAST_AUTO[server.lastAuto.result] ?? server.lastAuto.result}</>}
       </span>
       <span className="flex-1" />
       {run ? (
@@ -1679,7 +1679,6 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
           Máy chủ đang {run.status === 'queued' ? 'xếp hàng' : 'chạy'}: {RUN_KIND[run.kind ?? 'deploy']}
           {who ? ` (${who})` : ''} – bắt đầu {hhmm(run.createdAt)}
           {!remote && ' · nút Thu thập mở lại khi xong'}
-          <a className="font-normal underline" href={run.url} target="_blank" rel="noreferrer">chi tiết</a>
         </span>
       ) : (
         <span className="text-xs text-green-700" data-testid="server-idle">● Máy chủ rảnh – có thể bấm Thu thập</span>

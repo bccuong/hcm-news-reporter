@@ -386,7 +386,7 @@ async function imageProxy(url: URL, f: Fetch, h: Record<string, string>) {
 
 /** On-demand collection for a custom window: dispatch the collection workflow (one at a time). */
 async function collect(req: Request, env: Env, f: Fetch, h: Record<string, string>) {
-  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ error: 'Chưa cấu hình thu thập theo yêu cầu (GITHUB_TOKEN)' }, 503, h);
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ error: 'Máy chủ chưa được cấu hình để thu thập theo yêu cầu' }, 503, h);
   let b: { from?: string; to?: string; reviewer?: string; profile?: string };
   try {
     b = (await req.json()) as typeof b;
@@ -410,14 +410,14 @@ async function collect(req: Request, env: Env, f: Fetch, h: Record<string, strin
     method: 'POST',
     body: JSON.stringify({ ref: 'main', inputs: { from, to, requested_by: reviewer, profile } }),
   });
-  if (d.status !== 204) return json({ error: `GitHub từ chối yêu cầu (HTTP ${d.status})` }, 502, h);
+  if (d.status !== 204) return json({ error: `Máy chủ thu thập từ chối yêu cầu (HTTP ${d.status})` }, 502, h);
   return json({ ok: true, from, to, profile, requestedAt: new Date().toISOString() }, 202, h);
 }
 
 async function collectStatus(env: Env, f: Fetch, h: Record<string, string>) {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ enabled: false, runs: [] }, 200, h);
   const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?per_page=6`);
-  if (!r.ok) return json({ error: `GitHub HTTP ${r.status}` }, 502, h);
+  if (!r.ok) return json({ error: `Máy chủ thu thập không trả lời (HTTP ${r.status})` }, 502, h);
   const runs = ((await r.json()) as { workflow_runs: RunInfo[] }).workflow_runs.map(mapRun);
   return json({ enabled: true, runs }, 200, h);
 }

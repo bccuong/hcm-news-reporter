@@ -259,7 +259,7 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
       const cands = await stores.getCandidates(runId);
       const arts = await stores.getArticles(runId);
       const keep = new Set(cands.filter((c) => c.articleId && !['outside_window'].includes(c.state)).map((c) => c.articleId));
-      m.notes.push(`Thu thập trên máy chủ GitHub Actions lúc ${toVnIso(now)} (${((Date.now() - t0) / 1000).toFixed(0)} giây); cấu hình "${profile.name}": ${origin}.`);
+      m.notes.push(`Thu thập trên máy chủ lúc ${toVnIso(now)} (${((Date.now() - t0) / 1000).toFixed(0)} giây); cấu hình "${profile.name}": ${origin}.`);
       if (scheduled && (reqFrom || reqTo)) m.notes.push(`Thu thập theo lịch ${scheduled}.`);
       else if (job.custom) m.notes.push(`Thu thập theo yêu cầu${requestedBy ? ` của ${requestedBy}` : ''} trên web.`);
       if (job.provisional) m.notes.push('Kỳ đang diễn ra – tạm thời');

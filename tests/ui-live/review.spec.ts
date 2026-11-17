@@ -82,7 +82,7 @@ test('automatic collection at 08:00 / 16:30 (ticked per profile) + busy server i
   await afternoon.click();
   await expect(afternoon).toBeChecked();
   await expect(page.getByTestId('auto-info')).toContainText('Lượt tự động kế tiếp');
-  await expect(page.getByTestId('auto-info')).toContainText('Người duyệt D đổi lúc');
+  await expect(page.getByTestId('auto-info')).not.toContainText('đổi lúc'); // no technical history on the product page
   await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập lúc 08:00, 16:30');
   // the worker cron at 08:02 collects 17:00 yesterday → 08:00 today for this profile
   const fired = await (await request.get('http://127.0.0.1:5181/__cron')).json();
@@ -123,7 +123,8 @@ test('web "Thu thập" like the local app: choose from/to → server collection 
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
   await expect(page.getByTestId('reviewer-chip')).toBeVisible();
   await page.getByRole('button', { name: 'Thu thập' }).click();
-  await expect(page.getByTestId('remote-collect')).toContainText('Đang thu thập trên máy chủ GitHub');
+  await expect(page.getByTestId('remote-collect')).toContainText('Đang thu thập trên máy chủ:');
+  await expect(page.locator('body')).not.toContainText(/GitHub|Claude/); // product wording only
   await expect(page.getByRole('button', { name: 'Thu thập' })).toBeDisabled(); // one collection at a time
   await page.screenshot({ path: 'docs/screenshots/web-collect-progress.png' });
   // the page polls the workflow and opens the new period when it is published
