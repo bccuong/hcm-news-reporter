@@ -9,9 +9,11 @@
  * KV key:   l:<reportDate>:<articleId>:<reviewerId>
  * metadata: compact label for fast listing (≤ 1 KB)   value: full record (title/url for export)
  */
+import { dueSlots, SCHEDULE_SLOTS, slotWindow, vnDay, type ScheduleSlot, type ScheduleState } from '../../../src/domain/schedule';
+
 export interface KVLike {
   get(key: string): Promise<string | null>;
-  put(key: string, value: string, opts?: { metadata?: unknown }): Promise<void>;
+  put(key: string, value: string, opts?: { metadata?: unknown; expirationTtl?: number }): Promise<void>;
   delete(key: string): Promise<void>;
   list(opts: { prefix: string; cursor?: string; limit?: number }): Promise<{ keys: Array<{ name: string; metadata?: unknown }>; list_complete: boolean; cursor?: string }>;
 }
@@ -124,8 +126,10 @@ async function busy(env: Env, f: Fetch): Promise<boolean> {
 /* ---------- profiles (cấu hình theo địa bàn): each has its own configuration, data and hourly switch ---------- */
 export interface ProfileMeta {
   id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string;
-  /** who switched the hourly collection on/off, and when */
+  /** who switched the automatic collection on/off, and when */
   autoBy?: string; autoAt?: string;
+  /** fixed daily collection times ticked for this profile (src/domain/schedule.ts); replaces the hourly autoCollect */
+  schedule?: ScheduleState;
 }
 export const DEFAULT_PROFILE = 'hcm';
 const PROFILES_KEY = 'cfg:profiles';
@@ -139,28 +143,44 @@ export async function getProfiles(env: Env): Promise<ProfileMeta[]> {
   const legacy = await env.REVIEWS.get('cfg:auto');
   const a = legacy ? (JSON.parse(legacy) as { enabled: boolean; by: string; at: string }) : null;
   return [{
-    id: DEFAULT_PROFILE, name: 'TP.HCM', description: 'Cấu hình mặc định: ngành xây dựng TP.HCM (từ Skill)', autoCollect: a?.enabled ?? true,
+    id: DEFAULT_PROFILE, name: 'TP.HCM', description: 'Cấu hình mặc định: ngành xây dựng TP.HCM', autoCollect: a?.enabled ?? true,
     clonedFrom: null, createdAt: '', updatedAt: '', autoBy: a?.by, autoAt: a?.at,
   }];
 }
 const saveProfiles = (env: Env, list: ProfileMeta[]) => env.REVIEWS.put(PROFILES_KEY, JSON.stringify(list));
 
-/* ---------- hourly automatic collection (Cloudflare cron → workflow_dispatch), switchable per profile on the web ---------- */
-export interface AutoLast { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string; profiles?: string[] }
+/* ---------- automatic collection at fixed times (Cloudflare cron every 5 min → workflow_dispatch), ticked per profile ---------- */
+export interface AutoLast { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string; profiles?: string[]; slot?: string }
 const AUTO_LAST_KEY = 'cfg:autoLast';
-export const AUTO_TITLE = 'Thu thập tự động hằng giờ';
+export const AUTO_TITLE = 'Thu thập theo lịch';
+const doneKey = (pid: string, slot: ScheduleSlot, now: Date) => `sched:${pid}:${slot.id}:${vnDay(now)}`;
 
-/** called by the Worker's cron trigger every hour: ONE workflow run collects every profile switched on */
-export async function scheduledCollect(env: Env, f: Fetch = (i, init) => fetch(i, init)): Promise<AutoLast> {
-  const at = new Date().toISOString();
-  const on = (await getProfiles(env)).filter((p) => p.autoCollect).map((p) => p.id);
+/**
+ * Called by the cron trigger every 5 minutes. Outside the dispatch windows (08:02–10:00 and 16:32–18:30) it returns
+ * at once without touching KV. Inside: for each profile that ticked the slot and has not been collected today,
+ * dispatch the slot's window (one at a time; while the collection server is busy, the next tick tries again).
+ */
+export async function scheduledCollect(env: Env, f: Fetch = (i, init) => fetch(i, init), now = new Date()): Promise<AutoLast | null> {
+  const due = dueSlots(now);
+  if (!due.length) return null;
+  const profiles = await getProfiles(env);
+  const todo: Array<{ p: ProfileMeta; slot: ScheduleSlot }> = [];
+  for (const slot of due) for (const p of profiles) if (p.schedule?.[slot.id] && !(await env.REVIEWS.get(doneKey(p.id, slot, now)))) todo.push({ p, slot });
+  if (!todo.length) return null;
+  const at = now.toISOString();
+  const { p, slot } = todo[0]!;
   let last: AutoLast;
-  if (!ghReady(env)) last = { at, result: 'not_configured' };
-  else if (!on.length) last = { at, result: 'off' };
-  else if (await busy(env, f)) last = { at, result: 'busy', profiles: on };
+  if (!ghReady(env)) last = { at, result: 'not_configured', slot: slot.at };
+  else if (await busy(env, f)) last = { at, result: 'busy', profiles: [p.id], slot: slot.at };
   else {
-    const d = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { trigger: 'auto' } }) });
-    last = d.status === 204 ? { at, result: 'dispatched', profiles: on } : { at, result: 'error', detail: `HTTP ${d.status}` };
+    const w = slotWindow(slot, now);
+    const d = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/dispatches`, {
+      method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { trigger: 'schedule', slot: slot.at, from: w.from.slice(0, 16) + '+07:00', to: w.to.slice(0, 16) + '+07:00', profile: p.id, requested_by: '' } }),
+    });
+    if (d.status === 204) {
+      await env.REVIEWS.put(doneKey(p.id, slot, now), at, { expirationTtl: 3 * 86400 });
+      last = { at, result: 'dispatched', profiles: [p.id], slot: slot.at };
+    } else last = { at, result: 'error', detail: `HTTP ${d.status}`, profiles: [p.id], slot: slot.at };
   }
   await env.REVIEWS.put(AUTO_LAST_KEY, JSON.stringify(last));
   return last;
@@ -574,9 +594,9 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
   if (url.pathname === '/fetch' && req.method === 'GET') return pageProxy(url, f, h);
   const pr = await profileRoutes(req, url, env, h);
   if (pr) return pr;
-  // hourly automatic collection on/off for ONE profile
+  // automatic collection at a fixed time (slot) on/off for ONE profile
   if (url.pathname === '/auto' && req.method === 'POST') {
-    let b: { enabled?: unknown; reviewer?: unknown; profile?: unknown };
+    let b: { enabled?: unknown; reviewer?: unknown; profile?: unknown; slot?: unknown };
     try {
       b = (await req.json()) as typeof b;
     } catch {
@@ -586,7 +606,9 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     const list = await getProfiles(env);
     const i = list.findIndex((p) => p.id === String(b.profile ?? DEFAULT_PROFILE));
     if (i < 0) return json({ error: 'Không tìm thấy cấu hình' }, 404, h);
-    list[i] = { ...list[i]!, autoCollect: b.enabled, autoBy: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', autoAt: new Date().toISOString() };
+    const slot = SCHEDULE_SLOTS.find((s) => s.id === b.slot);
+    if (!slot) return json({ error: 'Lịch không hợp lệ' }, 400, h);
+    list[i] = { ...list[i]!, autoCollect: false, schedule: { ...list[i]!.schedule, [slot.id]: b.enabled }, autoBy: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', autoAt: new Date().toISOString() };
     await saveProfiles(env, list);
     return json({ ok: true, profile: list[i] }, 200, h);
   }

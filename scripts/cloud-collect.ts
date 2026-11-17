@@ -47,12 +47,12 @@ export interface PublicArticle {
 export interface PublicDay {
   kind: 'hcm-live-day'; reportDate: string; provisional: boolean; generatedAt: string;
   /** file stem: "2026-11-16" for daily periods, "custom-202611141700-202611150800" for on-demand windows */
-  key?: string; custom?: boolean; requestedBy?: string;
+  key?: string; custom?: boolean; requestedBy?: string; scheduled?: string;
   manifest: RunManifest & { reconciliation: ReturnType<typeof reconcile> }; candidates: Array<Omit<Candidate, 'history'>>; articles: PublicArticle[];
 }
 export interface PublicIndex {
   kind: 'hcm-live-index'; generatedAt: string; schedule: string;
-  days: Array<{ reportDate: string; key?: string; file?: string; custom?: boolean; requestedBy?: string; window: { from: string; to: string }; provisional: boolean; generatedAt: string; counts: Record<string, number>; completeness: RunManifest['completeness'] }>;
+  days: Array<{ reportDate: string; key?: string; file?: string; custom?: boolean; requestedBy?: string; scheduled?: string; window: { from: string; to: string }; provisional: boolean; generatedAt: string; counts: Record<string, number>; completeness: RunManifest['completeness'] }>;
 }
 const KEEP_CUSTOM = 10;
 const keyOf = (d: { key?: string; reportDate: string }) => d.key ?? d.reportDate;
@@ -219,6 +219,8 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
     const reqFrom = arg('--from', '');
     const reqTo = arg('--to', '');
     const requestedBy = arg('--requested-by', '').slice(0, 40);
+    // automatic run at a fixed time (review worker cron, src/domain/schedule.ts): "08:00" / "16:30"
+    const scheduled = /^\d{2}:\d{2}$/.test(arg('--scheduled', '')) ? arg('--scheduled', '') : '';
     const jobs: Array<{ key: string; reportDate: string; window: { from: string; to: string }; provisional: boolean; custom?: boolean }> = [];
     if (reqFrom || reqTo) {
       if (!VN_ISO.test(reqFrom) || !VN_ISO.test(reqTo) || !(Date.parse(reqTo) > Date.parse(reqFrom)) || Date.parse(reqTo) - Date.parse(reqFrom) > 72 * 3600_000) {
@@ -258,11 +260,12 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
       const arts = await stores.getArticles(runId);
       const keep = new Set(cands.filter((c) => c.articleId && !['outside_window'].includes(c.state)).map((c) => c.articleId));
       m.notes.push(`Thu thập trên máy chủ GitHub Actions lúc ${toVnIso(now)} (${((Date.now() - t0) / 1000).toFixed(0)} giây); cấu hình "${profile.name}": ${origin}.`);
-      if (job.custom) m.notes.push(`Thu thập theo yêu cầu${requestedBy ? ` của ${requestedBy}` : ''} trên web.`);
+      if (scheduled && (reqFrom || reqTo)) m.notes.push(`Thu thập theo lịch ${scheduled}.`);
+      else if (job.custom) m.notes.push(`Thu thập theo yêu cầu${requestedBy ? ` của ${requestedBy}` : ''} trên web.`);
       if (job.provisional) m.notes.push('Kỳ đang diễn ra – tạm thời');
       if (carried) m.notes.push(`Tiếp nối lần đăng trước của kỳ này: giữ ${carried.carried} bài đã bóc tách${carried.reclassified ? ' và phân loại lại theo cài đặt mới' : ''}, chỉ tải thêm link chưa tải.`);
       published.set(job.key, {
-        kind: 'hcm-live-day', reportDate: job.reportDate, key: job.key, custom: job.custom, requestedBy: job.custom ? requestedBy : undefined, provisional: job.provisional, generatedAt: toVnIso(new Date()),
+        kind: 'hcm-live-day', reportDate: job.reportDate, key: job.key, custom: job.custom, requestedBy: job.custom && !scheduled ? requestedBy : undefined, scheduled: scheduled && (reqFrom || reqTo) ? scheduled : prevDays.get(job.key)?.scheduled, provisional: job.provisional, generatedAt: toVnIso(new Date()),
         manifest: { ...m, reconciliation: reconcile(cands) },
         candidates: cands.map(({ history: _h, ...c }) => c),
         articles: arts.filter((a) => keep.has(a.id)).map(toPublicArticle),
@@ -280,7 +283,7 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
   const index: PublicIndex = {
     kind: 'hcm-live-index', generatedAt: toVnIso(new Date()), schedule: 'Mỗi giờ (nếu bật tự động) + theo yêu cầu (nút "Thu thập" trên web)',
     days: days.map((d) => ({
-      reportDate: d.reportDate, key: keyOf(d), file: `${keyOf(d)}.json`, custom: d.custom, requestedBy: d.requestedBy, window: d.manifest.window,
+      reportDate: d.reportDate, key: keyOf(d), file: `${keyOf(d)}.json`, custom: d.custom, requestedBy: d.requestedBy, scheduled: d.scheduled, window: d.manifest.window,
       provisional: d.provisional, generatedAt: d.generatedAt, counts: d.manifest.counts, completeness: d.manifest.completeness,
     })),
   };

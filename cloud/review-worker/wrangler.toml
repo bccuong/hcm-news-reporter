@@ -5,7 +5,7 @@ compatibility_date = "2024-11-01"
 # hourly automatic collection (UTC; minute 7). Switched on/off from the web ("Tự động thu thập mỗi giờ", KV cfg:auto).
 # Cloudflare cron triggers fire on time, unlike GitHub's `schedule:` which can be late or skipped.
 [triggers]
-crons = ["7 * * * *"]
+crons = ["*/5 * * * *"]
 
 [vars]
 ALLOWED_ORIGINS = "https://bccuong.github.io"

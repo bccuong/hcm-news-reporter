@@ -1,9 +1,9 @@
-name: Live data – hourly collection & GitHub Pages deploy
-run-name: ${{ inputs.from && format('Thu thập theo yêu cầu {0} → {1} ({2}) [{3}]', inputs.from, inputs.to, inputs.requested_by, inputs.profile) || inputs.trigger == 'auto' && 'Thu thập tự động hằng giờ' || 'Live data – collection & GitHub Pages deploy' }}
+name: Live data – collection & GitHub Pages deploy
+run-name: ${{ inputs.trigger == 'schedule' && format('Thu thập theo lịch {0}: {1} → {2} [{3}]', inputs.slot, inputs.from, inputs.to, inputs.profile) || inputs.from && format('Thu thập theo yêu cầu {0} → {1} ({2}) [{3}]', inputs.from, inputs.to, inputs.requested_by, inputs.profile) || inputs.trigger == 'auto' && 'Thu thập tự động hằng giờ' || 'Live data – collection & GitHub Pages deploy' }}
 
-# The hourly automatic run is NOT a GitHub `schedule:` (often late or skipped). The Cloudflare review worker's cron
-# trigger dispatches this workflow with trigger=auto every hour at :07 when at least one profile has "Tự động thu thập
-# mỗi giờ" switched on (KV cfg:profiles) and no other collection is running; that run collects every such profile.
+# Automatic runs are NOT a GitHub `schedule:` (often late or skipped). The Cloudflare review worker's cron (every 5 min)
+# dispatches this workflow with trigger=schedule + the window of a fixed time ticked on the web for a profile
+# (08:00: 17:00 yesterday → 08:00; 16:30: 08:01 → 16:30 – src/domain/schedule.ts), once per profile and day.
 on:
   push:
     branches: [main]
@@ -11,7 +11,11 @@ on:
     # on-demand window from the web "Thu thập" button, or trigger=auto from the worker cron
     inputs:
       trigger:
-        description: 'auto = lượt tự động hằng giờ (do worker gửi)'
+        description: 'schedule = lượt theo lịch cố định (do worker gửi)'
+        required: false
+        default: ''
+      slot:
+        description: 'Giờ của lịch (08:00 / 16:30)'
         required: false
         default: ''
       from:
@@ -59,10 +63,11 @@ jobs:
           REQ_TO: ${{ inputs.to }}
           REQ_BY: ${{ inputs.requested_by }}
           REQ_PROFILE: ${{ inputs.profile }}
+          REQ_SLOT: ${{ inputs.slot }}
           REVIEW_API_URL: ${{ vars.REVIEW_API_URL }} # shared configuration edited on the web (Cài đặt)
         run: |
           if [ -n "$REQ_FROM" ]; then
-            npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/news-reporter/" --out web/public/live --from "$REQ_FROM" --to "$REQ_TO" --requested-by "$REQ_BY" --profile "${REQ_PROFILE:-hcm}"
+            npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/news-reporter/" --out web/public/live --from "$REQ_FROM" --to "$REQ_TO" --requested-by "$REQ_BY" --scheduled "$REQ_SLOT" --profile "${REQ_PROFILE:-hcm}"
           else
             npx tsx scripts/cloud-collect.ts --site "https://bccuong.github.io/news-reporter/" --out web/public/live
           fi

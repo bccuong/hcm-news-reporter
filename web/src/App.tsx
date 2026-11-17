@@ -5,6 +5,7 @@ import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
+import { nextRun, SCHEDULE_SLOTS, type ScheduleSlot } from '../../src/domain/schedule';
 import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
@@ -339,13 +340,15 @@ export function App() {
     return () => clearInterval(t);
   }, [loadServer, !!remote, serverRunning]);
   const busyRun: CollectRun | undefined = server?.running[0];
-  const toggleAuto = async (enabled: boolean) => {
+  // ticked fixed collection times of the active profile, e.g. "08:00, 16:30"
+  const autoTimes = SCHEDULE_SLOTS.filter((s) => server?.profiles.find((x) => x.id === profiles?.activeId)?.schedule?.[s.id]).map((s) => s.at).join(', ');
+  const toggleAuto = async (slot: ScheduleSlot, enabled: boolean) => {
     if (!api.shared) return;
     if (!api.shared.session()) return setLoginOpen(true);
     try {
-      const prof = await api.shared.setAuto(enabled);
+      const prof = await api.shared.setSchedule(slot.id, enabled);
       setServer((s) => (s ? { ...s, profiles: s.profiles.map((x) => (x.id === prof.id ? prof : x)) } : s));
-      toast('ok', enabled ? `Đã BẬT tự động thu thập mỗi giờ cho cấu hình "${activeProfile?.name ?? ''}"` : `Đã TẮT tự động thu thập cho cấu hình "${activeProfile?.name ?? ''}" – chỉ thu thập khi có người bấm Thu thập`);
+      toast('ok', `${enabled ? 'Đã BẬT' : 'Đã TẮT'} thu thập tự động lúc ${slot.at} cho cấu hình "${activeProfile?.name ?? ''}"`);
     } catch (e) {
       toast('err', (e as Error).message);
     }
@@ -438,7 +441,7 @@ export function App() {
       )}
       {api.mode === 'live' && (
         <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
-          <b>DỮ LIỆU THẬT</b> – {server?.profiles.find((x) => x.id === profiles?.activeId)?.autoCollect === false ? 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)' : 'thu thập tự động mỗi giờ trên máy chủ GitHub'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}.
+          <b>DỮ LIỆU THẬT</b> – {autoTimes ? `tự động thu thập lúc ${autoTimes} trên máy chủ GitHub` : 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}.
           {api.shared ? <> Đăng nhập để <b>chọn khung giờ và bấm Thu thập</b> (chạy trên máy chủ GitHub, 5–10 phút) và duyệt tin: ✓/✗, sửa lĩnh vực/tính chất, góp ý.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
         </div>
       )}
@@ -800,6 +803,8 @@ function runLabel(r: { window: { from: string; to: string } }): string {
 function runTag(r: RunInfo): { text: string; tone: string } {
   if (r.active) return { text: 'đang chạy', tone: 'border-blue-300 bg-blue-50 text-blue-800' };
   if (r.notes.some((x) => /đang diễn ra/i.test(x))) return { text: 'đang diễn ra', tone: 'border-sky-300 bg-sky-50 text-sky-800' };
+  const sch = r.notes.map((x) => /theo lịch (\d{2}:\d{2})/.exec(x)).find(Boolean);
+  if (sch) return { text: `lịch ${sch[1]}`, tone: 'border-teal-200 bg-teal-50 text-teal-800' };
   // "Thu thập theo yêu cầu (Cường)" / "… (Claude (cho Cường))" / "… của Cường trên web." → the requester
   const req = r.notes.map((x) => /theo yêu cầu(?: của)?\s*(.*)$/i.exec(x)).find(Boolean);
   if (req) {
@@ -1641,29 +1646,31 @@ function ExportPanel({ run, arts, reviews, settings, onPatch, onInspect, onMerge
 }
 
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
-const RUN_KIND: Record<string, string> = { auto: 'lượt tự động hằng giờ', request: 'lượt thu thập theo yêu cầu', deploy: 'cập nhật phần mềm & dữ liệu (sau khi đẩy mã mới)' };
-const LAST_AUTO: Record<string, string> = { dispatched: 'đã chạy', off: 'bỏ qua vì đang tắt', busy: 'bỏ qua vì máy chủ bận', error: 'lỗi', not_configured: 'chưa cấu hình' };
+const RUN_KIND: Record<string, string> = { auto: 'lượt tự động theo lịch', request: 'lượt thu thập theo yêu cầu', deploy: 'cập nhật phần mềm & dữ liệu (sau khi đẩy mã mới)' };
+const LAST_AUTO: Record<string, string> = { dispatched: 'đã chạy', off: 'bỏ qua vì đang tắt', busy: 'máy chủ bận – sẽ thử lại sau 5 phút', error: 'lỗi', not_configured: 'chưa cấu hình' };
 
 /** web: hourly automatic switch + what the collection server is doing now */
-function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerStatus; profileId: string; remote: boolean; onToggle: (on: boolean) => void }) {
+function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerStatus; profileId: string; remote: boolean; onToggle: (slot: ScheduleSlot, on: boolean) => void }) {
   const prof = server.profiles.find((p) => p.id === profileId);
-  const enabled = !!prof?.autoCollect;
-  const next = new Date();
-  next.setUTCMinutes(7, 0, 0);
-  if (next.getTime() <= Date.now()) next.setTime(next.getTime() + 3600_000);
+  const next = nextRun(prof?.schedule, new Date());
   const run = server.running[0];
   const who = run?.kind === 'request' ? /\(([^)]*)\)(?:\s*\[[^\]]*\])?\s*$/.exec(run.title)?.[1] : undefined;
   return (
     <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm" data-testid="server-status">
-      <label className="inline-flex cursor-pointer items-center gap-2 font-medium">
-        <input type="checkbox" className="h-4 w-4" checked={enabled} disabled={!server.collectEnabled} onChange={(e) => onToggle(e.target.checked)} />
-        Tự động thu thập mỗi giờ
-      </label>
+      <div className="flex flex-col gap-1" data-testid="auto-schedule">
+        <span className="font-medium">Tự động thu thập</span>
+        {SCHEDULE_SLOTS.map((s) => (
+          <label key={s.id} className="inline-flex cursor-pointer items-center gap-2">
+            <input type="checkbox" className="h-4 w-4" checked={!!prof?.schedule?.[s.id]} disabled={!server.collectEnabled} onChange={(e) => onToggle(s, e.target.checked)} aria-label={`Tự động lúc ${s.at}`} />
+            <span><b>{s.at}</b> – kỳ {s.from.day ? `${s.from.time} hôm qua` : s.from.time} → {s.to.time} hôm nay</span>
+          </label>
+        ))}
+      </div>
       {prof && <span className="chip border-slate-300 bg-slate-50 text-xs">cấu hình: <b>{prof.name}</b></span>}
       <span className="text-xs text-slate-500" data-testid="auto-info">
-        {enabled ? <>Bật – chạy phút :07 mỗi giờ, lượt kế tiếp khoảng <b>{hhmm(next.toISOString())}</b> (bỏ qua nếu máy chủ đang bận)</> : <>Tắt – chỉ thu thập khi có người bấm <b>Thu thập</b></>}
+        {next ? <>Lượt tự động kế tiếp: <b>{next.slot.at} {new Date(next.at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</b> (dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại)</> : <>Không hẹn giờ – chỉ thu thập khi có người bấm <b>Thu thập</b></>}
         {prof?.autoBy && prof.autoAt && <> · {prof.autoBy} đổi lúc {hhmm(prof.autoAt)} {new Date(prof.autoAt).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</>}
-        {server.lastAuto && <> · lần hẹn giờ gần nhất {hhmm(server.lastAuto.at)}: {LAST_AUTO[server.lastAuto.result] ?? server.lastAuto.result}</>}
+        {server.lastAuto && <> · lần tự động gần nhất{server.lastAuto.slot ? ` (lịch ${server.lastAuto.slot})` : ''} {hhmm(server.lastAuto.at)}: {LAST_AUTO[server.lastAuto.result] ?? server.lastAuto.result}</>}
       </span>
       <span className="flex-1" />
       {run ? (

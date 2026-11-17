@@ -105,7 +105,7 @@ describe('shared review worker', () => {
       expect(j.runs[0]).toMatchObject({ id: 7, status: 'in_progress' });
     });
   });
-  describe('hourly automatic collection (worker cron) + public server status', () => {
+  describe('automatic collection at fixed times (worker cron every 5 min) + public server status', () => {
     const calls: string[] = [];
     let running: Array<Record<string, unknown>> = [];
     const gh = async (url: string, init?: RequestInit) => {
@@ -116,36 +116,55 @@ describe('shared review worker', () => {
       return new Response('{}', { status: 404 });
     };
     const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
-    const setAuto = (e: Env, enabled: unknown, code = 'HCM-test-1234') =>
-      handle(new Request('https://w.example/auto', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ enabled, reviewer: 'B' }) }), e, gh);
+    const setSlot = (e: Env, slot: unknown, enabled: unknown, code = 'HCM-test-1234', profile = 'hcm') =>
+      handle(new Request('https://w.example/auto', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ slot, enabled, reviewer: 'B', profile }) }), e, gh);
+    const at = (vn: string) => new Date(`${vn}+07:00`);
+    const dispatched = () => calls.filter((c) => c.includes('/dispatches')).map((c) => JSON.parse(c.slice(c.indexOf('{'))).inputs);
 
-    it('is on by default, dispatches trigger=auto, can be switched off/on by a reviewer', async () => {
+    it('08:00 collects 17:00 yesterday → 08:00, 16:30 collects 08:01 → 16:30; once per day; only ticked slots', async () => {
       const e = genv();
       running = [];
       calls.length = 0;
-      expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'dispatched' });
-      expect(calls.find((c) => c.includes('/dispatches'))).toContain('"inputs":{"trigger":"auto"}');
-      expect((await setAuto(e, false, 'wrong')).status).toBe(401);
-      expect((await setAuto(e, 'no')).status).toBe(400);
-      expect((await setAuto(e, false)).status).toBe(200);
-      calls.length = 0;
-      expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'off' });
-      expect(calls.some((c) => c.includes('/dispatches'))).toBe(false);
-      const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { profiles: Array<{ id: string; autoCollect: boolean; autoBy: string }>; lastAuto: { result: string } };
-      expect(st.profiles[0]).toMatchObject({ id: 'hcm', autoCollect: false, autoBy: 'B' });
-      expect(st.lastAuto.result).toBe('off');
-      await setAuto(e, true);
-      expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'dispatched' });
+      expect(await scheduledCollect(e, gh, at('2026-11-17T08:05'))).toBeNull(); // nothing ticked
+      expect((await setSlot(e, 'morning', true, 'wrong')).status).toBe(401);
+      expect((await setSlot(e, 'evening', true)).status).toBe(400);
+      expect((await setSlot(e, 'morning', 'yes')).status).toBe(400);
+      expect((await setSlot(e, 'morning', true)).status).toBe(200);
+      expect((await setSlot(e, 'afternoon', true)).status).toBe(200);
+      // outside the dispatch windows: no KV, no GitHub
+      expect(await scheduledCollect(e, gh, at('2026-11-17T07:55'))).toBeNull();
+      expect(await scheduledCollect(e, gh, at('2026-11-17T08:01'))).toBeNull(); // feeds catch up first (+2 min)
+      expect(await scheduledCollect(e, gh, at('2026-11-17T10:05'))).toBeNull(); // window closed (+2 h)
+      expect(calls).toEqual([]);
+      expect(await scheduledCollect(e, gh, at('2026-11-17T08:02'))).toMatchObject({ result: 'dispatched', profiles: ['hcm'], slot: '08:00' });
+      expect(dispatched()[0]).toEqual({ trigger: 'schedule', slot: '08:00', from: '2026-11-16T17:00+07:00', to: '2026-11-17T08:00+07:00', profile: 'hcm', requested_by: '' });
+      expect(await scheduledCollect(e, gh, at('2026-11-17T08:07'))).toBeNull(); // already done today
+      expect(await scheduledCollect(e, gh, at('2026-11-17T16:35'))).toMatchObject({ result: 'dispatched', slot: '16:30' });
+      expect(dispatched()[1]).toMatchObject({ from: '2026-11-17T08:01+07:00', to: '2026-11-17T16:30+07:00' });
+      // next day again
+      expect(await scheduledCollect(e, gh, at('2026-11-18T08:10'))).toMatchObject({ result: 'dispatched' });
+      expect(dispatched()[2]).toMatchObject({ from: '2026-11-17T17:00+07:00', to: '2026-11-18T08:00+07:00' });
+      // unticked → no run
+      await setSlot(e, 'afternoon', false);
+      expect(await scheduledCollect(e, gh, at('2026-11-18T16:40'))).toBeNull();
+      const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { profiles: Array<{ id: string; schedule: object; autoBy: string }>; lastAuto: { result: string; slot: string } };
+      expect(st.profiles[0]).toMatchObject({ id: 'hcm', schedule: { morning: true, afternoon: false }, autoBy: 'B' });
+      expect(st.lastAuto).toMatchObject({ result: 'dispatched', slot: '08:00' });
     });
-    it('skips while the server is busy; status (no login) names the running run kind', async () => {
+    it('busy server → tried again on the next tick (not skipped for the day); status names the running run kind', async () => {
       const e = genv();
+      await setSlot(e, 'morning', true);
       running = [{ id: 1, status: 'in_progress', conclusion: null, created_at: 'c', updated_at: 'u', event: 'push', display_title: 'Live data', html_url: 'h' }];
-      expect(await scheduledCollect(e, gh)).toMatchObject({ result: 'busy' });
+      expect(await scheduledCollect(e, gh, at('2026-11-17T08:02'))).toMatchObject({ result: 'busy' });
       const st = (await (await handle(new Request('https://w.example/status'), e, gh)).json()) as { running: Array<{ kind: string }> };
       expect(st.running[0]!.kind).toBe('deploy');
-      expect(runKind({ event: 'workflow_dispatch', display_title: 'Thu thập tự động hằng giờ' })).toBe('auto');
+      running = [];
+      expect(await scheduledCollect(e, gh, at('2026-11-17T08:07'))).toMatchObject({ result: 'dispatched' });
+      expect(runKind({ event: 'workflow_dispatch', display_title: 'Thu thập theo lịch 08:00: a → b [hcm]' })).toBe('auto');
       expect(runKind({ event: 'workflow_dispatch', display_title: 'Thu thập theo yêu cầu x → y (A)' })).toBe('request');
-      expect(await scheduledCollect(env(), gh)).toMatchObject({ result: 'not_configured' });
+      const n = genv();
+      await setSlot(n, 'morning', true);
+      expect(await scheduledCollect({ ...n, GITHUB_TOKEN: '' } as Env, gh, at('2026-11-17T08:02'))).toMatchObject({ result: 'not_configured' });
     });
   });
   describe('shared collector configuration + image proxy', () => {
@@ -207,15 +226,15 @@ describe('shared review worker', () => {
       expect(hist.items).toHaveLength(1);
       expect(((await (await handle(new Request('https://w.example/config?profile=hcm'), e)).json()) as { config: { settings: { v: string } } }).config.settings.v).toBe('old');
       expect((await req(e, 'POST', '/config', { profile: 'khong-co', settings: {}, sources: [] })).status).toBe(404);
-      // hourly switch per profile
-      expect((await req(e, 'POST', '/auto', { enabled: true, profile: 'ha-noi', reviewer: 'B' })).status).toBe(200);
+      // fixed collection times per profile
+      expect((await req(e, 'POST', '/auto', { slot: 'morning', enabled: true, profile: 'ha-noi', reviewer: 'B' })).status).toBe(200);
       expect(((await (await req(e, 'PATCH', '/profiles/ha-noi', { name: 'Thủ đô' })).json()) as { name: string }).name).toBe('Thủ đô');
-      const after = (await (await handle(new Request('https://w.example/profiles'), e)).json()) as { profiles: Array<{ id: string; autoCollect: boolean; name: string }> };
-      expect(after.profiles.map((p) => [p.id, p.autoCollect])).toEqual([['hcm', false], ['ha-noi', true]]);
+      const after = (await (await handle(new Request('https://w.example/profiles'), e)).json()) as { profiles: Array<{ id: string; schedule?: { morning?: boolean }; name: string }> };
+      expect(after.profiles.map((p) => [p.id, !!p.schedule?.morning])).toEqual([['hcm', false], ['ha-noi', true]]);
       expect((await req(e, 'DELETE', '/profiles/ha-noi')).status).toBe(200);
       expect((await req(e, 'DELETE', '/profiles/hcm')).status).toBe(400); // never the last one
     });
-    it('cron: one run for every profile switched on; off when none; on-demand names the profile', async () => {
+    it('cron: every profile with the slot ticked gets its own run (one per tick); on-demand names the profile', async () => {
       const e = { ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/news-reporter', COLLECT_WORKFLOW: 'pages.yml' };
       const calls: string[] = [];
       const f = async (url: string, init?: RequestInit) => {
@@ -224,12 +243,14 @@ describe('shared review worker', () => {
         return new Response(null, { status: 204 });
       };
       await e.REVIEWS.put('cfg:profiles', JSON.stringify([
-        { id: 'hcm', name: 'TP.HCM', description: '', autoCollect: false, clonedFrom: null, createdAt: '', updatedAt: '' },
-        { id: 'da-nang', name: 'Đà Nẵng', description: '', autoCollect: true, clonedFrom: null, createdAt: '', updatedAt: '' },
+        { id: 'hcm', name: 'TP.HCM', description: '', autoCollect: false, schedule: { morning: true }, clonedFrom: null, createdAt: '', updatedAt: '' },
+        { id: 'da-nang', name: 'Đà Nẵng', description: '', autoCollect: false, schedule: { morning: true }, clonedFrom: null, createdAt: '', updatedAt: '' },
+        { id: 'ha-noi', name: 'Hà Nội', description: '', autoCollect: true, clonedFrom: null, createdAt: '', updatedAt: '' },
       ]));
-      expect(await scheduledCollect(e, f)).toMatchObject({ result: 'dispatched', profiles: ['da-nang'] });
-      await e.REVIEWS.put('cfg:profiles', JSON.stringify([{ id: 'hcm', name: 'TP.HCM', description: '', autoCollect: false, clonedFrom: null, createdAt: '', updatedAt: '' }]));
-      expect(await scheduledCollect(e, f)).toMatchObject({ result: 'off' });
+      const t1 = new Date('2026-11-17T08:02+07:00');
+      expect(await scheduledCollect(e, f, t1)).toMatchObject({ result: 'dispatched', profiles: ['hcm'] });
+      expect(await scheduledCollect(e, f, new Date('2026-11-17T08:07+07:00'))).toMatchObject({ result: 'dispatched', profiles: ['da-nang'] });
+      expect(await scheduledCollect(e, f, new Date('2026-11-17T08:12+07:00'))).toBeNull(); // ha-noi only had the old hourly switch
       const r = await handle(new Request('https://w.example/collect', { method: 'POST', headers: H, body: JSON.stringify({ from: '2026-11-14T17:00+07:00', to: '2026-11-15T08:00+07:00', reviewer: 'A', profile: 'nowhere' }) }), e, f);
       expect(r.status).toBe(400);
     });

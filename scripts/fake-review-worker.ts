@@ -93,11 +93,11 @@ const fakeGitHub = async (url: string, init?: RequestInit): Promise<Response> =>
   if (url.endsWith('/dispatches')) {
     const { inputs } = JSON.parse(String(init?.body));
     const auto = inputs.trigger === 'auto';
-    const title = auto ? AUTO_TITLE : `Thu thập theo yêu cầu ${inputs.from} → ${inputs.to} (${inputs.requested_by})`;
+    const title = inputs.trigger === 'schedule' ? `${AUTO_TITLE} ${inputs.slot}: ${inputs.from} → ${inputs.to} [${inputs.profile}]` : auto ? AUTO_TITLE : `Thu thập theo yêu cầu ${inputs.from} → ${inputs.to} (${inputs.requested_by})`;
     const run = { id: runs.length + 1, status: 'in_progress', conclusion: null as string | null, created_at: new Date().toISOString(), updated_at: '', event: 'workflow_dispatch', display_title: title, html_url: 'https://github.com/bccuong/news-reporter/actions' };
     runs.unshift(run);
     setTimeout(() => {
-      if (!auto) publishCustom(inputs.from, inputs.to, inputs.requested_by);
+      if (!auto && inputs.trigger !== 'schedule') publishCustom(inputs.from, inputs.to, inputs.requested_by); // scheduled runs only occupy the server here
       run.status = 'completed';
       run.conclusion = 'success';
     }, 3000);
@@ -111,10 +111,12 @@ createServer(async (req, res) => {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
-  // test hooks: fire the hourly cron now; simulate a deploy run (push) occupying the server for a few seconds
-  if (req.url === '/__cron') {
+  // test hooks: fire the cron as if it were 08:02 today (?at=ISO to choose); simulate a deploy run (push) occupying the server for a few seconds
+  if (req.url?.startsWith('/__cron')) {
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify(await scheduledCollect(env, fakeGitHub)));
+    const q = new URL(req.url!, 'http://x').searchParams.get('at');
+    const now = q ? new Date(q) : new Date(`${new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)}T08:02:00+07:00`);
+    return res.end(JSON.stringify(await scheduledCollect(env, fakeGitHub, now)));
   }
   if (req.url === '/__png') {
     res.writeHead(200, { 'content-type': 'image/png' });

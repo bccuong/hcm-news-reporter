@@ -58,29 +58,45 @@ test('shared review: login gate, votes from two reviewers, team quality, export'
   expect(new Set(ex.labels.map((l: { reviewerId: string }) => l.reviewerId))).toEqual(new Set(['nguoi-duyet-a', 'nguoi-duyet-b']));
 });
 
-test('hourly automatic switch + busy server is visible and blocks "Thu thập"', async ({ page, request }) => {
+test('automatic collection at 08:00 / 16:30 (ticked per profile) + busy server is visible and blocks "Thu thập"', async ({ page, request }) => {
   test.setTimeout(90_000);
   await page.goto('');
   const strip = page.getByTestId('server-status');
-  const auto = strip.getByLabel('Tự động thu thập mỗi giờ');
-  await expect(auto).toBeChecked();
+  const morning = strip.getByLabel('Tự động lúc 08:00');
+  const afternoon = strip.getByLabel('Tự động lúc 16:30');
+  await expect(morning).not.toBeChecked();
+  await expect(afternoon).not.toBeChecked();
+  await expect(strip).toContainText('17:00 hôm qua → 08:00 hôm nay');
+  await expect(strip).toContainText('08:01 → 16:30 hôm nay');
   await expect(page.getByTestId('server-idle')).toBeVisible();
-  // switching needs a reviewer session
-  await auto.click(); // stays on: no session yet
+  await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập đang TẮT');
+  // ticking needs a reviewer session
+  await morning.click();
   await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
-  await expect(auto).toBeChecked();
+  await expect(morning).not.toBeChecked();
   await page.getByLabel('Họ tên').fill('Người duyệt D');
   await page.getByLabel('Mã truy cập (do quản trị gửi)').fill('HCM-TEST-CODE');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
-  await auto.click(); // saved on the worker, then reflected
-  await expect(auto).not.toBeChecked();
-  await expect(page.getByTestId('auto-info')).toContainText('Tắt – chỉ thu thập khi có người bấm');
+  await morning.click(); // saved on the worker, then reflected
+  await expect(morning).toBeChecked();
+  await afternoon.click();
+  await expect(afternoon).toBeChecked();
+  await expect(page.getByTestId('auto-info')).toContainText('Lượt tự động kế tiếp');
   await expect(page.getByTestId('auto-info')).toContainText('Người duyệt D đổi lúc');
+  await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập lúc 08:00, 16:30');
+  // the worker cron at 08:02 collects 17:00 yesterday → 08:00 today for this profile
+  const fired = await (await request.get('http://127.0.0.1:5181/__cron')).json();
+  expect(fired).toMatchObject({ result: 'dispatched', slot: '08:00', profiles: ['hcm'] });
+  await page.reload();
+  await expect(page.getByTestId('server-busy')).toContainText('lượt tự động theo lịch');
+  await expect(page.getByRole('button', { name: 'Thu thập' })).toBeDisabled();
+  await expect(page.getByTestId('server-idle')).toBeVisible({ timeout: 40_000 });
+  // untick: no automatic run any more
+  await afternoon.click();
+  await expect(afternoon).not.toBeChecked();
+  await morning.click();
+  await expect(morning).not.toBeChecked();
   await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập đang TẮT');
-  // the worker cron skips while switched off
-  expect((await (await request.get('http://127.0.0.1:5181/__cron')).json()).result).toBe('off');
-  await auto.click();
-  await expect(auto).toBeChecked();
   // another run (e.g. a deploy after a push) occupies the server: shown to everyone, Thu thập disabled with the reason
   await request.get('http://127.0.0.1:5181/__deploy');
   await page.reload();
@@ -234,7 +250,7 @@ test('web = local: photos, full article text, shared settings used by the server
   expect(await hasPhoto(zip2)).toBe(true);
   await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
-test('web profiles: create Đà Nẵng (stored by the worker), own settings + hourly switch, switch back to TP.HCM', async ({ page, request }) => {
+test('web profiles: create Đà Nẵng (stored by the worker), own settings + own automatic times, switch back to TP.HCM', async ({ page, request }) => {
   page.on('dialog', (d) => d.accept());
   await page.goto('');
   await login(page, 'Người duyệt F', 'HCM-TEST-CODE');
@@ -252,16 +268,17 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ho
   const cfg = (await (await request.get('http://127.0.0.1:5181/config?profile=da-nang')).json()).config;
   expect(cfg.settings.location.regionName).toBe('Đà Nẵng');
   expect(cfg.by).toBe('Người duyệt F');
-  // no data yet for the new profile; its hourly switch is off (TP.HCM's stays on)
+  // no data yet for the new profile; its automatic times are its own (none ticked)
   const strip = page.getByTestId('server-status');
   await expect(strip).toContainText('cấu hình: Đà Nẵng');
-  await expect(strip.getByLabel('Tự động thu thập mỗi giờ')).not.toBeChecked();
-  await strip.getByLabel('Tự động thu thập mỗi giờ').click();
-  await expect(strip.getByLabel('Tự động thu thập mỗi giờ')).toBeChecked();
-  const st = (await (await request.get('http://127.0.0.1:5181/status')).json()) as { profiles: Array<{ id: string; autoCollect: boolean }> };
-  expect(st.profiles.map((p) => [p.id, p.autoCollect])).toEqual([['hcm', true], ['da-nang', true]]);
-  // the cron now collects both profiles in one run
-  expect((await (await request.get('http://127.0.0.1:5181/__cron')).json()).profiles).toEqual(['hcm', 'da-nang']);
+  const dnMorning = strip.getByLabel('Tự động lúc 08:00');
+  await expect(dnMorning).not.toBeChecked();
+  await dnMorning.click();
+  await expect(dnMorning).toBeChecked();
+  const st = (await (await request.get('http://127.0.0.1:5181/status')).json()) as { profiles: Array<{ id: string; schedule?: { morning?: boolean } }> };
+  expect(st.profiles.map((p) => [p.id, !!p.schedule?.morning])).toEqual([['hcm', false], ['da-nang', true]]);
+  // the 08:00 run is for Đà Nẵng only
+  expect((await (await request.get('http://127.0.0.1:5181/__cron')).json()).profiles).toEqual(['da-nang']);
   await page.screenshot({ path: 'docs/screenshots/web-profile-da-nang.png' });
   // Settings say which profile every section edits: sources, rules, location, categories… are grouped under it
   await page.getByRole('button', { name: 'Cài đặt' }).click();
@@ -279,8 +296,9 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ho
   await expect(dlg2.getByTestId('category-TRAFFIC')).toContainText('yêu cầu');
   await page.screenshot({ path: 'docs/screenshots/web-settings-per-profile.png' });
   await dlg2.getByRole('button', { name: 'Đóng cài đặt' }).click();
-  await strip.getByLabel('Tự động thu thập mỗi giờ').click();
-  await expect(strip.getByLabel('Tự động thu thập mỗi giờ')).not.toBeChecked();
+  await dnMorning.click();
+  await expect(dnMorning).not.toBeChecked();
+  await expect(page.getByTestId('server-idle')).toBeVisible({ timeout: 40_000 });
   // back to TP.HCM: its published data is shown again
   await page.getByLabel('Cấu hình (profile)').selectOption('hcm');
   await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('hcm');

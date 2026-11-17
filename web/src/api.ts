@@ -1,4 +1,5 @@
 import { defaultSettings, defaultSources, parseWebsitesTxt, settingsForNewRegion } from '../../src/domain/defaults';
+import type { ScheduleSlot, ScheduleState } from '../../src/domain/schedule';
 import { evaluateRule, validateRule } from '../../src/domain/rules';
 import { judgeRelevance } from '../../src/domain/relevance';
 import { computeRelevanceQuality, type RelevanceQuality } from '../../src/domain/quality';
@@ -16,7 +17,7 @@ export interface ExportResult { ok: boolean; dryRun?: boolean; blockers?: string
 export interface HistoryEntry { id: string; at: string; kind: string; summary: string }
 
 /** profiles (cấu hình theo địa bàn); web: the active one is chosen per browser */
-export interface ProfileInfo { id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string; autoBy?: string; autoAt?: string }
+export interface ProfileInfo { id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string; autoBy?: string; autoAt?: string; schedule?: ScheduleState }
 export interface ProfilesState { activeId: string; profiles: ProfileInfo[] }
 export interface TemplateOption { id: string; name: string; description: string; kind: 'original-pptx' | 'style' | 'upload'; orientation: 'portrait' | 'landscape'; available?: boolean }
 export interface NewProfileInput { name: string; description?: string; cloneFrom?: string | null; regionName?: string; regionAliases?: string[] }
@@ -85,17 +86,17 @@ export interface Vote { r: string; l: 'relevant' | 'irrelevant' | null; c: strin
 export interface CollectRun { id: number; status: string; conclusion: string | null; createdAt: string; updatedAt: string; event: string; kind?: 'auto' | 'request' | 'deploy'; title: string; url: string }
 export interface ServerStatus {
   collectEnabled: boolean;
-  /** every profile with its hourly switch (autoCollect, autoBy, autoAt) */
+  /** every profile with its fixed collection times (schedule, autoBy, autoAt) */
   profiles: ProfileInfo[];
-  lastAuto: { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string; profiles?: string[] } | null;
+  lastAuto: { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string; profiles?: string[]; slot?: string } | null;
   /** queued / running collection workflow runs */
   running: CollectRun[];
 }
 export interface SharedReview {
-  /** public: hourly automatic mode + what the collection server is doing now */
+  /** public: automatic collection times + what the collection server is doing now */
   serverStatus(): Promise<ServerStatus>;
-  /** switch the hourly automatic collection of the ACTIVE profile on/off (needs a reviewer session) */
-  setAuto(enabled: boolean): Promise<ProfileInfo>;
+  /** tick / untick a fixed collection time (08:00, 16:30) of the ACTIVE profile (needs a reviewer session) */
+  setSchedule(slot: ScheduleSlot['id'], enabled: boolean): Promise<ProfileInfo>;
   session(): { name: string } | null;
   login(name: string, code: string): Promise<void>;
   logout(): void;
@@ -561,7 +562,7 @@ class DemoApi implements Api {
       const key: string = d.key ?? d.reportDate;
       const runId = `run_live_${key.replace(/[^0-9a-z]/gi, '')}`;
       this.runMeta.set(runId, { file: d.file ?? `${d.reportDate}.json`, reportDate: d.reportDate });
-      const notes = [...(d.provisional ? ['Kỳ đang diễn ra – tạm thời'] : []), ...(d.custom ? [`Thu thập theo yêu cầu${d.requestedBy ? ` (${d.requestedBy})` : ''}`] : [])];
+      const notes = [...(d.provisional ? ['Kỳ đang diễn ra – tạm thời'] : []), ...(d.scheduled ? [`Thu thập theo lịch ${d.scheduled}`] : d.custom ? [`Thu thập theo yêu cầu${d.requestedBy ? ` (${d.requestedBy})` : ''}`] : [])];
       return {
         runId, createdAt: d.generatedAt, finishedAt: d.generatedAt, window: d.window, trigger: (d.custom ? 'manual' : 'auto') as 'manual' | 'auto',
         status: 'completed' as const, sources: [], counts: d.counts, completeness: d.completeness, settingsHash: '', notes, active: false,
@@ -746,10 +747,10 @@ class DemoApi implements Api {
         if (!r.ok) throw new ApiError('Không xem được trạng thái máy chủ thu thập');
         return (await r.json()) as ServerStatus;
       },
-      setAuto: async (enabled) => {
+      setSchedule: async (slot, enabled) => {
         const s = store.get<{ name: string; code: string }>('reviewer');
         if (!s) throw new ApiError('Hãy đăng nhập người duyệt để đổi chế độ tự động');
-        const r = await fetch(`${this.reviewApi}/auto`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ enabled, reviewer: s.name, profile: this.pid }) });
+        const r = await fetch(`${this.reviewApi}/auto`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ slot, enabled, reviewer: s.name, profile: this.pid }) });
         if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không đổi được chế độ tự động (HTTP ${r.status})`);
         return ((await r.json()) as { profile: ProfileInfo }).profile;
       },
