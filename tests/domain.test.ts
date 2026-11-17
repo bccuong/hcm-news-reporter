@@ -181,3 +181,26 @@ describe('no "Skill" notes shown to users', async () => {
     for (const t of TEMPLATES) expect(`${t.name} ${t.description}`).not.toMatch(/Skill/);
   });
 });
+
+describe('Hạ tầng kỹ thuật, Đầu tư công, Chính sách count only for the construction / transport industries', async () => {
+  const { SettingsSchema } = await import('../src/domain/schemas.js');
+  const { classifyCategory } = await import('../src/domain/classify.js');
+  const s = SettingsSchema.parse(defaultSettings());
+  it('defaults and saved configurations (once) require Xây dựng or Giao thông', () => {
+    for (const code of ['INFRA', 'INVEST', 'POLICY']) expect(s.categories.find((c) => c.code === code)!.requiresCategories).toEqual(['BUILD', 'TRAFFIC']);
+    const old = defaultSettings() as any;
+    old.categories = old.categories.map(({ requiresRev: _r, ...c }: any) => ({ ...c, requiresCategories: c.code === 'POLICY' ? ['LAND', 'FLOOD'] : [] })); // saved before (no requiresRev)
+    const up = SettingsSchema.parse(old);
+    expect(up.categories.find((c) => c.code === 'INFRA')!.requiresCategories).toEqual(['BUILD', 'TRAFFIC']);
+    expect(up.categories.find((c) => c.code === 'POLICY')!.requiresCategories).toEqual(['BUILD', 'TRAFFIC']);
+    // a later choice in Cài đặt is kept
+    const later = SettingsSchema.parse({ ...up, categories: up.categories.map((c) => (c.code === 'INFRA' ? { ...c, requiresCategories: [] } : c)) });
+    expect(later.categories.find((c) => c.code === 'INFRA')!.requiresCategories).toEqual([]);
+  });
+  it('a story only about "hạ tầng" / "giải ngân" / "nghị định" without the industries is not counted', () => {
+    expect(classifyCategory('Doanh nghiệp được tiếp cận nguồn lực công để thử nghiệm công nghệ mới theo nghị định', '', s.categories).primary).toBeNull();
+    expect(classifyCategory('Ngày hội Đại đoàn kết tại các khu phố', 'Người dân trang trí vỉa hè, công viên', s.categories).primary).toBeNull();
+    expect(classifyCategory('Giải ngân vốn đầu tư công cho đường sắt Thủ Thiêm - Long Thành', '', s.categories).primary).not.toBeNull();
+    expect(classifyCategory('Cải tạo hệ thống thoát nước', 'Công trình thi công trên đường Nguyễn Hữu Cảnh', s.categories).scores.INFRA).toBeGreaterThan(0);
+  });
+});

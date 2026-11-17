@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Check, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BarChart3, Check, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, Wifi, WifiOff, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
@@ -10,7 +10,7 @@ import { api, type CollectRun, type ExportFormat, type ExportResult, type Profil
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
 
-type Tab = 'articles' | 'review' | 'ledger' | 'coverage' | 'export';
+type Tab = 'articles' | 'review' | 'coverage' | 'export';
 const ASSESS: EditorialAssessment[] = ['needs_attention', 'positive', 'neutral'];
 const ASSESS_COLOR: Record<EditorialAssessment, string> = { needs_attention: 'text-red-700 border-red-300 bg-red-50', positive: 'text-green-700 border-green-300 bg-green-50', neutral: 'text-slate-700 border-slate-300 bg-slate-50' };
 
@@ -263,6 +263,7 @@ export function App() {
     }
   };
 
+  const [saved, setSaved] = useState(0);
   const patch = async (articleId: string, p: Partial<ReviewDecision>) => {
     if (!run) return;
     // optimistic update: the control reacts immediately; reverted if the save fails
@@ -271,6 +272,7 @@ export function App() {
     try {
       const r = await api.patchReview(run.runId, articleId, p);
       setReviews((x) => ({ ...x, [articleId]: r }));
+      setSaved((n) => n + 1); // figures computed from the saved review (filter quality) refresh after the save, not before
       return true;
     } catch (e) {
       setReviews((x) => {
@@ -576,17 +578,37 @@ export function App() {
           <div className="card p-8 text-center text-slate-500">Chưa có lượt thu thập. Chọn khung giờ rồi bấm <b>Thu thập</b>. Cấu hình nguồn tin, từ khóa, địa bàn… trong <b>Cài đặt</b>.</div>
         ) : (
           <>
-            <nav className="flex flex-wrap gap-1 border-b border-slate-200">
-              {([['articles', `Bài sẵn sàng (${ready.length})`], ['review', `Cần kiểm tra (${reviewQueue.length})`], ['ledger', `Sổ ứng viên (${cands.length})`], ['coverage', 'Độ phủ & nguồn'], ['export', `Xuất báo cáo (${selected})`]] as const).map(([k, l]) => (
-                <button key={k} onClick={() => setTab(k)} className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === k ? 'border-navy-700 text-navy-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+            <nav className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/80 p-1" aria-label="Các mục">
+              {(
+                [
+                  ['articles', 'Bài sẵn sàng', ready.length, CheckCircle2, 'bg-green-600 text-white', 'text-green-700'],
+                  ['review', 'Cần kiểm tra', reviewQueue.length, AlertTriangle, reviewQueue.length ? 'bg-amber-500 text-white' : 'bg-slate-300 text-slate-700', 'text-amber-600'],
+                  ['coverage', 'Độ phủ & nguồn', null, BarChart3, '', 'text-sky-700'],
+                  ['export', 'Xuất báo cáo', selected, FileText, selected ? 'bg-navy-700 text-white' : 'bg-slate-300 text-slate-700', 'text-navy-700'],
+                ] as const
+              ).map(([k, l, n, Icon, badge, ic]) => (
+                <button
+                  key={k}
+                  onClick={() => setTab(k)}
+                  aria-current={tab === k ? 'page' : undefined}
+                  aria-label={n !== null ? `${l} (${n})` : l}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === k ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'}`}
+                >
+                  <Icon className={`h-4 w-4 ${tab === k ? ic : 'text-slate-400'}`} />
                   {l}
+                  {n !== null && (
+                    <>
+                      <span className="sr-only"> (</span>
+                      <span className={`min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-center text-xs font-bold tabular-nums ${badge}`}>{n}</span>
+                      <span className="sr-only">)</span>
+                    </>
+                  )}
                 </button>
               ))}
             </nav>
             {tab === 'articles' && <ArticleList list={ready} excluded={readyPool.filter(isOut)} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} votes={votes} />}
             {tab === 'review' && <ArticleList list={reviewQueue} excluded={reviewPool.filter(isOut)} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} reviewMode votes={votes} />}
-            {tab === 'ledger' && <Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} reviews={reviews} onPatch={patch} />}
-            {tab === 'coverage' && <Coverage run={run} cands={cands} reviewsKey={JSON.stringify(Object.values(reviews).map((x) => [x.articleId, x.relevanceLabel, x.included, x.groupId]))} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
+            {tab === 'coverage' && <Coverage ledger={<Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} reviews={reviews} onPatch={patch} />} run={run} cands={cands} reviewsKey={`${saved}`} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
             {tab === 'export' && settings && <ExportPanel run={run} arts={artById} reviews={reviews} settings={settings} onPatch={patch} onInspect={setInspect} onMerge={merge} onSplit={split} />}
           </>
         )}
@@ -1196,7 +1218,7 @@ function QualityCard({ reviewsKey }: { reviewsKey: string }) {
       <div className="mt-1 text-xs text-slate-600">
         Sẵn sàng: {t.ready.R} liên quan · {t.ready.N} không · Cần kiểm tra: {t.review.R} liên quan · {t.review.N} không · Bị loại nhưng biên tập viên đánh dấu liên quan: <b className={t.excluded.R ? 'text-red-700' : ''}>{t.excluded.R}</b>
       </div>
-      {t.labelled === 0 && <p className="mt-1 text-xs text-slate-500">Chưa có đánh giá. Bấm "✓ Liên quan / ✗ Không" ở các bài, hoặc "Thực ra liên quan?" trong Sổ ứng viên cho bài bị loại; bài được chọn vào báo cáo tự tính là liên quan.</p>}
+      {t.labelled === 0 && <p className="mt-1 text-xs text-slate-500">Chưa có đánh giá. Bấm "✓ Liên quan / ✗ Không" ở các bài, hoặc "Thực ra liên quan?" trong danh sách link (cuối mục Độ phủ & nguồn) cho bài bị loại; bài được chọn vào báo cáo tự tính là liên quan.</p>}
       {q.missed.length > 0 && (
         <details className="mt-2 text-xs" open>
           <summary className="cursor-pointer font-semibold text-red-800">Tin bị bộ lọc loại nhầm ({q.missed.length}) – dùng để chỉnh quy tắc</summary>
@@ -1307,14 +1329,14 @@ function AdapterHealthCard({ h, disabled, onRescan, onOpenSettings }: { h: Adapt
   );
 }
 
-function Coverage({ run, cands, onRetry, onOpenSettings, reviewsKey }: { run: RunInfo; cands: Candidate[]; onRetry: (b: { mode: 'failed' | 'source' | 'expand'; sourceId?: string; extraLookbackHours?: number }) => void; onOpenSettings: () => void; reviewsKey: string }) {
+function Coverage({ run, cands, onRetry, onOpenSettings, reviewsKey, ledger }: { ledger: React.ReactNode; run: RunInfo; cands: Candidate[]; onRetry: (b: { mode: 'failed' | 'source' | 'expand'; sourceId?: string; extraLookbackHours?: number }) => void; onOpenSettings: () => void; reviewsKey: string }) {
   const rec = run.reconciliation;
   return (
     <div className="space-y-3">
       <QualityCard reviewsKey={reviewsKey} />
       <div className="card flex flex-wrap items-center gap-4 p-3 text-sm">
         <div>
-          Đối soát sổ ứng viên: <b>{rec?.accounted ?? '?'} / {rec?.total ?? '?'}</b> link có trạng thái {rec?.balanced ? <CheckCircle2 className="inline h-4 w-4 text-green-600" /> : <AlertTriangle className="inline h-4 w-4 text-red-600" />}
+          Đối soát link: <b>{rec?.accounted ?? '?'} / {rec?.total ?? '?'}</b> link có trạng thái {rec?.balanced ? <CheckCircle2 className="inline h-4 w-4 text-green-600" /> : <AlertTriangle className="inline h-4 w-4 text-red-600" />}
           {rec && rec.transient > 0 && <span className="text-amber-700"> · {rec.transient} đang xử lý</span>}
         </div>
         <div>
@@ -1364,6 +1386,13 @@ function Coverage({ run, cands, onRetry, onOpenSettings, reviewsKey }: { run: Ru
           </div>
         );
       })}
+      {/* every discovered link with its state and reason: kept (no silent omission), folded away from daily work */}
+      <details className="card p-3" data-testid="all-links">
+        <summary className="cursor-pointer select-none text-sm font-semibold text-navy-700">
+          Tất cả link đã phát hiện ({cands.length}) <span className="font-normal text-slate-500">– xem lý do bị loại, đưa lại bài bị loại nhầm</span>
+        </summary>
+        <div className="mt-3">{ledger}</div>
+      </details>
     </div>
   );
 }

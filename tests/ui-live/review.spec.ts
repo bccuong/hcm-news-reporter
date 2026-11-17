@@ -314,7 +314,7 @@ test('web review is ONE for the whole team: what A selects / moves / removes on 
   await a.waitForLoadState('networkidle'); // the team review is loaded (earlier tests already changed it)
   const readyTab = (p: Page) => p.getByRole('button', { name: /^Bài sẵn sàng/ });
   const reviewTab = (p: Page) => p.getByRole('button', { name: /^Cần kiểm tra/ });
-  const n = async (l: ReturnType<typeof readyTab>) => Number(/\((\d+)\)/.exec(await l.innerText())![1]);
+  const n = async (l: ReturnType<typeof readyTab>) => Number(/\((\d+)\)/.exec((await l.getAttribute('aria-label')) ?? '')![1]);
   // A: select one ready story for the report, remove another, move one story from Cần kiểm tra
   const stories = a.locator('article');
   const t1 = (await stories.nth(0).locator('h3').innerText()).trim();
@@ -326,10 +326,10 @@ test('web review is ONE for the whole team: what A selects / moves / removes on 
   const t3 = (await a.locator('article').first().locator('h3').innerText()).trim();
   await a.locator('article').first().getByRole('button', { name: /Chuyển sang Bài sẵn sàng/ }).click();
   await expect(reviewTab(a)).toHaveText(`Cần kiểm tra (${review1 - 1})`);
-  const readyA = await readyTab(a).innerText();
-  const reviewA = await reviewTab(a).innerText();
-  const exportA = await a.getByRole('button', { name: /^Xuất báo cáo/ }).innerText();
-  const nSel = Number(/\((\d+)\)/.exec(exportA)![1]);
+  const readyA = (await readyTab(a).getAttribute("aria-label")) ?? "";
+  const reviewA = (await reviewTab(a).getAttribute("aria-label")) ?? "";
+  const exportA = (await a.getByRole('button', { name: /^Xuất báo cáo/ }).getAttribute("aria-label")) ?? "";
+  const nSel = Number(/\((\d+)\)/.exec(exportA ?? "")![1]);
 
   // B on another machine (fresh browser), not logged in: sees the same team review
   const b = await (await browser.newContext()).newPage();

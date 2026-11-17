@@ -128,12 +128,13 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
   // custom window persisted (preset) after reload
   await page.reload();
-  // ledger shows explicit reasons, nothing silently dropped
-  await page.getByRole('button', { name: /Sổ ứng viên/ }).click();
+  // 4 tabs (no separate "Sổ ứng viên"); every discovered link is still listed with its reason, folded at the end of "Độ phủ & nguồn"
+  await expect(page.getByRole('navigation', { name: 'Các mục' }).getByRole('button')).toHaveText([/^Bài sẵn sàng/, /^Cần kiểm tra/, 'Độ phủ & nguồn', /^Xuất báo cáo/]);
+  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  await expect(page.getByText(/Đối soát link: 12 \/ 12/)).toBeVisible();
+  await page.getByTestId('all-links').locator('summary').click();
   await expect(page.getByText('OUTSIDE_DATE_WINDOW').first()).toBeVisible();
   await expect(page.getByText('FETCH_403').first()).toBeVisible();
-  await page.getByRole('button', { name: /Độ phủ/ }).click();
-  await expect(page.getByText(/Đối soát sổ ứng viên: 12 \/ 12/)).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/coverage.png', fullPage: true });
   // select and export
   await page.getByRole('button', { name: /Bài sẵn sàng/ }).click();
@@ -182,8 +183,9 @@ test('Editor feedback: label ready / excluded stories → filter quality card (p
   await page.getByTestId('excluded-list').locator('summary').click();
   await expect(page.getByTestId('excluded-list')).toContainText('Khánh thành nhà ga metro');
   await expect(page.getByTestId('excluded-list')).toContainText('không liên quan');
-  // a story the filter excluded, rescued by the editor from the ledger
-  await page.getByRole('button', { name: /Sổ ứng viên/ }).click();
+  // a story the filter excluded, rescued by the editor from the list of all links
+  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  await page.getByTestId('all-links').locator('summary').click();
   const row = page.locator('tr', { hasText: 'mau-thu-ha-noi-mo-rong-duong-vanh-dai' });
   await row.getByRole('button', { name: 'Thực ra liên quan?' }).click();
   await expect(row.getByRole('button', { name: /Liên quan \(bị loại nhầm\)/ })).toBeVisible();
@@ -283,7 +285,7 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
   // counts of THIS run: wait for it to start, then to finish (until then the previous run's numbers are shown)
   await page.getByText('đang chạy', { exact: true }).waitFor({ timeout: 10_000 }).catch(() => undefined);
   await expect(page.getByText('đang chạy', { exact: true })).toHaveCount(0, { timeout: 30_000 });
-  const num = async (re: RegExp) => Number(/\((\d+)\)/.exec((await page.getByRole('button', { name: re }).innerText()))![1]);
+  const num = async (re: RegExp) => Number(/\((\d+)\)/.exec(((await page.getByRole('button', { name: re }).textContent()) ?? ''))![1]);
   const ready0 = await num(/^Bài sẵn sàng/);
   const review0 = await num(/^Cần kiểm tra/);
   expect(review0).toBeGreaterThan(0);
@@ -363,7 +365,7 @@ test('Remove ("Loại") a story from Bài sẵn sàng, restore it; bulk remove s
   await page.getByText('đang chạy', { exact: true }).waitFor({ timeout: 10_000 }).catch(() => undefined);
   await expect(page.getByText('đang chạy', { exact: true })).toHaveCount(0, { timeout: 30_000 });
   const readyTab = page.getByRole('button', { name: /^Bài sẵn sàng/ });
-  const n0 = Number(/\((\d+)\)/.exec(await readyTab.innerText())![1]);
+  const n0 = Number(/\((\d+)\)/.exec((await readyTab.textContent()) ?? '')![1]);
   expect(n0).toBeGreaterThanOrEqual(2);
   await readyTab.click();
 

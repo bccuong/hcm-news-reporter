@@ -255,7 +255,7 @@ function RulesPanel({ s, setS, sources }: { s: Settings; setS: (fn: (p: Settings
     <div>
       <Section title="Từ khóa ngành" help="Danh sách tham khảo dùng để gợi ý; quy tắc chính nằm ở Bộ quy tắc bên dưới">
         <ChipEditor values={s.keywords.topicKeywords} onChange={(v) => setKw({ topicKeywords: v })} label="Từ khóa chủ đề" />
-        <ChipEditor values={s.keywords.excludePhrases} onChange={(v) => setKw({ excludePhrases: v })} label="Cụm loại trừ trong tiêu đề" help="Bài có cụm này trong tiêu đề bị đánh dấu Không liên quan (vẫn hiện trong Sổ ứng viên kèm lý do)" />
+        <ChipEditor values={s.keywords.excludePhrases} onChange={(v) => setKw({ excludePhrases: v })} label="Cụm loại trừ trong tiêu đề" help="Bài có cụm này trong tiêu đề bị đánh dấu Không liên quan (vẫn hiện trong danh sách link (Độ phủ & nguồn) kèm lý do)" />
         <ChipEditor values={s.keywords.excludeUrlSections} onChange={(v) => setKw({ excludeUrlSections: v })} label="Chuyên mục URL loại trừ" help="Ví dụ the-thao, giai-tri" validate={(v) => (/^[a-z0-9-]+$/.test(v) ? null : 'Chỉ a-z, 0-9, dấu gạch')} />
       </Section>
       <Section title="Nhóm từ đồng nghĩa" actions={<button className="btn-ghost btn-xs" onClick={() => setKw({ synonyms: [...s.keywords.synonyms, { canonical: 'từ mới', aliases: [] }] })}><Plus className="h-3 w-3" /> Thêm nhóm</button>}>
@@ -280,7 +280,7 @@ function RulesPanel({ s, setS, sources }: { s: Settings; setS: (fn: (p: Settings
         <Toggle
           checked={s.rules.requireSectorInLead}
           onChange={(v) => setS((x) => (x ? { ...x, rules: { ...x.rules, requireSectorInLead: v } } : x))}
-          label="Tiêu đề hoặc sapo phải có từ khóa của một lĩnh vực (bài không có bị loại kèm lý do NO_SECTOR_IN_LEAD, vẫn xem được trong Sổ ứng viên)"
+          label="Tiêu đề hoặc sapo phải có từ khóa của một lĩnh vực (bài không có bị loại kèm lý do NO_SECTOR_IN_LEAD, vẫn xem được trong danh sách link (Độ phủ & nguồn))"
           help="Đo trên dữ liệu thật 15/11/2026: hàng Cần kiểm tra giảm 37 → 4 bài, không loại nhầm bài liên quan nào. Tắt nếu thấy bỏ sót."
         />
         <NumberField
@@ -375,7 +375,7 @@ function LocationPanel({ s, up }: { s: Settings; up: Up }) {
           label={`Bài không có bất kỳ dấu hiệu địa bàn ${R} nào (kể cả phường, xã, địa danh)`}
           value={s.location.noEvidencePolicy}
           onChange={(v) => up('location', { noEvidencePolicy: v })}
-          options={[['exclude_with_reason', 'Loại kèm lý do NO_HCM_EVIDENCE (xem được trong Sổ ứng viên)'], ['review', 'Đưa vào hàng Cần kiểm tra']]}
+          options={[['exclude_with_reason', 'Loại kèm lý do NO_HCM_EVIDENCE (xem được trong danh sách link (Độ phủ & nguồn))'], ['review', 'Đưa vào hàng Cần kiểm tra']]}
         />
         <NumberField
           label={`${R} không có ở tiêu đề/sapo: số địa danh ${R} tối thiểu trong thân bài để vào nhóm Sẵn sàng`}
@@ -662,7 +662,7 @@ function PerfPanel({ s, up }: { s: Settings; up: Up }) {
         onChange={(n) => up('collection', { undatedStopAfterOld: n })}
         help="Link từ trang chuyên mục sâu thường không có ngày; hệ thống đọc bài mới nhất trước. Sau số bài liên tiếp này đều cũ hơn khung giờ, các link không ngày cũ hơn được ghi “ngoài khung giờ” (lý do OLDER_THAN_CHECKED, vẫn bấm Thử lại được) thay vì tải hết. 0 = tắt."
       />
-      <p className="-mt-1 text-xs text-slate-500">Áp dụng cho mọi báo; ưu tiên tải bài có ngày trong khung giờ, mới nhất trước. Mỗi nguồn (Nguồn tin) có thể đặt giới hạn thấp hơn. Bài vượt giới hạn ghi "FETCH_LIMIT" trong Sổ ứng viên.</p>
+      <p className="-mt-1 text-xs text-slate-500">Áp dụng cho mọi báo; ưu tiên tải bài có ngày trong khung giờ, mới nhất trước. Mỗi nguồn (Nguồn tin) có thể đặt giới hạn thấp hơn. Bài vượt giới hạn ghi "FETCH_LIMIT" trong danh sách link (Độ phủ & nguồn).</p>
       <NumberField label="Tổng yêu cầu đồng thời" value={s.collection.maxConcurrentRequests} min={1} max={16} onChange={(n) => up('collection', { maxConcurrentRequests: n })} />
       <NumberField label="Yêu cầu đồng thời mỗi báo" value={s.collection.maxRequestsPerHost} min={1} max={8} onChange={(n) => up('collection', { maxRequestsPerHost: n })} help="Giữ 1–2 để lịch sự với máy chủ báo" />
       {s.collection.maxRequestsPerHost > 3 && <p className="text-xs text-amber-700">Cảnh báo: nhiều kết nối/báo có thể khiến báo chặn IP.</p>}

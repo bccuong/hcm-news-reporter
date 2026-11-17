@@ -133,8 +133,12 @@ export const SECTOR_CODES: CategoryCode[] = ['LAND', 'BUILD', 'INFRA', 'TRAFFIC'
  * Defaults filled in when a stored configuration predates these fields (so saved web/local configs get them too;
  * the user can change them in Cài đặt › Lĩnh vực).
  */
+/** the department's two industries: "Hạ tầng kỹ thuật", "Đầu tư công", "Chính sách, pháp quy" count only for them (user 17/11/2026) */
+export const INDUSTRY_CODES: CategoryCode[] = ['BUILD', 'TRAFFIC'];
 export const CATEGORY_FIELD_DEFAULTS: Partial<Record<CategoryCode, { requiresCategories?: CategoryCode[]; excludePhrases?: string[] }>> = {
-  POLICY: { requiresCategories: SECTOR_CODES },
+  POLICY: { requiresCategories: INDUSTRY_CODES },
+  INFRA: { requiresCategories: INDUSTRY_CODES },
+  INVEST: { requiresCategories: INDUSTRY_CODES },
   TRAFFIC: { excludePhrases: ['yêu cầu', 'nhu cầu', 'cung cầu', 'toàn cầu', 'cầu nguyện', 'cầu thị', 'cầu lông', 'cầu cứu', 'cầu hôn', 'cầu mong', 'cầu môn', 'khẩn cầu', 'mưu cầu'] },
   BUILD: { excludePhrases: ['xây dựng Đảng', 'xây dựng chính quyền', 'xây dựng hệ thống chính trị', 'xây dựng gia đình', 'xây dựng văn hóa', 'xây dựng lực lượng', 'xây dựng pháp luật', 'xây dựng nông thôn mới', 'xây dựng đội ngũ', 'xây dựng thương hiệu', 'an toàn giao thông'] },
 };
@@ -143,6 +147,11 @@ export const KEYWORD_UPGRADES: Record<number, Partial<Record<CategoryCode, strin
   2: { TRAFFIC: ['đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển'] },
 };
 export const KEYWORDS_REV = 2;
+/** "requiresCategories" revisions applied once to saved configurations (afterwards Cài đặt › Lĩnh vực decides) */
+export const REQUIRES_UPGRADES: Record<number, Partial<Record<CategoryCode, CategoryCode[]>>> = {
+  2: { POLICY: INDUSTRY_CODES, INFRA: INDUSTRY_CODES, INVEST: INDUSTRY_CODES },
+};
+export const REQUIRES_REV = 2;
 export const CategorySchema = z.preprocess(
   (v) => {
     if (!v || typeof v !== 'object') return v;
@@ -159,7 +168,10 @@ export const CategorySchema = z.preprocess(
         keywords = [...keywords, ...extra.filter((k) => !keywords!.some((x) => x.toLowerCase() === k.toLowerCase()))];
       }
     }
-    return { ...o, ...(keywords ? { keywords } : {}), keywordsRev: KEYWORDS_REV, requiresCategories: o.requiresCategories ?? d.requiresCategories ?? [], excludePhrases: o.excludePhrases ?? d.excludePhrases ?? [] };
+    let requires = (o.requiresCategories as CategoryCode[] | undefined) ?? d.requiresCategories ?? [];
+    const reqRev = typeof o.requiresRev === 'number' ? o.requiresRev : 1;
+    for (const [r, set] of Object.entries(REQUIRES_UPGRADES)) if (reqRev < Number(r) && set[o.code as CategoryCode]) requires = set[o.code as CategoryCode]!;
+    return { ...o, ...(keywords ? { keywords } : {}), keywordsRev: KEYWORDS_REV, requiresCategories: requires, requiresRev: REQUIRES_REV, excludePhrases: o.excludePhrases ?? d.excludePhrases ?? [] };
   },
   z.object({
     code: CategoryCode,
@@ -173,6 +185,8 @@ export const CategorySchema = z.preprocess(
     excludePhrases: z.array(z.string()).default([]),
     /** keyword-list revision (see KEYWORD_UPGRADES) */
     keywordsRev: z.number().int().default(KEYWORDS_REV),
+    /** requiresCategories revision (see REQUIRES_UPGRADES) */
+    requiresRev: z.number().int().default(REQUIRES_REV),
   }),
 );
 export type Category = z.infer<typeof CategorySchema>;

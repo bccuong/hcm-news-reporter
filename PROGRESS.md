@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13y – fixed collection times replace the hourly run; 2026-11-17)
+## ▶ RESUME HERE (session 13z – 4 tabs, Hạ tầng/Đầu tư công/Chính sách only for Xây dựng or Giao thông; 2026-11-17)
+- Tabs: "Sổ ứng viên" removed from the main tabs; every discovered link (state + reason, "Thực ra liên quan?") stays at the end of "Độ phủ & nguồn" (folded, data-testid all-links) – no silent omission. Tabs restyled (segmented bar, icons, colour count badges; aria-label "Bài sẵn sàng (21)").
+- Classifier: INFRA, INVEST, POLICY requiresCategories = BUILD/TRAFFIC (INDUSTRY_CODES); saved configs upgraded once (requiresRev 2), later choices kept. Real data replay (271 + 284 stories): ready 21→21 and 9→7 (2 off-topic removed), no on-topic story lost; applies to periods as they are (re)collected.
+- Filter-quality card now refreshes after a save completes (was refreshing on the optimistic update).
+- Tests: vitest 143/143, playwright 11/11, live 8/8.
+
+## (history) Session 13y – fixed collection times replace the hourly run; 2026-11-17)
 - User: instead of "Tự động thu thập mỗi giờ", two ticks per profile: 08:00 → 17:00 yesterday..08:00 today; 16:30 → 08:01..16:30 today.
 - src/domain/schedule.ts (slots, windows, due check, next run) shared by worker + web. Worker cron now every 5 min (wrangler.toml); outside 08:02–10:00 / 16:32–18:30 it returns without KV; inside it dispatches pages.yml with trigger=schedule, slot, from/to, profile – one profile per tick, once per profile/day (KV sched:<pid>:<slot>:<date>, TTL 3 days), busy server → next tick retries. POST /auto now {slot, enabled}. Profile.schedule {morning, afternoon}; old hourly autoCollect no longer used by the cron.
 - pages.yml: run-name "Thu thập theo lịch 08:00: …", input slot → cloud-collect --scheduled (note "Thu thập theo lịch 08:00", index day.scheduled); web run chip "lịch 08:00"; banner shows the ticked times.
