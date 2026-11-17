@@ -15,7 +15,7 @@ import { parseWebsitesTxt } from '../domain/defaults.js';
 import { computeRelevanceQuality } from '../domain/quality.js';
 import { judgeRelevance } from '../domain/relevance.js';
 import { evaluateRule, validateRule } from '../domain/rules.js';
-import { DEFAULT_PROFILE_ID, RuleNodeSchema, SourceSchema, type Article, type Settings, type Source } from '../domain/schemas.js';
+import { DEFAULT_PROFILE_ID, EXCLUDE_REASONS, RuleNodeSchema, SourceSchema, type Article, type Settings, type Source } from '../domain/schemas.js';
 import { lastCompletedWindow, validateWindow, vnDate, type ReportWindow } from '../domain/timeWindow.js';
 import { checkPublicUrl } from '../domain/url.js';
 import { assembleStories } from '../reports/assemble.js';
@@ -285,25 +285,37 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
       return [];
     }
   };
-  app.get('/api/suggestions', async () => {
-    const pid = (await stores.getProfiles()).activeId;
-    const settings = await stores.getSettings(pid);
+  /** the stories judged on this computer: ✓/✗ votes first, else the review decision (Loại as duplicate/minor does not count) */
+  const localJudged = async (pid: string) => {
     const runs = (await stores.listRuns()).filter((r) => (r.profileId ?? DEFAULT_PROFILE_ID) === pid).slice(0, 14);
     const articles = new Map<string, Article>();
     const judged = new Map<string, Judged>();
     let votes = 0, decisions = 0;
     for (const r of runs) {
-      for (const a of await stores.getArticles(r.runId)) if (!articles.has(a.id)) articles.set(a.id, a);
+      for (const x of await stores.getArticles(r.runId)) if (!articles.has(x.id)) articles.set(x.id, x);
       for (const [id, d] of Object.entries(await stores.getReview(r.runId))) {
         if (judged.get(id)?.why === 'label') continue;
         if (d.relevanceLabel) (judged.set(id, { relevant: d.relevanceLabel === 'relevant', why: 'label', category: d.primaryCategory ?? null }), votes++);
         else if (judged.has(id)) continue;
-        else if (d.excludedByEditor) (judged.set(id, { relevant: false, why: 'decision' }), decisions++);
-        else if (d.included || d.promotedToReady || d.groupId) (judged.set(id, { relevant: true, why: 'decision' }), decisions++);
+        else if (d.excludedByEditor) {
+          if (d.excludeReason !== 'duplicate' && d.excludeReason !== 'minor') (judged.set(id, { relevant: false, why: 'decision' }), decisions++);
+        } else if (d.included || d.promotedToReady || d.groupId) (judged.set(id, { relevant: true, why: 'decision' }), decisions++);
       }
     }
+    return { articles, judged, votes, decisions };
+  };
+  app.get('/api/suggestions', async () => {
+    const pid = (await stores.getProfiles()).activeId;
+    const settings = await stores.getSettings(pid);
+    const { articles, judged, votes, decisions } = await localJudged(pid);
     const items = suggestFilter([...articles.values()], judged, settings, { dismissed: await readDismissed(pid) });
     return { generatedAt: new Date().toISOString(), basis: { stories: articles.size, votes, decisions }, items };
+  });
+  /** judged stories for the impact preview in Cài đặt (computed in the page) */
+  app.get('/api/golden', async () => {
+    const { articles, judged } = await localJudged((await stores.getProfiles()).activeId);
+    const list = [...judged.keys()].map((id) => articles.get(id)).filter((x): x is Article => !!x);
+    return { articles: list.map((x) => ({ id: x.id, sourceId: x.sourceId, sourceName: x.sourceName, title: x.title, sapo: x.sapo, bodyText: x.bodyText })), judged: Object.fromEntries(list.map((x) => [x.id, judged.get(x.id)!.relevant])) };
   });
   app.post('/api/suggestions/dismiss', async (req) => {
     const b = z.object({ id: z.string().regex(/^(include|exclude_title):.{1,80}$/) }).parse(req.body);
@@ -369,6 +381,7 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
         reviewNote: z.string().max(1000).optional(),
         promotedToReady: z.boolean().optional(),
         excludedByEditor: z.boolean().optional(),
+        excludeReason: z.enum(EXCLUDE_REASONS).nullable().optional(),
       })
       .parse(req.body);
     return stores.patchReview(p.id, p.articleId, patch as never);

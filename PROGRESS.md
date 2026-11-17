@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14e – daily filter suggestions learned from the team review; 2026-11-17)
+## ▶ RESUME HERE (session 14f – "Vì sao?", Loại with a reason, impact preview, Hỏi nhanh; 2026-11-17)
+- "Vì sao?" button on every story (App.tsx MatchWhy): places, rule keywords + where (tiêu đề/sapo/nội dung), sector scores (ignored ones struck), assessment words, the review reason – from the evidence stored at collection, read-only.
+- Loại asks why (RemoveButton menu): Lạc đề / Ngoài địa bàn / Trùng tin / Không quan trọng → ReviewDecision.excludeReason (schemas, local PATCH, worker cleanReviewPatch, web shared fields); "Đã loại" shows it, restore clears it. Suggestions/golden truth: only off-topic / other area (or no reason) count as not relevant.
+- Impact preview: the save bar scores the draft vs the saved settings on the judged stories – precision / recall before → after and the stories that change (Settings.tsx ImpactLine). Data: worker GET/POST /golden (nightly with the suggestions, EXPORT_TOKEN), local GET /api/golden; computed in the page (suggest.ts impactOf/scoreFilter).
+- Hỏi nhanh: up to 8 not-yet-judged stories the filter is least sure about per period (suggest.ts uncertainStories: near misses on the city, minimum sector score, city only in the body, other province but strong sector) → card above the sources + one-at-a-time dialog (✓ / ✗ / Bỏ qua); answers are team votes.
+- Tests: vitest 152/152, playwright 12/12 (Vì sao?, reason menu), live 9/9 (impact line 50% → 100%, changed story listed).
+
+## (history) Session 14e – daily filter suggestions learned from the team review; 2026-11-17)
 - src/domain/suggest.ts: ground truth = majority ✓/✗ votes, else review decisions (chosen / moved to Sẵn sàng / merged = relevant, "Loại" = not relevant). Candidate 2–4 word phrases (no function words at the ends, no digits/city, not cutting a frequent compound such as "xây dựng") from wrongly filtered stories; each replayed on the stories it touches. Kept only if it fixes ≥ 2 judged stories and breaks none; one per story; side effects on unjudged stories reported. Kinds: include (rule word + a sector – reviewers' sector, else the body's, else Xây dựng) and exclude_title.
 - Nightly: .github/workflows/labels.yml runs scripts/suggest-filter.ts after the label pull (continue-on-error) → worker POST /suggestions (EXPORT_TOKEN), GET /suggestions (public, minus dismissed), POST /suggestions/dismiss (reviewer, whole team). Local app: GET /api/suggestions computes on demand from the local reviews; dismissals in data/suggestions-dismissed-<profile>.json.
 - Settings › Gợi ý cải thiện (basic, count badge): cards with what they fix, side effects, examples, sector picker, Áp dụng (draft → Lưu) / Bỏ qua.

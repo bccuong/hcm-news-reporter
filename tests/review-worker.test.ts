@@ -338,6 +338,16 @@ describe('shared review worker', () => {
       expect(after.dismissed).toEqual(['exclude_title:giá vàng']);
       expect(after.items.map((i) => i.id)).toEqual(['include:lối đi bộ']);
     });
+    it('judged stories for the impact preview: published by the nightly job (token), public read', async () => {
+      const e = env();
+      const pub = (token: string) => handle(new Request('https://w.example/golden', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'hcm', articles: [{ id: 'a_1', title: 'T' }], judged: { a_1: true } }) }), e);
+      expect((await pub('wrong')).status).toBe(401);
+      expect((await pub('export-secret')).status).toBe(200);
+      const g = (await (await handle(new Request('https://w.example/golden?profile=hcm', { headers: { origin: ORIGIN } }), e)).json()) as { articles: unknown[]; judged: Record<string, boolean> };
+      expect(g.articles).toHaveLength(1);
+      expect(g.judged).toEqual({ a_1: true });
+      expect(((await (await handle(new Request('https://w.example/golden?profile=ha-noi'), e)).json()) as { articles: unknown[] }).articles).toEqual([]);
+    });
     it('saved runs removed by a reviewer: hidden for everyone (public read), restorable, reviewers only', async () => {
       const e = env();
       const hide = (body: unknown, code = 'HCM-test-1234') => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);

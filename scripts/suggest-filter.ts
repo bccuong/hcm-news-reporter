@@ -54,10 +54,13 @@ for (const prof of profiles) {
     }
     // the team's decisions of this period (same id as the web: run_live_<key>)
     const period = `run_live_${(d.key ?? d.reportDate).replace(/[^0-9a-z]/gi, '')}`;
-    const rv = await get<{ reviews: Record<string, { included?: boolean; promotedToReady?: boolean; excludedByEditor?: boolean; groupId?: string | null }> }>(`${API}/review?profile=${prof.id}&period=${period}`);
+    const rv = await get<{ reviews: Record<string, { included?: boolean; promotedToReady?: boolean; excludedByEditor?: boolean; excludeReason?: string | null; groupId?: string | null }> }>(`${API}/review?profile=${prof.id}&period=${period}`);
     for (const [id, r] of Object.entries(rv?.reviews ?? {})) {
       if (judged.has(id)) continue;
-      if (r.excludedByEditor) (judged.set(id, { relevant: false, why: 'decision' }), decisions++);
+      if (r.excludedByEditor) {
+        // a duplicate or a minor story is still on topic: only off-topic / other area teach the filter
+        if (r.excludeReason !== 'duplicate' && r.excludeReason !== 'minor') (judged.set(id, { relevant: false, why: 'decision' }), decisions++);
+      }
       else if (r.included || r.promotedToReady || r.groupId) (judged.set(id, { relevant: true, why: 'decision' }), decisions++);
     }
   }
@@ -82,4 +85,12 @@ for (const prof of profiles) {
   const body = { profile: prof.id, generatedAt: new Date().toISOString(), basis: { stories: articles.size, votes: voted, decisions }, items };
   const r = await fetch(`${API}/suggestions`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
   console.log(`[${prof.id}] published: HTTP ${r.status}`);
+  // the judged stories, for the impact preview when settings are edited (only what the filter reads)
+  const gold = [...judged.keys()].map((id) => articles.get(id)).filter((a): a is Article => !!a)
+    .map((a) => ({ id: a.id, sourceId: a.sourceId, sourceName: a.sourceName, title: a.title, sapo: a.sapo, bodyText: (a.bodyText ?? '').slice(0, 8000) }));
+  const g = await fetch(`${API}/golden`, {
+    method: 'POST', headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ profile: prof.id, generatedAt: new Date().toISOString(), articles: gold, judged: Object.fromEntries([...judged].filter(([id]) => articles.has(id)).map(([id, j]) => [id, j.relevant])) }),
+  });
+  console.log(`[${prof.id}] judged stories for the impact preview: ${gold.length} (HTTP ${g.status})`);
 }

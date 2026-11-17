@@ -62,3 +62,29 @@ describe('daily filter suggestions (learned from the team review, applied by an 
     expect(suggestFilter([good], new Map([[good.id, { relevant: true, why: 'label' }]]), s)).toEqual([]);
   });
 });
+
+describe('impact preview and "Hỏi nhanh"', async () => {
+  const { impactOf, uncertainStories, withTitleExclusion } = await import('../src/domain/suggest.js');
+  it('impact of a settings change on the judged stories: scores before/after and the stories that change', () => {
+    const good = art('Khởi công xây dựng cầu Thủ Thiêm 4 ở TP.HCM', 'Công trình cầu Thủ Thiêm 4 được khởi công, xây dựng tại TP.HCM.');
+    const off = art('Khởi công xây dựng trung tâm thương mại mới ở TP.HCM', 'Công trình trung tâm thương mại được khởi công xây dựng tại phường An Khánh, TP.HCM.');
+    const judged = new Map<string, Judged>([[good.id, { relevant: true, why: 'label' }], [off.id, { relevant: false, why: 'label' }]]);
+    const better = impactOf([good, off], judged, s, withTitleExclusion(s, 'trung tâm thương mại'));
+    expect(better.before.precision).toBe(0.5);
+    expect(better.after.precision).toBe(1);
+    expect(better.changes).toEqual([expect.objectContaining({ id: off.id, before: 'relevant', after: 'irrelevant', better: true })]);
+    const worse = impactOf([good, off], judged, s, withTitleExclusion(s, 'Thủ Thiêm'));
+    expect(worse.after.recall).toBe(0);
+    expect(worse.changes[0]).toMatchObject({ id: good.id, better: false });
+  });
+  it('"Hỏi nhanh" picks the near misses first and skips stories already judged', () => {
+    const near = art('Cử tri phường Bình Thạnh TP.HCM kiến nghị lát lại lối đi bộ', 'Người dân phường Bình Thạnh phản ánh lối đi bộ xuống cấp.', 'Công trình thi công chậm, công trường bừa bộn, nhà thầu chưa hoàn trả mặt bằng.');
+    const clear = art('Khởi công xây dựng cầu Thủ Thiêm 4 ở TP.HCM', 'Công trình cầu Thủ Thiêm 4 được khởi công, xây dựng tại TP.HCM.');
+    const far = art('Giá vàng hôm nay tăng mạnh', 'Giá vàng miếng tăng 1 triệu đồng mỗi lượng.');
+    const picked = uncertainStories([clear, far, near], s, new Set());
+    expect(picked[0]!.article.id).toBe(near.id);
+    expect(picked[0]!.why).toMatch(/sát nút/);
+    expect(picked.some((x) => x.article.id === far.id)).toBe(false);
+    expect(uncertainStories([near], s, new Set([near.id]))).toEqual([]);
+  });
+});

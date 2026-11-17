@@ -434,7 +434,7 @@ const REVIEW_BOOL = ['included', 'promotedToReady', 'excludedByEditor', 'timeVer
 const REVIEW_TEXT: Record<string, number> = { title: 300, summary: 2000, shortLabel: 80, proposal: 600 };
 export interface SharedDecision {
   articleId: string; included?: boolean; order?: number; promotedToReady?: boolean; excludedByEditor?: boolean; timeVerifiedManually?: boolean;
-  extractionMarkedComplete?: boolean; groupId?: string | null; primaryImageUrl?: string | null; primaryCategory?: string | null; assessment?: string | null;
+  extractionMarkedComplete?: boolean; groupId?: string | null; primaryImageUrl?: string | null; primaryCategory?: string | null; assessment?: string | null; excludeReason?: string | null;
   title?: string; summary?: string; shortLabel?: string; proposal?: string; by: string; at: string;
 }
 /** only known fields with valid values; null clears a nullable field */
@@ -448,6 +448,7 @@ export function cleanReviewPatch(raw: unknown): Partial<SharedDecision> | null {
   if (o.primaryImageUrl === null || (typeof o.primaryImageUrl === 'string' && /^https:\/\//.test(o.primaryImageUrl) && o.primaryImageUrl.length <= 600)) out.primaryImageUrl = o.primaryImageUrl;
   if (o.primaryCategory === null || (typeof o.primaryCategory === 'string' && (CATEGORIES as readonly string[]).includes(o.primaryCategory))) out.primaryCategory = o.primaryCategory;
   if (o.assessment === null || (typeof o.assessment === 'string' && (ASSESSMENTS as readonly string[]).includes(o.assessment))) out.assessment = o.assessment;
+  if (o.excludeReason === null || (typeof o.excludeReason === 'string' && ['off_topic', 'other_area', 'duplicate', 'minor'].includes(o.excludeReason))) out.excludeReason = o.excludeReason;
   for (const [k, max] of Object.entries(REVIEW_TEXT)) if (typeof o[k] === 'string') out[k] = (o[k] as string).slice(0, max);
   return out as Partial<SharedDecision>;
 }
@@ -592,6 +593,24 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     const prev = await readSuggestions(env, pid);
     await env.REVIEWS.put(`sug:${pid}`, JSON.stringify({ generatedAt: String(b!.generatedAt ?? new Date().toISOString()), basis: b!.basis ?? null, items, dismissed: prev.dismissed }));
     return json({ ok: true, count: items.length }, 200, {});
+  }
+
+  // judged stories ("bộ bài chuẩn") for the impact preview in Cài đặt: published nightly with the suggestions, public read
+  // (only published news text + the team's verdicts, no names)
+  if (url.pathname === '/golden' && req.method === 'GET') {
+    const pid = url.searchParams.get('profile') ?? DEFAULT_PROFILE;
+    if (!PROFILE_ID.test(pid)) return json({ error: 'INVALID_PROFILE' }, 400, h);
+    const v = await env.REVIEWS.get(`gold:${pid}`);
+    return new Response(v ?? JSON.stringify({ articles: [], judged: {} }), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', ...h } });
+  }
+  if (url.pathname === '/golden' && req.method === 'POST') {
+    if (!safeEqual((req.headers.get('authorization') ?? '').trim(), `Bearer ${(env.EXPORT_TOKEN ?? '').trim()}`)) return json({ error: 'UNAUTHORIZED' }, 401, {});
+    if (Number(req.headers.get('content-length') ?? 0) > 8_000_000) return json({ error: 'TOO_LARGE' }, 413, {});
+    const b = (await req.json().catch(() => null)) as { profile?: string; articles?: unknown; judged?: unknown; generatedAt?: string } | null;
+    const pid = String(b?.profile ?? DEFAULT_PROFILE);
+    if (!PROFILE_ID.test(pid) || !Array.isArray(b?.articles) || !b?.judged || typeof b.judged !== 'object') return json({ error: 'INVALID' }, 400, {});
+    await env.REVIEWS.put(`gold:${pid}`, JSON.stringify({ generatedAt: b.generatedAt ?? new Date().toISOString(), articles: b.articles, judged: b.judged }));
+    return json({ ok: true, count: (b.articles as unknown[]).length }, 200, {});
   }
 
   // nightly export for the GitHub Action (bearer token, never sent to browsers)

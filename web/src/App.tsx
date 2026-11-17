@@ -1,11 +1,12 @@
-import { AlarmClock, AlertTriangle, History, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
+import { AlarmClock, AlertTriangle, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
-import type { AdapterHealth, Article, Candidate, CategoryCode, EditorialAssessment, ReviewDecision, Settings, Source } from '../../src/domain/schemas';
+import { EXCLUDE_REASONS, EXCLUDE_REASON_LABEL, type AdapterHealth, type Article, type Candidate, type CategoryCode, type EditorialAssessment, type ExcludeReason, type ReviewDecision, type Settings, type Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
 import { nextRun, SCHEDULE_SLOTS, type ScheduleSlot } from '../../src/domain/schedule';
+import { uncertainStories, type UncertainStory } from '../../src/domain/suggest';
 import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { STATE_LABEL, StateChip, useToast } from './ui';
@@ -433,6 +434,27 @@ export function App() {
   const ready = readyPool.filter((a) => !isOut(a));
   const reviewQueue = reviewPool.filter((a) => !isOut(a));
   const selected = Object.values(reviews).filter((r) => r.included).length;
+  // "Hỏi nhanh": stories nobody judged yet that the filter is least sure about
+  const askable = useMemo(() => {
+    if (!settings || !arts.length) return [] as UncertainStory[];
+    const skip = new Set(arts.filter((a) => { const r = reviews[a.id]; return !!(r?.relevanceLabel || r?.included || r?.excludedByEditor || r?.promotedToReady || r?.groupId || votes[a.id]?.length); }).map((a) => a.id));
+    try {
+      return uncertainStories(arts, settings, skip, 8);
+    } catch {
+      return [];
+    }
+  }, [arts, settings, reviews, votes]);
+  const [asking, setAsking] = useState<UncertainStory[] | null>(null);
+  const startAsk = () => {
+    if (api.shared && !api.shared.session()) return setLoginOpen(true);
+    setAsking(askable);
+  };
+  const answerAsk = async (x: UncertainStory, relevant: boolean) => {
+    if (api.shared && !api.shared.session()) return (setLoginOpen(true), false);
+    // ✗ on a ready story also takes it out of the list (as "✗ Không" does); ✓ on an excluded story records the miss
+    await guardedPatch(x.article.id, relevant ? { relevanceLabel: 'relevant' } : x.status === 'relevant' ? { relevanceLabel: 'irrelevant', included: false, excludedByEditor: true, excludeReason: 'off_topic' } : { relevanceLabel: 'irrelevant' });
+    return true;
+  };
 
   return (
     <div className="min-h-screen">
@@ -552,6 +574,18 @@ export function App() {
             <span className="text-xs text-blue-700">thường 5–10 phút, trang tự mở kết quả</span>
           </section>
         )}
+
+        {run && askable.length > 0 && (
+          <section className="card animate-in flex flex-wrap items-center gap-3 border-amber-200 bg-gradient-to-r from-amber-50 to-white px-4 py-2.5" data-testid="quick-ask">
+            <HelpCircle className="h-5 w-5 text-amber-500" />
+            <span className="text-sm">
+              <b>Hỏi nhanh</b> · {askable.length} bài máy chưa chắc chắn <span className="text-slate-500">– chấm giúp vài giây để bộ lọc chính xác hơn mỗi ngày</span>
+            </span>
+            <span className="flex-1" />
+            <button className="btn rounded-full border-amber-500 bg-amber-500 px-4 text-white hover:bg-amber-600" onClick={startAsk}>Bắt đầu</button>
+          </section>
+        )}
+        {asking && <QuickAsk items={asking} onAnswer={answerAsk} onClose={() => setAsking(null)} />}
 
         {/* sources of the viewed period: one tile per publisher */}
         {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')} />}
@@ -798,6 +832,160 @@ function DateTime24({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
+/**
+ * "Vì sao?" – what the story matched when it was collected (the evidence stored with the article): places, the rule's
+ * keywords and where they were found, sector scores, the words behind the suggested assessment, and – for stories that
+ * are not ready – the reason. Read-only; nothing is recomputed.
+ */
+function MatchWhy({ a, reason }: { a: Article; reason?: string | null }) {
+  const ev = a.relevance?.evidence ?? [];
+  const places = new Map<string, string>();
+  for (const e of [...(a.location?.evidence ?? []), ...ev]) {
+    const m = /^Địa bàn: "(.+?)"(?: – (.*))?$/.exec(e);
+    if (m && !places.has(m[1]!)) places.set(m[1]!, m[2] ?? '');
+  }
+  const kw = new Map<string, Set<string>>();
+  for (const e of ev) {
+    const m = /^Từ khóa "(.+?)" \((.+?)\)$/.exec(e);
+    if (m) kw.set(m[1]!, (kw.get(m[1]!) ?? new Set()).add(m[2]!));
+  }
+  const sectors = (a.classificationEvidence ?? []).map((e) => {
+    const off = /không tính/.test(e);
+    const m = /^(.+?): (.+?)(?: \(điểm (\d+)\))?$/.exec(e);
+    return { label: m?.[1] ?? e, words: off ? e.replace(/^.+?: /, '') : (m?.[2] ?? ''), score: Number(m?.[3] ?? 0), off };
+  });
+  const asm = (a.assessmentEvidence ?? []).filter((e) => !e.startsWith('Độ tin cậy'));
+  const confidence = (a.assessmentEvidence ?? []).find((e) => e.startsWith('Độ tin cậy'));
+  const other = ev.filter((e) => !/^(Địa bàn|Từ khóa|Bộ quy tắc)/.test(e));
+  const where = (f: Set<string>) => [...f].map((x) => (x === 'tiêu đề' ? 'tiêu đề' : x === 'sapo' ? 'sapo' : 'nội dung')).join(', ');
+  const row = (icon: string, label: string, body: React.ReactNode) => (
+    <div className="flex gap-2">
+      <span className="w-24 shrink-0 text-slate-500">{icon} {label}</span>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">{body}</div>
+    </div>
+  );
+  return (
+    <div className="animate-in mt-2 space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs" data-testid="match-why">
+      {reason && row('⚠', 'Lý do', <span className="text-amber-800">{reason}</span>)}
+      {row('📍', 'Địa bàn', places.size ? [...places].map(([p, snip]) => <span key={p} className="chip border-green-200 bg-white text-green-800" title={snip}>{p}</span>) : <span className="text-slate-500">không thấy địa danh</span>)}
+      {row('🔑', 'Từ khóa', kw.size ? [...kw].map(([k, f]) => (
+        <span key={k} className={`chip bg-white ${f.has('tiêu đề') ? 'border-teal-300 font-semibold text-teal-800' : 'border-slate-200 text-slate-700'}`} title={`Có trong: ${where(f)}`}>
+          {k} <span className="font-normal text-slate-400">· {where(f)}</span>
+        </span>
+      )) : <span className="text-slate-500">không khớp từ khóa nào</span>)}
+      {sectors.length > 0 && row('🏷', 'Lĩnh vực', sectors.map((x, i) => (
+        <span key={i} className={`chip bg-white ${x.off ? 'border-slate-200 text-slate-400 line-through' : i === 0 ? 'border-navy-200 font-semibold text-navy-800' : 'border-slate-200 text-slate-600'}`} title={x.off ? x.words : `Từ khóa: ${x.words}`}>
+          {x.label}{x.score ? ` · ${x.score} điểm` : ''}
+        </span>
+      )))}
+      {asm.length > 0 && row('⚖', 'Tính chất', <>
+        {asm.map((e) => <span key={e} className="chip border-slate-200 bg-white text-slate-700">{e}</span>)}
+        {confidence && <span className="text-slate-400">{confidence.replace('Độ tin cậy: ', 'độ tin cậy ')}</span>}
+      </>)}
+      {other.length > 0 && row('ℹ', 'Khác', <span className="text-slate-600">{other.join(' · ')}</span>)}
+      <p className="text-[10px] text-slate-400">Theo cài đặt lúc thu thập bài. Từ khóa đậm = có trong tiêu đề (3 điểm), còn lại = sapo/nội dung (1 điểm).</p>
+    </div>
+  );
+}
+
+/**
+ * "Loại" asks why in one click: off-topic / other area teach the filter; a duplicate or a minor story is on topic, so it
+ * does not count against the filter (daily suggestions).
+ */
+function RemoveButton({ title, onRemove, className = '' }: { title: string; onRemove: (reason: ExcludeReason) => void; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => (document.removeEventListener('mousedown', close), document.removeEventListener('keydown', close));
+  }, [open]);
+  const ICON: Record<ExcludeReason, string> = { off_topic: '🚫', other_area: '📍', duplicate: '⧉', minor: '↓' };
+  return (
+    <div className={`relative ${className}`} ref={box}>
+      <button className="btn-ghost btn-xs text-red-700" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-haspopup="menu" title="Loại bài này khỏi danh sách và báo cáo (khôi phục ở mục Đã loại bên dưới)" aria-label={`Loại bài: ${title}`}>
+        <Trash2 className="h-3.5 w-3.5" /> Loại
+      </button>
+      {open && (
+        <div className="animate-in absolute bottom-full right-0 z-20 mb-1 w-48 rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg" role="menu" aria-label="Lý do loại">
+          <div className="px-3 pb-1 pt-0.5 text-[11px] text-slate-500">Vì sao loại bài này?</div>
+          {EXCLUDE_REASONS.map((k) => (
+            <button key={k} role="menuitem" className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50" onClick={() => (setOpen(false), onRemove(k))}>
+              <span className="w-4 text-center" aria-hidden="true">{ICON[k]}</span> {EXCLUDE_REASON_LABEL[k]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "Hỏi nhanh": one story at a time, the ones the filter is least sure about; every answer is a ✓/✗ vote of the team */
+function QuickAsk({ items, onAnswer, onClose }: { items: UncertainStory[]; onAnswer: (x: UncertainStory, relevant: boolean) => Promise<boolean>; onClose: () => void }) {
+  const [i, setI] = useState(0);
+  const [done, setDone] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const x = items[i];
+  const answer = async (rel: boolean) => {
+    if (!x) return;
+    setBusy(true);
+    try {
+      if (await onAnswer(x, rel)) setDone((n) => n + 1);
+      else return onClose();
+    } finally {
+      setBusy(false);
+    }
+    setI((n) => n + 1);
+  };
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', k);
+    return () => document.removeEventListener('keydown', k);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3" role="dialog" aria-modal="true" aria-label="Hỏi nhanh">
+      <div className="animate-in w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="mb-3 flex items-center gap-2">
+          <HelpCircle className="h-5 w-5 text-amber-500" />
+          <h2 className="font-bold text-navy-800">Hỏi nhanh</h2>
+          <span className="text-xs text-slate-500">{Math.min(i + 1, items.length)} / {items.length}</span>
+          <div className="ml-2 h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${(Math.min(i, items.length) / items.length) * 100}%` }} /></div>
+          <button className="btn-ghost rounded-full px-2" onClick={onClose} aria-label="Đóng hỏi nhanh"><X className="h-4 w-4" /></button>
+        </div>
+        {x ? (
+          <div key={x.article.id} className="animate-in" data-testid="quick-ask-story">
+            <p className="mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-900">🤔 {x.why}</p>
+            <div className="text-xs text-slate-500">{x.article.sourceName} · {x.article.publishedAt ? formatVn(x.article.publishedAt) : 'chưa rõ giờ đăng'} · hiện: <b>{x.status === 'relevant' ? 'Sẵn sàng' : x.status === 'review' ? 'Cần kiểm tra' : 'đã loại'}</b></div>
+            <h3 className="mt-1 text-lg font-semibold leading-snug">{x.article.title}</h3>
+            <p className="mt-1 line-clamp-4 text-sm text-slate-600">{x.article.sapo}</p>
+            <a className="mt-1 inline-flex items-center gap-1 text-xs text-teal-700 hover:underline" href={x.article.canonicalUrl ?? x.article.originalUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" /> Đọc bài gốc</a>
+            <MatchWhy a={x.article} />
+            <p className="mt-3 text-sm font-medium text-slate-700">Bài này có thuộc phạm vi điểm tin không?</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button className="btn rounded-full border-green-600 bg-green-600 px-5 text-white hover:bg-green-700" disabled={busy} onClick={() => answer(true)}>✓ Liên quan</button>
+              <button className="btn rounded-full border-red-600 bg-red-600 px-5 text-white hover:bg-red-700" disabled={busy} onClick={() => answer(false)}>✗ Không</button>
+              <button className="btn-ghost rounded-full" disabled={busy} onClick={() => setI((n) => n + 1)}>Bỏ qua</button>
+            </div>
+          </div>
+        ) : (
+          <div className="animate-in flex flex-col items-center gap-2 py-6 text-center">
+            <CheckCircle2 className="h-10 w-10 text-green-500" />
+            <p className="font-semibold text-slate-800">Cảm ơn! Đã chấm {done} bài.</p>
+            <p className="max-w-sm text-xs text-slate-500">Các phiếu này được dùng để gợi ý cải thiện bộ lọc mỗi đêm (Cài đặt › Gợi ý cải thiện).</p>
+            <button className="btn-primary mt-2 rounded-full" onClick={onClose}>Xong</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** "17:00 16/11" from an ISO time (Vietnam) */
 function shortVn(iso: string): string {
   const [hm, d] = formatVn(iso).split(' ');
@@ -928,6 +1116,9 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
   const [cat, setCat] = useState<string>('all');
   // newest first by default (stories without a publication time last); the editor can flip it
   const [newestFirst, setNewestFirst] = useState(true);
+  // "Vì sao?" panels open (several at once)
+  const [why, setWhy] = useState<Set<string>>(new Set());
+  const toggleWhy = (id: string) => setWhy((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const ts = (a: Article) => (a.publishedAt ? Date.parse(a.publishedAt) : NaN);
   const shown = list
     .filter((a) => (!q || a.title.toLowerCase().includes(q.toLowerCase())) && (cat === 'all' || (reviews[a.id]?.primaryCategory ?? a.primaryCategory) === cat))
@@ -1058,6 +1249,9 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                 <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-slate-100 pt-2" data-testid="story-actions">
                   <button className="btn-ghost btn-xs" onClick={() => onInspect(a.id)}><FileText className="h-3.5 w-3.5" /> Xem chi tiết</button>
                   <a className="btn-ghost btn-xs" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Bài gốc</a>
+                  <button className={`btn-ghost btn-xs ${why.has(a.id) ? 'border-amber-300 bg-amber-50 text-amber-900' : ''}`} onClick={() => toggleWhy(a.id)} aria-expanded={why.has(a.id)} aria-label={`Vì sao bài này được lấy: ${a.title}`} title="Bài khớp tiêu chí nào: địa bàn, từ khóa, lĩnh vực, tính chất">
+                    <Lightbulb className="h-3.5 w-3.5" /> Vì sao?
+                  </button>
                   <RelevanceButtons r={r} onPatch={(p) => onPatch(a.id, p)} title={a.title} votes={votes?.[a.id]} />
                   {reviewMode && (
                     <button className="btn-teal btn-xs" onClick={() => onPatch(a.id, { promotedToReady: true })} title="Chuyển bài này sang Bài sẵn sàng" aria-label={`Chuyển sang Bài sẵn sàng: ${a.title}`}>
@@ -1074,10 +1268,9 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                       duyệt chung: {r.sharedBy}{r.sharedAt ? ` · ${formatVn(r.sharedAt)}` : ''}
                     </span>
                   )}
-                  <button className={`btn-ghost btn-xs text-red-700 ${r?.sharedBy ? '' : 'ml-auto'}`} onClick={() => onPatch(a.id, { excludedByEditor: true, included: false })} title="Loại bài này khỏi danh sách và báo cáo (khôi phục ở mục Đã loại bên dưới)" aria-label={`Loại bài: ${a.title}`}>
-                    <Trash2 className="h-3.5 w-3.5" /> Loại
-                  </button>
+                  <RemoveButton className={r?.sharedBy ? '' : 'ml-auto'} title={a.title} onRemove={(reason) => onPatch(a.id, { excludedByEditor: true, included: false, excludeReason: reason })} />
                 </div>
+                {why.has(a.id) && <MatchWhy a={a} reason={reviewMode ? c?.reasonDetail : null} />}
               </div>
             </article>
           );
@@ -1092,7 +1285,8 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                 <span className="text-xs text-slate-500">{a.sourceName}</span>
                 <span className="min-w-0 flex-1 truncate">{reviews[a.id]?.title ?? a.title}</span>
                 {reviews[a.id]?.relevanceLabel === 'irrelevant' && <span className="chip border-red-300 bg-red-50 text-red-800">không liên quan</span>}
-                <button className="btn-ghost btn-xs" onClick={() => onPatch(a.id, reviews[a.id]?.relevanceLabel === 'irrelevant' ? { excludedByEditor: false, relevanceLabel: null } : { excludedByEditor: false })} aria-label={`Khôi phục: ${a.title}`}>
+                {reviews[a.id]?.excludeReason && <span className="chip border-slate-300 bg-slate-50 text-slate-700">{EXCLUDE_REASON_LABEL[reviews[a.id]!.excludeReason!]}</span>}
+                <button className="btn-ghost btn-xs" onClick={() => onPatch(a.id, reviews[a.id]?.relevanceLabel === 'irrelevant' ? { excludedByEditor: false, excludeReason: null, relevanceLabel: null } : { excludedByEditor: false, excludeReason: null })} aria-label={`Khôi phục: ${a.title}`}>
                   <Undo2 className="h-3.5 w-3.5" /> Khôi phục
                 </button>
               </div>

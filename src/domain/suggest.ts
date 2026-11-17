@@ -8,6 +8,7 @@
  *   include       – add the phrase to the words of the active rule: keeps relevant stories that were excluded
  *   exclude_title – drop stories whose title contains the phrase: removes off-topic stories from "Bài sẵn sàng"
  */
+import { classifyCategory } from './classify.js';
 import { annotateArticle } from './relevance.js';
 import type { Article, CategoryCode, RuleGroup, RuleNode, RuleTerm, Settings } from './schemas.js';
 import { findWord, normText } from './text.js';
@@ -177,4 +178,67 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
   out.push(...consider('include', missed, lead));
   out.push(...consider('exclude_title', wrong, (a) => a.title));
   return out.slice(0, opts.max ?? 12);
+}
+
+/* ---------- impact preview of a settings change on the judged stories ("bộ bài chuẩn") ---------- */
+export interface FilterScore { judged: number; precision: number | null; recall: number | null; ready: number; readyRight: number; relevant: number; kept: number }
+export function scoreFilter(articles: Article[], judged: Map<string, Judged>, s: Settings, statuses?: Map<string, Status>): FilterScore {
+  let ready = 0, readyRight = 0, relevant = 0, kept = 0, n = 0;
+  for (const a of articles) {
+    const j = judged.get(a.id);
+    if (!j) continue;
+    n++;
+    const st = statuses?.get(a.id) ?? statusOf(a, s);
+    if (st === 'relevant') (ready++, j.relevant && readyRight++);
+    if (j.relevant) (relevant++, st !== 'irrelevant' && kept++);
+  }
+  return { judged: n, precision: ready ? readyRight / ready : null, recall: relevant ? kept / relevant : null, ready, readyRight, relevant, kept };
+}
+export interface ImpactChange { id: string; title: string; relevant: boolean; before: Status; after: Status; better: boolean }
+export function impactOf(articles: Article[], judged: Map<string, Judged>, before: Settings, after: Settings) {
+  const sb = new Map<string, Status>(), sa = new Map<string, Status>();
+  const changes: ImpactChange[] = [];
+  for (const a of articles) {
+    const j = judged.get(a.id);
+    if (!j) continue;
+    const b = statusOf(a, before), x = statusOf(a, after);
+    sb.set(a.id, b);
+    sa.set(a.id, x);
+    if (b === x) continue;
+    // better: a relevant story kept / moved up, an off-topic one moved out of "Sẵn sàng"
+    const rank = (st: Status) => (st === 'relevant' ? 2 : st === 'review' ? 1 : 0);
+    changes.push({ id: a.id, title: a.title, relevant: j.relevant, before: b, after: x, better: j.relevant ? rank(x) > rank(b) : rank(x) < rank(b) });
+  }
+  return { before: scoreFilter(articles, judged, before, sb), after: scoreFilter(articles, judged, after, sa), changes };
+}
+
+/* ---------- "Hỏi nhanh": the stories the filter is least sure about (one vote on these teaches the most) ---------- */
+export interface UncertainStory { article: Article; status: Status; why: string; weight: number }
+export function uncertainStories(articles: Article[], s: Settings, skip: Set<string>, max = 8): UncertainStory[] {
+  const out: UncertainStory[] = [];
+  for (const a of articles) {
+    if (skip.has(a.id)) continue;
+    const r = annotateArticle(a, s);
+    const v = r._verdict;
+    const body = `${a.sapo ?? ''}\n${a.bodyText ?? ''}`;
+    const best = Math.max(0, ...Object.values(classifyCategory(a.title, body, s.categories, a.sapo ?? '').scores).map((x) => x ?? 0));
+    const st = v.status as Status;
+    const hcm = v.location.status === 'hcm';
+    let why = '', weight = 0;
+    if (st === 'irrelevant' && hcm && ['NO_SECTOR_IN_LEAD', 'TOPIC_RULE_NOT_MATCHED', 'EXCLUDED_PHRASE'].includes(v.reasonCode ?? '') && best >= 2) {
+      why = v.reasonCode === 'EXCLUDED_PHRASE' ? 'Bị loại vì một cụm loại trừ, nhưng đúng địa bàn và có từ của ngành' : 'Bị loại sát nút: đúng địa bàn, thân bài có từ của ngành nhưng tiêu đề/sapo không có';
+      weight = 0.9 + Math.min(best, 10) / 100;
+    } else if (st === 'relevant' && best <= 3) {
+      why = 'Vào Sẵn sàng với điểm lĩnh vực vừa đủ ngưỡng';
+      weight = 0.7;
+    } else if (st === 'relevant' && hcm && !v.location.leadHit) {
+      why = 'Vào Sẵn sàng nhưng TP.HCM chỉ có trong thân bài';
+      weight = 0.6;
+    } else if (st === 'irrelevant' && v.reasonCode === 'NOT_GEOGRAPHICALLY_RELEVANT' && best >= 6) {
+      why = 'Bị loại vì nêu địa phương khác, nhưng rất đúng ngành';
+      weight = 0.5;
+    }
+    if (weight) out.push({ article: a, status: st, why, weight });
+  }
+  return out.sort((x, y) => y.weight - x.weight).slice(0, max);
 }

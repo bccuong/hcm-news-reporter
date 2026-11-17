@@ -2,11 +2,11 @@ import { CheckCircle, ChevronDown, ChevronRight, Download, FileUp, History, Info
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings } from '../../src/domain/defaults';
 import { detectLocation } from '../../src/domain/location';
-import { SettingsSchema, withoutSkillNote, type CategoryCode, type LocationArea, type RuleGroup, type RuleNode, type RuleTerm, type Settings, type Source } from '../../src/domain/schemas';
+import { SettingsSchema, withoutSkillNote, type Article, type CategoryCode, type LocationArea, type RuleGroup, type RuleNode, type RuleTerm, type Settings, type Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
 import { uid } from '../../src/domain/text';
-import { api, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption } from './api';
-import { applySuggestion, type FilterSuggestion } from '../../src/domain/suggest';
+import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption } from './api';
+import { applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
 import { RuleBuilder } from './RuleBuilder';
 import { SourcesPanel } from './SourcesPanel';
 import { ChipEditor, Field, NumberField, Section, Select, Toggle, useToast } from './ui';
@@ -79,6 +79,21 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
   const dirtyS = !!s && !!saved && JSON.stringify(s) !== JSON.stringify(saved.s);
   const dirtySrc = !!saved && JSON.stringify(src) !== JSON.stringify(saved.src);
   const validation = useMemo(() => (s ? SettingsSchema.safeParse(s) : null), [s]);
+  // impact preview: the draft vs the saved settings on the stories the team judged ("bộ bài chuẩn")
+  const [gold, setGold] = useState<GoldenSet | null>(null);
+  const [impact, setImpact] = useState<ReturnType<typeof impactOf> | null>(null);
+  useEffect(() => {
+    if (dirtyS && !gold && api.golden) api.golden().then(setGold).catch(() => setGold({ articles: [], judged: {} }));
+  }, [dirtyS, gold]);
+  useEffect(() => {
+    if (!dirtyS || !gold?.articles.length || !saved || !validation?.success) return setImpact(null);
+    const timer = setTimeout(() => {
+      const arts = gold.articles.map((x) => ({ ...x, contentSections: [], imageCandidates: [] }) as unknown as Article);
+      const judged = new Map(Object.entries(gold.judged).map(([k, v]) => [k, { relevant: v, why: 'label' } as Judged]));
+      setImpact(impactOf(arts, judged, SettingsSchema.parse(saved.s), validation.data));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [dirtyS, gold, saved, validation]);
   if (!open) return null;
 
   /** open another profile: it becomes the active one, the page reloads and Settings reopen on the same section */
@@ -250,9 +265,10 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
           </main>
         </div>
         {(dirtyS || dirtySrc) && (
-          <div className="animate-in flex items-center gap-3 border-t border-amber-200 bg-amber-50 px-4 py-2.5" data-testid="save-bar">
+          <div className="animate-in flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-amber-200 bg-amber-50 px-4 py-2.5" data-testid="save-bar">
             <span className="h-2 w-2 rounded-full bg-amber-500" />
             <span className="text-sm font-medium text-amber-900">Có thay đổi chưa lưu</span>
+            {impact && <ImpactLine impact={impact} />}
             <span className="flex-1" />
             <button className="btn-ghost rounded-full" onClick={() => saved && (setS(structuredClone(saved.s)), setSrc(structuredClone(saved.src)))}>
               Hủy thay đổi
@@ -787,6 +803,44 @@ function ReportPanel({ s, up, advanced }: { s: Settings; up: Up; advanced: boole
       </>
       )}
     </div>
+  );
+}
+
+/* ---------------- Impact preview (save bar) ---------------- */
+const STATUS_VN: Record<string, string> = { relevant: 'Sẵn sàng', review: 'Cần kiểm tra', irrelevant: 'Loại' };
+function ImpactLine({ impact }: { impact: ReturnType<typeof impactOf> }) {
+  const pct = (x: number | null) => (x == null ? '–' : `${Math.round(x * 100)}%`);
+  const cmp = (a: number | null, b: number | null) => (a == null || b == null || Math.round(a * 100) === Math.round(b * 100) ? 'text-slate-600' : b > a ? 'text-green-700' : 'text-red-700');
+  const { before: b, after: a, changes } = impact;
+  const worse = changes.some((c) => !c.better);
+  return (
+    <details className="relative" data-testid="impact">
+      <summary className={`flex cursor-pointer list-none flex-wrap items-center gap-x-2 rounded-full px-2 py-0.5 text-xs hover:bg-amber-100 ${worse ? 'text-red-800' : 'text-slate-700'}`} title="Đo trên các bài nhóm đã chấm – bấm để xem bài thay đổi">
+        {changes.length === 0 ? (
+          <span>Không đổi kết quả trên {b.judged} bài đã chấm</span>
+        ) : (
+          <>
+            <span>Trên {b.judged} bài đã chấm:</span>
+            <span>đúng chủ đề <b className={cmp(b.precision, a.precision)}>{pct(b.precision)} → {pct(a.precision)}</b></span>
+            <span>· không bỏ sót <b className={cmp(b.recall, a.recall)}>{pct(b.recall)} → {pct(a.recall)}</b></span>
+            <span className="underline">· {changes.length} bài thay đổi</span>
+          </>
+        )}
+      </summary>
+      {changes.length > 0 && (
+        <div className="animate-in absolute bottom-full left-0 z-20 mb-2 max-h-72 w-[min(32rem,90vw)] overflow-auto rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-lg">
+          {changes.map((c) => (
+            <div key={c.id} className="flex items-start gap-2 border-b border-slate-100 py-1.5 last:border-0">
+              <span className={`mt-0.5 shrink-0 font-bold ${c.better ? 'text-green-600' : 'text-red-600'}`}>{c.better ? '✓' : '✗'}</span>
+              <span className="min-w-0 flex-1">
+                {c.title}
+                <span className="block text-slate-500">nhóm chấm: {c.relevant ? 'liên quan' : 'không liên quan'} · {STATUS_VN[c.before]} → <b>{STATUS_VN[c.after]}</b></span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </details>
   );
 }
 

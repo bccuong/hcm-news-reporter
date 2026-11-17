@@ -343,6 +343,15 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
   await bar.getByLabel('Chọn tất cả bài đang hiển thị').click(); // saved story by story, the box follows
   await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText(`Xuất báo cáo (${ready0})`);
   await expect(bar).toContainText(`đã chọn ${ready0}`);
+  // "Vì sao?": what the story matched when it was collected (place, keywords and where, sector)
+  const firstStory = page.locator('article').first();
+  await firstStory.getByRole('button', { name: /^Vì sao bài này được lấy:/ }).click();
+  const why = firstStory.getByTestId('match-why');
+  await expect(why).toContainText('Địa bàn');
+  await expect(why).toContainText('Từ khóa');
+  await expect(why).toContainText(/tiêu đề|nội dung|sapo/);
+  await firstStory.getByRole('button', { name: /^Vì sao bài này được lấy:/ }).click();
+  await expect(firstStory.getByTestId('match-why')).toHaveCount(0);
   await page.screenshot({ path: 'docs/screenshots/bulk-select.png' });
   // ↑ / ↓ in "Xuất báo cáo" move a story inside its group, also right after "Chọn tất cả" (all selected in the same instant)
   await page.getByRole('button', { name: /^Xuất báo cáo/ }).click();
@@ -407,6 +416,8 @@ test('Remove ("Loại") a story from Bài sẵn sàng, restore it; bulk remove s
   await story.getByLabel(/Chọn bài/).check();
   await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText('Xuất báo cáo (1)');
   await story.getByRole('button', { name: /^Loại bài:/ }).click();
+  await expect(story.getByRole('menu', { name: 'Lý do loại' })).toContainText('Ngoài địa bàn');
+  await story.getByRole('menuitem', { name: /Lạc đề/ }).click(); // one click for the reason
   await expect(readyTab).toHaveText(`Bài sẵn sàng (${n0 - 1})`);
   await expect(page.getByRole('button', { name: /^Xuất báo cáo/ })).toHaveText('Xuất báo cáo (0)');
   const out = page.getByTestId('excluded-list');

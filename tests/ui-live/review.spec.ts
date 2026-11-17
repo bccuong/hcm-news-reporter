@@ -326,6 +326,7 @@ test('web review is ONE for the whole team: what A selects / moves / removes on 
   const t2 = (await stories.nth(1).locator('h3').innerText()).trim();
   await stories.nth(0).getByLabel(/^Chọn bài/).check();
   await a.locator('article').filter({ hasText: t2 }).getByRole('button', { name: /^Loại bài:/ }).click();
+  await a.locator('article').filter({ hasText: t2 }).getByRole('menuitem', { name: /Trùng tin/ }).click();
   await reviewTab(a).click();
   const review1 = await n(reviewTab(a));
   const t3 = (await a.locator('article').first().locator('h3').innerText()).trim();
@@ -468,6 +469,25 @@ test('daily suggestions: published by the nightly job, applied (then saved) or d
   const cfg = (await (await request.get('http://127.0.0.1:5181/config')).json()).config;
   expect(JSON.stringify(cfg.settings.rules)).toContain('lối đi bộ');
   expect(cfg.settings.categories.find((c: { code: string }) => c.code === 'INFRA').keywords).toContain('lối đi bộ');
+  // impact preview: the draft is scored on the stories the team judged, before saving
+  const gold = { profile: 'hcm', articles: [
+    { id: 'a_gold00000001', sourceId: 'fixture-a', sourceName: 'A', title: 'Khởi công xây dựng cầu Thủ Thiêm 4 ở TP.HCM', sapo: 'Công trình cầu Thủ Thiêm 4 được khởi công, xây dựng tại TP.HCM.', bodyText: '' },
+    { id: 'a_gold00000002', sourceId: 'fixture-a', sourceName: 'A', title: 'Khởi công xây dựng trung tâm thương mại mới ở TP.HCM', sapo: 'Công trình trung tâm thương mại được khởi công xây dựng tại phường An Khánh, TP.HCM.', bodyText: '' },
+  ], judged: { a_gold00000001: true, a_gold00000002: false } };
+  expect((await request.post('http://127.0.0.1:5181/golden', { headers: { authorization: 'Bearer test-export-token' }, data: gold })).status()).toBe(200);
+  await page.reload();
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  await dlg.getByRole('button', { name: 'Từ khóa & quy tắc', exact: true }).click();
+  const ex = dlg.getByTestId('basic-exclude').locator('input');
+  await ex.fill('trung tâm thương mại');
+  await ex.press('Enter');
+  const imp = dlg.getByTestId('impact');
+  await expect(imp).toContainText('Trên 2 bài đã chấm');
+  await expect(imp).toContainText('đúng chủ đề 50% → 100%');
+  await imp.locator('summary').click();
+  await expect(imp).toContainText('Khởi công xây dựng trung tâm thương mại mới ở TP.HCM');
+  await dlg.getByRole('button', { name: 'Hủy thay đổi' }).click();
+  await expect(dlg.getByTestId('save-bar')).toHaveCount(0);
   // dismiss the second one: gone for everyone
   await dlg.getByRole('button', { name: /^Gợi ý cải thiện/ }).click();
   await dlg.getByTestId('suggestion').filter({ hasText: 'trung tâm thương mại' }).getByRole('button', { name: 'Bỏ qua' }).click();

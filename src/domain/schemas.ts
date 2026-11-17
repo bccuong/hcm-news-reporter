@@ -614,12 +614,18 @@ export interface ReviewDecision {
   promotedToReady?: boolean;
   /** editor removed the story from the lists ("Loại"; restorable under "Đã loại") – never deletes collected data */
   excludedByEditor?: boolean;
+  /** why it was removed: only off-topic / other area teach the filter (a duplicate or minor story is on topic) */
+  excludeReason?: ExcludeReason | null;
   /** web: who last changed the team's shared decision and when (read-only, from the review worker) */
   sharedBy?: string;
   sharedAt?: string;
   updatedAt: string;
   changes: Array<{ at: string; field: string; from: unknown; to: unknown }>;
 }
+
+export const EXCLUDE_REASONS = ['off_topic', 'other_area', 'duplicate', 'minor'] as const;
+export type ExcludeReason = (typeof EXCLUDE_REASONS)[number];
+export const EXCLUDE_REASON_LABEL: Record<ExcludeReason, string> = { off_topic: 'Lạc đề', other_area: 'Ngoài địa bàn', duplicate: 'Trùng tin', minor: 'Không quan trọng' };
 
 export interface AdapterHealth {
   status: 'ok' | 'degraded' | 'unknown';
