@@ -7,7 +7,15 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 13z – 4 tabs, Hạ tầng/Đầu tư công/Chính sách only for Xây dựng or Giao thông; 2026-11-17)
+## ▶ RESUME HERE (session 14a – minimal, icon-led web UI; 2026-11-17)
+- User: lines still wrapped; wants a minimal, professional, mostly visual UI that non-technical people understand.
+- Top bar on one line: logo + title (settings subtitle), profile pill with map pin, status dot (live/demo/offline, full sentence in title + sr-only, testid live-banner), avatar chip for the reviewer with logout icon, icon buttons for login/settings (aria-labels kept). Long banner removed.
+- Window card: rounded preset pills, compact window chip "17:00 16/11 → 08:00 17/11" (testid window-range) opening the date/time editors on demand (always open on Tùy chỉnh), saved-runs pill with history icon, Thu thập. Timezone text removed (tooltip). z-20 so the run list is never covered.
+- Automatic strip: switches 08:00 / 16:30 (real checkboxes underneath), "Tiếp: 16:30 17/11", server dot. Metrics row removed (counts are on the tabs; link/duplicate/error totals in Độ phủ & nguồn).
+- Motion: fade-up on appearing cards (fill backwards, no stacking context left), hover lift on source tiles, pulsing live dot; reduced-motion respected. Page background slate-50, rounded-xl cards.
+- Tests: vitest 143/143, playwright 11/11, live 8/8. Screenshots checked at 1280 px and 390 px.
+
+## (history) Session 13z – 4 tabs, Hạ tầng/Đầu tư công/Chính sách only for Xây dựng or Giao thông; 2026-11-17)
 - Tabs: "Sổ ứng viên" removed from the main tabs; every discovered link (state + reason, "Thực ra liên quan?") stays at the end of "Độ phủ & nguồn" (folded, data-testid all-links) – no silent omission. Tabs restyled (segmented bar, icons, colour count badges; aria-label "Bài sẵn sàng (21)").
 - Classifier: INFRA, INVEST, POLICY requiresCategories = BUILD/TRAFFIC (INDUSTRY_CODES); saved configs upgraded once (requiresRev 2), later choices kept. Real data replay (271 + 284 stories): ready 21→21 and 9→7 (2 off-topic removed), no on-topic story lost; applies to periods as they are (re)collected.
 - Filter-quality card now refreshes after a save completes (was refreshing on the optimistic update).

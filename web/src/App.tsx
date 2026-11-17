@@ -439,10 +439,9 @@ export function App() {
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-navy-700 to-teal-600 text-sm font-bold text-white shadow-sm">ĐT</div>
-          <div className="hidden min-w-0 md:block">
-            <h1 className="text-[15px] font-bold leading-tight text-navy-800">Điểm tin báo chí</h1>
-            <p className="truncate text-xs text-slate-500" data-testid="app-subtitle">{settings?.report.subtitle ?? ''}</p>
-          </div>
+          <h1 className="hidden max-w-[22rem] truncate text-[15px] font-bold text-navy-800 md:block" data-testid="app-subtitle" title={settings?.report.subtitle ?? ''}>
+            {settings?.report.subtitle || 'Điểm tin báo chí'}
+          </h1>
           {profiles && (
             <div className="relative ml-1 shrink-0" title="Địa bàn (cấu hình) – tạo mới/sao chép trong Cài đặt">
               <MapPin className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-teal-600" />
@@ -860,7 +859,7 @@ function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { r
   const tag = cur && runTag(cur);
   return (
     <div className="relative" ref={box}>
-      <button type="button" className="flex w-64 max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-left text-sm transition hover:border-teal-400" aria-label="Lượt đã lưu" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="run-picker" title="Lượt đã lưu">
+      <button type="button" className="flex max-w-full items-center gap-2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-3 py-1.5 text-left text-sm transition hover:border-teal-400" aria-label="Lượt đã lưu" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="run-picker" title="Lượt đã lưu">
         <History className="h-4 w-4 shrink-0 text-teal-600" />
         <span className="truncate font-medium tabular-nums">{cur ? runLabel(cur) : 'Chọn lượt…'}</span>
         {tag && <span className={`chip shrink-0 truncate ${tag.tone}`}>{tag.text}</span>}
@@ -1685,7 +1684,7 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
         ))}
       </div>
       <span className="text-xs text-slate-500" data-testid="auto-info" title={next ? 'Dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại' : 'Chỉ thu thập khi có người bấm Thu thập'}>
-        {next ? <>Tiếp: <b className="text-slate-700">{next.slot.at} {new Date(next.at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit' })}</b></> : 'Đang tắt'}
+        {next ? <>Tiếp: <b className="text-slate-700">{next.slot.at} {next.at.slice(8, 10)}/{next.at.slice(5, 7)}</b></> : 'Đang tắt'}
       </span>
       <span className="flex-1" />
       {run ? (
