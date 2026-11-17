@@ -525,9 +525,10 @@ test('Hỏi nhanh: an answer moves on at once (save in the background), every vo
     expect(Date.now() - t0).toBeLessThan(700);
   }
   await dlg.getByRole('button', { name: 'Xong' }).click();
-  // the card stays: more stories to ask, or "đã chấm hết" – never just gone
-  await expect(card).toBeVisible();
-  await expect(card).toHaveAttribute('data-state', /ready|done/);
+  // the round is over: the card says so (no next 8 stories), then closes by itself
+  await expect(card).toHaveAttribute('data-state', 'done');
+  await expect(card).toContainText('đã chấm xong');
+  await expect(card).toBeHidden({ timeout: 8000 });
   // all votes reach the worker (sent one after another in the background)
   await expect.poll(async () => {
     const days = ['2026-11-08', '2026-11-09'];

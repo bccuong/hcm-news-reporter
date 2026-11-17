@@ -494,23 +494,35 @@ export function App() {
   const selected = Object.values(reviews).filter((r) => r.included).length;
   // "Hỏi nhanh": stories nobody judged yet that the filter is least sure about
   // the filter is replayed ONCE per period (when the page is idle), not after every answer: answering only removes stories
+  // A period asks ONE round of at most 8 stories, fixed when computed: answering them does not bring the next 8 (the card
+  // would never close). When the round is done the card says so for a few seconds, then hides (user, 17/11/2026).
   const [uncertain, setUncertain] = useState<UncertainStory[] | null>(null);
+  const [askSkipped, setAskSkipped] = useState<Set<string>>(new Set());
+  const [askHidden, setAskHidden] = useState(false);
+  const judgedRef = useRef<(id: string) => boolean>(() => false);
+  judgedRef.current = (id: string) => { const r = reviews[id]; return !!(r?.relevanceLabel || r?.included || r?.excludedByEditor || r?.promotedToReady || r?.groupId || votes[id]?.length); };
   useEffect(() => {
     setUncertain(null);
+    setAskSkipped(new Set());
+    setAskHidden(false);
     if (!settings || !arts.length) return;
     const timer = setTimeout(() => {
       try {
-        setUncertain(uncertainStories(arts, settings, new Set(), 40));
+        setUncertain(uncertainStories(arts, settings, new Set(), 40).filter((x) => !judgedRef.current(x.article.id)).slice(0, 8));
       } catch {
         setUncertain([]);
       }
     }, 300);
     return () => clearTimeout(timer);
   }, [arts, settings]);
-  const askable = useMemo(() => {
-    const judged = (id: string) => { const r = reviews[id]; return !!(r?.relevanceLabel || r?.included || r?.excludedByEditor || r?.promotedToReady || r?.groupId || votes[id]?.length); };
-    return (uncertain ?? []).filter((x) => !judged(x.article.id)).slice(0, 8);
-  }, [uncertain, reviews, votes]);
+  const askable = useMemo(() => (uncertain ?? []).filter((x) => !judgedRef.current(x.article.id) && !askSkipped.has(x.article.id)), [uncertain, reviews, votes, askSkipped]);
+  // nothing (left) to ask: show "done" briefly, then hide the card
+  const askDone = uncertain !== null && askable.length === 0;
+  useEffect(() => {
+    if (!askDone) return;
+    const t = setTimeout(() => setAskHidden(true), 4000);
+    return () => clearTimeout(t);
+  }, [askDone]);
   const [asking, setAsking] = useState<UncertainStory[] | null>(null);
   const startAsk = () => {
     if (api.shared && !api.shared.session()) return setLoginOpen(true);
@@ -644,7 +656,7 @@ export function App() {
         )}
 
         {/* always visible for a period: looking / N stories to ask / all done – it never just disappears */}
-        {run && arts.length > 0 && (
+        {run && arts.length > 0 && !(askDone && askHidden) && !asking && (
           <section className={`card animate-in flex flex-wrap items-center gap-3 px-4 py-2.5 ${askable.length ? 'border-amber-200 bg-gradient-to-r from-amber-50 to-white' : ''}`} data-testid="quick-ask" data-state={uncertain === null ? 'loading' : askable.length ? 'ready' : 'done'}>
             {uncertain === null ? (
               <>
@@ -663,12 +675,12 @@ export function App() {
             ) : (
               <>
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
-                <span className="text-sm text-slate-600"><b className="text-slate-700">Hỏi nhanh</b> · đã chấm hết bài cần hỏi của kỳ này – cảm ơn!</span>
+                <span className="text-sm text-slate-600"><b className="text-slate-700">Hỏi nhanh</b> · {uncertain?.length ? 'đã chấm xong kỳ này – cảm ơn!' : 'kỳ này không có bài cần hỏi'}</span>
               </>
             )}
           </section>
         )}
-        {asking && <QuickAsk items={asking} onAnswer={answerAsk} onClose={() => setAsking(null)} />}
+        {asking && <QuickAsk items={asking} onAnswer={answerAsk} onSkip={(x) => setAskSkipped((s) => new Set(s).add(x.article.id))} onClose={() => setAsking(null)} />}
 
         {/* sources of the viewed period: one tile per publisher */}
         {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')} />}
@@ -1008,7 +1020,7 @@ function RemoveButton({ title, onRemove, className = '' }: { title: string; onRe
 }
 
 /** "Hỏi nhanh": one story at a time, the ones the filter is least sure about; every answer is a ✓/✗ vote of the team */
-function QuickAsk({ items, onAnswer, onClose }: { items: UncertainStory[]; onAnswer: (x: UncertainStory, relevant: boolean) => boolean; onClose: () => void }) {
+function QuickAsk({ items, onAnswer, onSkip, onClose }: { items: UncertainStory[]; onAnswer: (x: UncertainStory, relevant: boolean) => boolean; onSkip: (x: UncertainStory) => void; onClose: () => void }) {
   const [i, setI] = useState(0);
   const [done, setDone] = useState(0);
   const busy = false;
@@ -1048,7 +1060,7 @@ function QuickAsk({ items, onAnswer, onClose }: { items: UncertainStory[]; onAns
             <div className="mt-2 flex flex-wrap gap-2">
               <button className="btn rounded-full border-green-600 bg-green-600 px-5 text-white hover:bg-green-700" disabled={busy} onClick={() => answer(true)}>✓ Liên quan</button>
               <button className="btn rounded-full border-red-600 bg-red-600 px-5 text-white hover:bg-red-700" disabled={busy} onClick={() => answer(false)}>✗ Không</button>
-              <button className="btn-ghost rounded-full" disabled={busy} onClick={() => setI((n) => n + 1)}>Bỏ qua</button>
+              <button className="btn-ghost rounded-full" disabled={busy} onClick={() => { if (x) onSkip(x); setI((n) => n + 1); }}>Bỏ qua</button>
             </div>
           </div>
         ) : (

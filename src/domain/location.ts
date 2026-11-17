@@ -9,6 +9,10 @@ export interface LocationResult {
   leadHit?: boolean;
   /** number of distinct HCM areas matched anywhere */
   distinct?: number;
+  /** another province / region named in the TITLE (not only in the sapo) */
+  othersInTitle?: string[];
+  /** a connected area (Vành đai 3, sân bay Long Thành…) is named in the title or sapo */
+  connectedLead?: boolean;
 }
 
 /**
@@ -36,7 +40,16 @@ function detectLocationInner(rawTitle: string, rawBody: string, loc: Settings['l
   let score = 0;
   let connected = false;
   let leadHit = false;
+  let cityLead = false;
+  let connectedLead = false;
   let distinct = 0;
+  // ward names repeat across provinces since the 2025 mergers: "phường Xuân Hòa (tỉnh Phú Thọ)" is not the city's
+  const othersNorm = loc.otherProvinces.filter(Boolean).map((p) => normText(p));
+  const ntext = normText(text);
+  const belongsElsewhere = (at: number, len: number) => {
+    const after = ntext.slice(at + len, at + len + 40).replace(/^[\s,(–-]+/, '').replace(/^(tỉnh|thành phố|tp\.?)\s+/, '');
+    return othersNorm.some((p) => after.startsWith(p));
+  };
 
   for (const area of loc.areas) {
     const names = [area.name, ...area.aliases];
@@ -47,12 +60,18 @@ function detectLocationInner(rawTitle: string, rawBody: string, loc: Settings['l
           : [n];
       for (const f of forms) {
         const idx = findWord(text, f);
+        if (idx >= 0 && area.kind !== 'city' && belongsElsewhere(idx, f.length)) continue;
         if (idx >= 0) {
           const weight = area.kind === 'city' ? 3 : area.kind === 'connected_area' ? 1 : 2;
-          if (area.kind === 'connected_area') connected = true;
-          else {
+          if (area.kind === 'connected_area') {
+            connected = true;
+            if (findWord(leadText, f) >= 0) connectedLead = true;
+          } else {
             distinct++;
-            if (findWord(leadText, f) >= 0) leadHit = true;
+            if (findWord(leadText, f) >= 0) {
+              leadHit = true;
+              if (area.kind === 'city') cityLead = true;
+            }
           }
           score += weight;
           const inTitle = findWord(title, f) >= 0;
@@ -65,11 +84,19 @@ function detectLocationInner(rawTitle: string, rawBody: string, loc: Settings['l
   }
 
   const others: string[] = [];
+  const othersInTitle: string[] = [];
   for (const p of loc.otherProvinces) {
+    if (!p) continue;
+    if (findWord(title, p) >= 0) othersInTitle.push(p);
     if (findWord(title, p) >= 0 || findWord(lead, p) >= 0) others.push(p);
   }
 
-  const extra = { leadHit, distinct };
+  const extra = { leadHit, distinct, othersInTitle, connectedLead };
+  // the TITLE names another province and the city itself is not in the title/sapo: a ward/landmark of the same name
+  // in the lead does not make it the city's story ("Phú Thọ: Khởi công … tại phường Xuân Hòa")
+  if (othersInTitle.length && !cityLead) {
+    return { status: 'other_province', evidence: [...evidence, `Tiêu đề nêu địa phương khác: ${othersInTitle.join(', ')} – tên ${loc.regionName ?? 'TP.HCM'} không có ở tiêu đề/sapo`], score, ...extra, leadHit: false };
+  }
   // the title is about another province/region and the city is not in the title/sapo → another area, even if the body mentions the city
   if (others.length && !leadHit) {
     return { status: 'other_province', evidence: [...evidence, `Tiêu đề/sapo nêu địa phương khác: ${others.join(', ')} – ${loc.regionName ?? 'TP.HCM'} không có ở tiêu đề/sapo`], score, ...extra };

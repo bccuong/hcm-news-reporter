@@ -346,6 +346,8 @@ export const SettingsSchema = z.object({
       otherProvinces: z.array(z.string()).default([]),
       requireHcmEvidence: z.boolean().default(true),
       connectedAreasForReview: z.boolean().default(true),
+      /** a connected area only in the body (no place of the city, the area not in title/sapo) → excluded with reason */
+      connectedNeedsLead: z.boolean().default(true),
       /** no HCM area/alias/landmark at all → excluded with reason (visible in ledger) or review queue */
       noEvidencePolicy: z.enum(['review', 'exclude_with_reason']).default('exclude_with_reason'),
       /** HCM not in title/sapo: at least this many distinct HCM places in the body to be "ready" (else review) */
@@ -357,6 +359,14 @@ export const SettingsSchema = z.object({
        * (keyword in title = 3, only in sapo = 1; e.g. "chống ngập" in title + "ngập" = 6) or a sector policy/law. 3 = one title keyword is enough.
        */
       noPlaceMinLeadScore: z.number().int().min(1).max(20).default(4),
+      /**
+       * no place of the city at all: keep (Cần kiểm tra) only sector-wide policy / law and national sector news
+       * ('policy_only', default since 17/11/2026: "không xác định được địa điểm tại HCM thì lọc ra trước, trừ chính sách,
+       * pháp quy chung cho toàn ngành"), or also stories with strong sector words in the lead ('strong_sector', the old rule)
+       */
+      noPlaceKeep: z.enum(['policy_only', 'strong_sector']).default('policy_only'),
+      /** words of a general policy / law / national programme: with a clear sector word in the lead, a story without a place is kept */
+      policyPhrases: z.array(z.string()).default(['luật', 'dự thảo', 'nghị định', 'thông tư', 'nghị quyết', 'quy định', 'chính sách', 'Chính phủ', 'Thủ tướng', 'Phó Thủ tướng', 'Quốc hội', 'cả nước', 'toàn quốc', 'đường sắt tốc độ cao']),
       /** national news of the sector itself (ministry events, sector-wide programmes): kept for review even without a place */
       nationalSectorPhrases: z.array(z.string()).default(['ngành Xây dựng', 'Bộ Xây dựng', 'Bộ trưởng Bộ Xây dựng', 'Bộ trưởng Trần Hồng Minh', 'toàn ngành xây dựng']),
     })

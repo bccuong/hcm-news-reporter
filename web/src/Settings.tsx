@@ -483,6 +483,13 @@ function LocationPanel({ s, up, advanced }: { s: Settings; up: Up; advanced: boo
       <Section title="Quy tắc địa bàn">
         <Toggle checked={s.location.requireHcmEvidence} onChange={(v) => up('location', { requireHcmEvidence: v })} label={`Bắt buộc có bằng chứng địa bàn ${R} để vào nhóm sẵn sàng (không có → Cần kiểm tra, không bị bỏ)`} />
         <Toggle checked={s.location.connectedAreasForReview} onChange={(v) => up('location', { connectedAreasForReview: v })} label="Dự án liên vùng (Vành đai 3, Long Thành…) đưa vào Cần kiểm tra" />
+        <Toggle checked={s.location.connectedNeedsLead} onChange={(v) => up('location', { connectedNeedsLead: v })} label={`Dự án liên vùng chỉ có trong thân bài (không ở tiêu đề/sapo, không có địa danh ${R}) → loại kèm lý do`} />
+        <Select
+          label={`Bài không có địa danh ${R} nào: giữ lại (Cần kiểm tra)`}
+          value={s.location.noPlaceKeep}
+          onChange={(v) => up('location', { noPlaceKeep: v })}
+          options={[['policy_only', 'Chỉ chính sách, pháp quy chung của ngành (khuyên dùng)'], ['strong_sector', 'Cả bài có từ khóa lĩnh vực mạnh ở tiêu đề + sapo']]}
+        />
         <Select
           label={`Bài không có bất kỳ dấu hiệu địa bàn ${R} nào (kể cả phường, xã, địa danh)`}
           value={s.location.noEvidencePolicy}
@@ -497,15 +504,16 @@ function LocationPanel({ s, up, advanced }: { s: Settings; up: Up; advanced: boo
           onChange={(n) => up('location', { minBodyAreasWithoutLead: n })}
           help="Ít hơn → bài vào hàng Cần kiểm tra (HCM_ONLY_IN_BODY), không bị loại."
         />
-        <NumberField
+        {s.location.noPlaceKeep === 'strong_sector' && <NumberField
           label={`Bài không có địa danh ${R} nào: điểm lĩnh vực tối thiểu ở tiêu đề + sapo để giữ lại (Cần kiểm tra)`}
           value={s.location.noPlaceMinLeadScore}
           min={1}
           max={20}
           onChange={(n) => up('location', { noPlaceMinLeadScore: n })}
           help="Từ khóa có trong tiêu đề = 3 điểm, chỉ có trong sapo = 1 điểm. 4 = cần thêm bằng chứng ngoài một từ ở tiêu đề; 3 = một từ ở tiêu đề là đủ. Chính sách, pháp quy của ngành luôn được giữ."
-        />
+        />}
         <ChipEditor values={s.location.otherProvinces} onChange={(v) => up('location', { otherProvinces: v })} label={`Địa phương / miền khác (nêu trong tiêu đề mà tiêu đề và sapo không có ${R} → loại kèm lý do)`} />
+        <ChipEditor values={s.location.policyPhrases ?? []} onChange={(v) => up('location', { policyPhrases: v })} label={`Từ chỉ chính sách, pháp quy, chương trình toàn quốc (bài không có địa danh ${R}: có từ này + từ khóa lĩnh vực ở tiêu đề/sapo thì giữ lại)`} />
         <ChipEditor values={s.location.nationalSectorPhrases ?? []} onChange={(v) => up('location', { nationalSectorPhrases: v })} label={`Cụm từ tin toàn ngành (bài không có địa danh ${R} nhưng tiêu đề/sapo có cụm này vẫn vào Cần kiểm tra, ví dụ "Bộ Xây dựng")`} />
         <ChipEditor values={s.location.excludePhrases ?? []} onChange={(v) => up('location', { excludePhrases: v })} label={`Cụm từ không phải địa bàn (bỏ qua khi tìm ${R}, ví dụ "giải thưởng Hồ Chí Minh", "ngân hàng Sài Gòn - Hà Nội")`} />
       </Section>

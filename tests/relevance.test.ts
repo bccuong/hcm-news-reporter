@@ -42,7 +42,15 @@ const IRRELEVANT: Array<[string, string, string]> = [
 
 describe('relevance regression (live sample 15–16/11/2026)', () => {
   it.each(RELEVANT)('never excludes a relevant story: %s', (title, sapo) => {
-    expect(judge(title, sapo).status).not.toBe('irrelevant');
+    // since 17/11/2026 a story with no place of the city at all (title, sapo AND body) is kept only when it is a
+    // sector-wide policy / law; these samples have no body here, the real articles name the city in it
+    const v = judge(title, sapo);
+    if (v.reasonCode === 'NO_HCM_EVIDENCE') {
+      expect(judge(title, sapo, 'Công trình thuộc địa bàn TP.HCM.').status).not.toBe('irrelevant');
+      const old = structuredClone(s);
+      old.location.noPlaceKeep = 'strong_sector';
+      expect(judgeRelevance(title, sapo, 'x', old, sapo).status).not.toBe('irrelevant');
+    } else expect(v.status).not.toBe('irrelevant');
   });
   it.each(IRRELEVANT)('excludes with an explicit reason: %s', (title, sapo, reason) => {
     const v = judge(title, sapo);
@@ -159,5 +167,39 @@ describe('off-region / off-topic stories seen in the review queue (user feedback
     const off = structuredClone(s);
     off.location.otherProvinces = off.location.otherProvinces.filter((p) => !/^miền /i.test(p));
     expect(judgeRelevance('Miền Bắc sắp rét dưới 10 độ C', 'Không khí lạnh.', 'x', off, 'Không khí lạnh.').reasonCode).not.toBe('NOT_GEOGRAPHICALLY_RELEVANT');
+  });
+});
+
+describe('a story must be placed in the city, except sector-wide policy / law (user feedback 17/11/2026)', () => {
+  const ex = (title: string, sapo: string, body = '') => judgeRelevance(title, `${sapo}\n${body}`, 'x', s, sapo);
+  it.each([
+    // a ward of the same name in another province ("phường Xuân Hòa (tỉnh Phú Thọ)")
+    ['Phú Thọ: Khởi công khu nghỉ dưỡng InterContinental Thanh Xuan Valley Resort', 'Sáng 17/11, tại phường Xuân Hòa (tỉnh Phú Thọ), công ty khởi công dự án khu nghỉ dưỡng.', '', 'NOT_GEOGRAPHICALLY_RELEVANT'],
+    // national sector news ABOUT another province
+    ['Bộ Xây dựng giao Hà Tĩnh quản lý 51km cao tốc kết nối Cửa khẩu quốc tế Cầu Treo', 'Bộ Xây dựng vừa có quyết định giao UBND tỉnh Hà Tĩnh quản lý tuyến cao tốc.', '', 'NOT_GEOGRAPHICALLY_RELEVANT'],
+    // no place of the city at all, not a policy
+    ['Tai nạn giao thông 17/11: Va chạm ô tô tại ngã tư, nam thanh niên 18 tuổi tử vong', 'Va chạm giữa ô tô và xe máy tại ngã tư khiến một nam thanh niên tử vong.', '', 'NO_HCM_EVIDENCE'],
+    // a connected area only deep in the body of a Hà Nội railway story
+    ['Đề xuất giữ 260ha Tổ hợp ga Ngọc Hồi, tính phương án mở rộng trong 100 năm', 'Hồ sơ quy hoạch đề xuất giữ quỹ đất cho tổ hợp ga đường sắt.', 'Đường sắt tốc độ cao vượt đường Vành đai 4, hồ sơ đề xuất cao độ.', 'NO_HCM_EVIDENCE'],
+  ])('excluded: %s', (title, sapo, body, reason) => {
+    const v = ex(title, sapo, body);
+    expect(v.status).toBe('irrelevant');
+    expect(v.reasonCode).toBe(reason);
+  });
+  it.each([
+    ['Khẩn trương tiếp thu, giải trình các dự án luật về nhà ở, kinh doanh bất động sản, đất đai', 'Phó Thủ tướng yêu cầu các bộ hoàn thiện hồ sơ.'],
+    ['Phó Thủ tướng yêu cầu báo cáo về quy định bán lại nhà ở xã hội sau 5 năm', 'Bộ Xây dựng được giao rà soát.'],
+    ['Bộ trưởng Trần Hồng Minh kiểm tra công tác tổng duyệt sự kiện KHCN ngành Xây dựng 2026', 'Chiều 15/11, tại Hà Nội, Bộ trưởng Bộ Xây dựng đã kiểm tra công tác tổng duyệt.'],
+  ])('a general policy / law / national sector story is kept without a place: %s', (title, sapo) => {
+    expect(ex(title, sapo).status).toBe('review');
+  });
+  it('the old rule (strong sector words are enough) is a setting', () => {
+    const old = structuredClone(s);
+    old.location.noPlaceKeep = 'strong_sector';
+    old.location.noPlaceMinLeadScore = 3;
+    expect(judgeRelevance('Tai nạn giao thông 17/11: Va chạm ô tô tại ngã tư', 'Va chạm giữa ô tô và xe máy, tai nạn giao thông.', 'x', old, 'Va chạm giữa ô tô và xe máy, tai nạn giao thông.').status).toBe('review');
+  });
+  it('a city ward in the lead still counts when no other province is named', () => {
+    expect(ex('Khởi công trường học mới', 'Sáng 17/11, tại phường Xuân Hòa, UBND phường khởi công công trình trường học.').location.status).not.toBe('other_province');
   });
 });

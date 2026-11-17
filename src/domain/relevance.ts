@@ -44,9 +44,12 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
   // national news of the sector itself (ministry events are mostly held in Hà Nội): never excluded for its place
   const nationalSector = (settings.location.nationalSectorPhrases ?? []).find((p) => p && (findWord(title, p) >= 0 || findWord(sapo, p) >= 0));
   if (location.status === 'other_province' && settings.location.requireHcmEvidence) {
-    // Explicit evidence of another province and no HCM evidence -> excluded WITH reason (visible, overridable)
+    // Explicit evidence of another province and no HCM evidence -> excluded WITH reason (visible, overridable).
+    // National sector news held elsewhere ("tại Hà Nội" in the sapo) stays reviewable – not when the TITLE is about
+    // another province ("Bộ Xây dựng giao Hà Tĩnh quản lý …")
+    const national = !!nationalSector && !(location.othersInTitle ?? []).length;
     return {
-      status: location.leadHit || nationalSector ? 'review' : 'irrelevant',
+      status: location.leadHit || national ? 'review' : 'irrelevant',
       reasonCode: 'NOT_GEOGRAPHICALLY_RELEVANT',
       evidence: [...evidence, ...location.evidence],
       ruleTrace,
@@ -91,11 +94,15 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
     // one generic title word ("bồi thường" in a Microsoft story, "xây dựng thế hệ…") is not enough
     const leadSector = classifyCategory(title, sapo, settings.categories);
     const best = Math.max(0, ...Object.values(leadSector.scores).map((v) => v ?? 0));
-    const strong = !!nationalSector || (titleSector.scores.POLICY ?? 0) >= 3 || (best >= 3 && best >= settings.location.noPlaceMinLeadScore);
+    // a general policy / law / national programme of the sector: a policy word + a clear sector word in title/sapo
+    const policyWord = (settings.location.policyPhrases ?? []).find((p) => p && (findWord(title, p) >= 0 || findWord(sapo, p) >= 0) && findWord(title + ' ' + sapo, `${p} sư`) < 0);
+    const policy = !!nationalSector || (titleSector.scores.POLICY ?? 0) >= 3 || (!!policyWord && best >= 3);
+    const strong = policy || (settings.location.noPlaceKeep === 'strong_sector' && best >= 3 && best >= settings.location.noPlaceMinLeadScore);
     if (strong) {
-      return { status: 'review', reasonCode: 'LOCATION_UNVERIFIED', evidence: [...evidence, ...location.evidence, `Tiêu đề có từ khóa lĩnh vực (${titleSector.evidence[0] ?? ''}) – giữ lại để kiểm tra địa bàn`], ruleTrace, location };
+      const why = policy ? 'chính sách / pháp quy / tin toàn ngành' : `tiêu đề có từ khóa lĩnh vực (${titleSector.evidence[0] ?? ''})`;
+      return { status: 'review', reasonCode: 'LOCATION_UNVERIFIED', evidence: [...evidence, ...location.evidence, `Không có địa danh ${settings.location.regionName} nhưng là ${why} – giữ lại để kiểm tra`], ruleTrace, location };
     }
-    return { status: 'irrelevant', reasonCode: 'NO_HCM_EVIDENCE', evidence: [...evidence, ...location.evidence], ruleTrace, location };
+    return { status: 'irrelevant', reasonCode: 'NO_HCM_EVIDENCE', evidence: [...evidence, ...location.evidence, `Không xác định được địa điểm tại ${settings.location.regionName} và không phải chính sách, pháp quy chung của ngành`], ruleTrace, location };
   }
   if (location.status === 'hcm') {
     // HCM named only in passing deep in the body → editor confirms
@@ -106,6 +113,10 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
       };
     }
     return { status: 'relevant', reasonCode: null, evidence: [...evidence, ...location.evidence], ruleTrace, location };
+  }
+  if (location.status === 'connected' && settings.location.connectedNeedsLead && !location.connectedLead && !(location.distinct ?? 0)) {
+    // only a connected area deep in the body ("vượt đường Vành đai 4" in a Hà Nội railway story): not the city's story
+    return { status: 'irrelevant', reasonCode: 'NO_HCM_EVIDENCE', evidence: [...evidence, ...location.evidence, `Chỉ có dự án liên vùng trong thân bài, không có địa danh ${settings.location.regionName}`], ruleTrace, location };
   }
   if (location.status === 'connected' && settings.location.connectedAreasForReview) {
     return { status: 'review', reasonCode: 'CONNECTED_AREA', evidence: [...evidence, ...location.evidence], ruleTrace, location };
