@@ -1,6 +1,6 @@
 /**
  * Fixed daily collection times on the web (replaces the hourly automatic run, 17/11/2026).
- * Each profile ticks the times it wants; the review worker checks every 5 minutes and, from 2 minutes after the time
+ * Each profile ticks the times it wants; the review worker checks every 5 minutes and, from 2 minutes after the time (cron at :02, :07 … so 08:02 / 16:32 exactly)
  * (feeds catch up) until 2 hours after, dispatches ONE collection of that window per profile and day (retried while the
  * collection server is busy). Times are Asia/Ho_Chi_Minh; `to` is not included.
  */
