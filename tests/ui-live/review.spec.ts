@@ -66,8 +66,9 @@ test('automatic collection at 08:00 / 16:30 (ticked per profile) + busy server i
   const afternoon = strip.getByLabel('Tự động lúc 16:30');
   await expect(morning).not.toBeChecked();
   await expect(afternoon).not.toBeChecked();
-  await expect(strip).toContainText('17:00 hôm qua → 08:00 hôm nay (gồm phút 08:00)');
-  await expect(strip).toContainText('08:01 → 16:30 hôm nay');
+  // switches show only the time; the window is explained on hover
+  await expect(strip.locator('label[title^="08:00"]')).toHaveAttribute('title', /17:00 hôm qua → 08:00 hôm nay \(gồm phút 08:00\)/);
+  await expect(strip.locator('label[title^="16:30"]')).toHaveAttribute('title', /08:01 → 16:30 hôm nay/);
   await expect(page.getByTestId('server-idle')).toBeVisible();
   await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập đang TẮT');
   // ticking needs a reviewer session
@@ -81,7 +82,7 @@ test('automatic collection at 08:00 / 16:30 (ticked per profile) + busy server i
   await expect(morning).toBeChecked();
   await afternoon.click();
   await expect(afternoon).toBeChecked();
-  await expect(page.getByTestId('auto-info')).toContainText('Lượt tự động kế tiếp');
+  await expect(page.getByTestId('auto-info')).toContainText('Tiếp:');
   await expect(page.getByTestId('auto-info')).not.toContainText('đổi lúc'); // no technical history on the product page
   await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập lúc 08:00, 16:30');
   // the worker cron at 08:02 collects 17:00 yesterday → 08:00 today for this profile
@@ -114,7 +115,7 @@ test('web "Thu thập" like the local app: choose from/to → server collection 
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
   await setWindowField(page, 'Từ', '2026-11-08T18:00');
   await setWindowField(page, 'Đến', '2026-11-09T07:00');
-  await expect(page.getByText('[18:00 08/11/2026, 07:00 09/11/2026)')).toBeVisible();
+  await expect(page.getByTestId('window-range')).toHaveText('18:00 08/11 → 07:00 09/11');
   // collecting requires a reviewer session
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
@@ -271,7 +272,7 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ow
   expect(cfg.by).toBe('Người duyệt F');
   // no data yet for the new profile; its automatic times are its own (none ticked)
   const strip = page.getByTestId('server-status');
-  await expect(strip).toContainText('cấu hình: Đà Nẵng');
+  await expect(page.getByLabel('Cấu hình (profile)')).toHaveValue('da-nang');
   const dnMorning = strip.getByLabel('Tự động lúc 08:00');
   await expect(dnMorning).not.toBeChecked();
   await dnMorning.click();

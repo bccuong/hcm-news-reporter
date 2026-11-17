@@ -4,7 +4,7 @@
 
 @layer base {
   html { font-size: 14px; }
-  body { @apply text-slate-800 antialiased; }
+  body { @apply bg-slate-50 text-slate-800 antialiased; }
   :focus-visible { @apply outline-none ring-2 ring-teal-500 ring-offset-1; }
 }
 
@@ -17,8 +17,27 @@
   .btn-xs { @apply px-2 py-1 text-xs; }
   .input { @apply w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-teal-500; }
   .label { @apply mb-1 block text-xs font-semibold text-slate-600; }
-  .card { @apply rounded-lg border border-slate-200 bg-white shadow-sm; }
+  .card { @apply rounded-xl border border-slate-200/80 bg-white shadow-sm; }
   .chip { @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs; }
   .th { @apply border-b border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-xs font-semibold text-slate-600; }
   .td { @apply border-b border-slate-100 px-2 py-1.5 align-top text-sm; }
+}
+
+/* minimal motion: content fades up when it appears, cards lift on hover; respects "reduce motion" */
+@layer utilities {
+  .animate-in { animation: fade-up 0.28s ease-out backwards; }
+  .lift { @apply transition duration-200 hover:-translate-y-0.5 hover:shadow-md; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.45); }
+  50% { box-shadow: 0 0 0 5px rgba(22, 163, 74, 0); }
+}
+.dot-live { animation: pulse-dot 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-in, .dot-live { animation: none; }
+  .lift { transform: none !important; }
 }

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BarChart3, Check, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, Wifi, WifiOff, X } from 'lucide-react';
+import { AlarmClock, AlertTriangle, History, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
@@ -40,6 +40,8 @@ export function App() {
   const [inspect, setInspect] = useState<string | null>(null);
   const [preset, setPreset] = useState<'last_completed' | 'today' | 'yesterday' | 'custom'>('last_completed');
   const [from, setFrom] = useState('');
+  // date/time editors open on "Tùy chỉnh" or a click on the window shown (closed otherwise: fewer controls on screen)
+  const [editWindow, setEditWindow] = useState(false);
   const [to, setTo] = useState('');
   // profiles (cấu hình theo địa bàn): switching reloads everything for the chosen profile
   const [profiles, setProfiles] = useState<ProfilesState | null>(null);
@@ -417,8 +419,6 @@ export function App() {
   };
   const split = (secondaryId: string) => patch(secondaryId, { groupId: null });
 
-  const counts = run?.counts ?? {};
-  const n = (...k: string[]) => k.reduce((s, x) => s + (counts[x] ?? 0), 0);
   const artById = useMemo(() => new Map(arts.map((a) => [a.id, a])), [arts]);
   const candByArticle = useMemo(() => new Map(cands.filter((c) => c.articleId).map((c) => [c.articleId!, c])), [cands]);
   const inReviewQueue = (a: Article) => {
@@ -436,146 +436,133 @@ export function App() {
 
   return (
     <div className="min-h-screen">
-      {api.mode === 'demo' && (
-        <div className="bg-amber-100 px-4 py-1.5 text-center text-xs text-amber-900">
-          <b>BẢN DEMO</b> – dữ liệu là bài <b>mẫu thử tổng hợp</b> (fixture, không phải tin thật) chạy qua đúng bộ thu thập/bóc tách của ứng dụng. Cài đặt lưu trong trình duyệt này. Thu thập báo thật cần bản local trên Windows.
-        </div>
-      )}
-      {api.mode === 'live' && (
-        <div className="bg-teal-50 px-4 py-1.5 text-center text-xs text-teal-900" data-testid="live-banner">
-          <b>DỮ LIỆU THẬT</b> – {autoTimes ? `tự động thu thập lúc ${autoTimes}` : 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)'}{live ? <> · cập nhật lúc <b>{formatVn(live.generatedAt)}</b></> : null}.
-          {api.shared ? <> Đăng nhập để <b>chọn khung giờ và bấm Thu thập</b> (chạy trên máy chủ, 5–10 phút) và duyệt tin: ✓/✗, sửa lĩnh vực/tính chất, góp ý.</> : <> Thu thập/cấu hình/xuất báo cáo theo mẫu Sở dùng bản local.</>}
-        </div>
-      )}
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-[1500px] items-center gap-3 px-4 py-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-navy-700 text-sm font-bold text-white">ĐT</div>
-          <div>
-            <h1 className="text-base font-bold leading-tight text-navy-700">News Reporter</h1>
-            <p className="text-xs text-slate-500" data-testid="app-subtitle">{settings?.report.subtitle ?? ''}</p>
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-[1500px] items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-navy-700 to-teal-600 text-sm font-bold text-white shadow-sm">ĐT</div>
+          <div className="hidden min-w-0 md:block">
+            <h1 className="text-[15px] font-bold leading-tight text-navy-800">Điểm tin báo chí</h1>
+            <p className="truncate text-xs text-slate-500" data-testid="app-subtitle">{settings?.report.subtitle ?? ''}</p>
           </div>
           {profiles && (
-            <label className="ml-2 flex items-center gap-1 text-xs text-slate-600" title="Cấu hình theo địa bàn – tạo mới/sao chép ở Cài đặt › Cấu hình (profile)">
-              Cấu hình
-              <select className="input py-1 text-sm font-semibold" aria-label="Cấu hình (profile)" value={profiles.activeId} onChange={(e) => switchProfile(e.target.value)}>
+            <div className="relative ml-1 shrink-0" title="Địa bàn (cấu hình) – tạo mới/sao chép trong Cài đặt">
+              <MapPin className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-teal-600" />
+              <select className="cursor-pointer appearance-none rounded-full border border-slate-200 bg-slate-50 py-1.5 pl-7 pr-7 text-sm font-semibold text-slate-800 transition hover:border-teal-400" aria-label="Cấu hình (profile)" value={profiles.activeId} onChange={(e) => switchProfile(e.target.value)}>
                 {profiles.profiles.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
-            </label>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            </div>
           )}
           <span className="flex-1" />
-          <span className={`chip ${online ? 'border-green-300 bg-green-50 text-green-800' : 'border-slate-300 bg-slate-100'}`}>
-            {online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />} {online ? 'Có Internet' : 'Ngoại tuyến – xem/duyệt/xuất dữ liệu đã lưu'}
+          {/* one status dot instead of banners: live / demo / online, details on hover */}
+          <span className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1 text-xs text-slate-500" title={api.mode === 'live' ? `DỮ LIỆU THẬT – ${autoTimes ? `tự động thu thập lúc ${autoTimes}` : 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)'}${live ? ` · cập nhật lúc ${formatVn(live.generatedAt)}` : ''}` : api.mode === 'demo' ? 'BẢN DEMO – dữ liệu mẫu thử, không phải tin thật' : online ? 'Có Internet' : 'Ngoại tuyến – xem/duyệt/xuất dữ liệu đã lưu'} data-testid="live-banner">
+            <span className={`h-2.5 w-2.5 rounded-full ${!online ? 'bg-slate-400' : api.mode === 'demo' ? 'bg-amber-500' : 'dot-live bg-green-500'}`} />
+            <span className="hidden lg:inline">{api.mode === 'live' && live ? <>Cập nhật <b className="font-semibold text-slate-700">{hhmm(live.generatedAt)}</b></> : !online ? 'Ngoại tuyến' : api.mode === 'demo' ? 'Bản demo' : 'Trực tuyến'}</span>
+            <span className="sr-only">{api.mode === 'live' ? `DỮ LIỆU THẬT – ${autoTimes ? `tự động thu thập lúc ${autoTimes}` : 'tự động thu thập đang TẮT (chỉ thu thập khi bấm Thu thập)'}${live ? ` · cập nhật lúc ${formatVn(live.generatedAt)}` : ''}` : api.mode === 'demo' ? 'BẢN DEMO – dữ liệu mẫu thử, không phải tin thật' : online ? 'Có Internet' : 'Ngoại tuyến – xem/duyệt/xuất dữ liệu đã lưu'}</span>
           </span>
-          {runs[0] && <span className="hidden text-xs text-slate-500 md:inline">Lượt gần nhất: {formatVn(runs[0].createdAt)} ({runs[0].status})</span>}
           {api.shared &&
             (reviewer ? (
-              <span className="chip border-teal-300 bg-teal-50 text-teal-900" data-testid="reviewer-chip">
-                Người duyệt: <b>{reviewer.name}</b>
-                <button className="ml-1 underline" onClick={() => (api.shared!.logout(), setReviewer(null))}>thoát</button>
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 py-0.5 pl-0.5 pr-1 text-sm text-teal-900" data-testid="reviewer-chip" title={`Người duyệt: ${reviewer.name}`}>
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">{initials(reviewer.name)}</span>
+                <span className="hidden max-w-[10rem] truncate font-medium sm:inline">{reviewer.name}</span>
+                <button className="rounded-full p-1 text-teal-700 transition hover:bg-teal-100" onClick={() => (api.shared!.logout(), setReviewer(null))} aria-label="Đăng xuất" title="Đăng xuất">
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
               </span>
             ) : (
-              <button className="btn-teal" onClick={() => setLoginOpen(true)}>Đăng nhập duyệt tin</button>
+              <button className="btn-teal shrink-0 rounded-full" onClick={() => setLoginOpen(true)} aria-label="Đăng nhập duyệt tin" title="Đăng nhập để duyệt tin và thu thập">
+                <LogIn className="h-4 w-4" /> <span className="hidden sm:inline">Đăng nhập</span>
+              </button>
             ))}
-          <button className="btn-ghost" onClick={() => setSettingsOpen(true)}>
-            <Cog className="h-4 w-4" /> Cài đặt
+          <button className="btn-ghost shrink-0 rounded-full px-2.5" onClick={() => setSettingsOpen(true)} aria-label="Cài đặt" title="Cài đặt">
+            <Cog className="h-4 w-4" /> <span className="hidden xl:inline">Cài đặt</span>
           </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1500px] space-y-4 px-4 py-4">
-        {/* reporting window – same controls as the local app; on the web "Thu thập" runs on GitHub Actions */}
+      <main className="mx-auto max-w-[1500px] space-y-4 px-3 py-4 sm:px-4">
         {api.mode === 'live' && !api.shared ? (
-          <section className="card flex flex-wrap items-end gap-3 p-3" data-testid="live-periods">
-            <label>
-              <span className="label">Kỳ báo cáo (dữ liệu thu thập tự động)</span>
-              <RunPicker runs={runs} runId={runId} onPick={pickRun} />
-            </label>
-            <div className="text-xs text-slate-500">
-              Asia/Ho_Chi_Minh · khung [từ, đến)
-              {run?.notes.some((x) => /đang diễn ra/.test(x)) && <div className="font-semibold text-amber-700">Kỳ chưa kết thúc – số liệu còn thay đổi ở các lần cập nhật sau.</div>}
-            </div>
-            <span className="flex-1" />
-            <div className="text-right text-xs text-slate-500">{live?.schedule}</div>
+          <section className="card flex flex-wrap items-center gap-3 p-3" data-testid="live-periods">
+            <RunPicker runs={runs} runId={runId} onPick={pickRun} />
+            {run?.notes.some((x) => /đang diễn ra/.test(x)) && <span className="chip border-amber-300 bg-amber-50 text-amber-800">Kỳ chưa kết thúc – số liệu còn thay đổi</span>}
           </section>
         ) : (
-        <section className="card flex flex-wrap items-end gap-3 p-3">
-          <div>
-            <span className="label">Khung giờ</span>
-            <div className="inline-flex overflow-hidden rounded-md border border-slate-300">
+        <section className="card animate-in relative z-20 p-3" data-testid="window-card">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div className="inline-flex rounded-full bg-slate-100 p-1" role="group" aria-label="Khung giờ">
               {([['last_completed', 'Kỳ gần nhất'], ['today', 'Hôm nay'], ['yesterday', 'Hôm qua'], ['custom', 'Tùy chỉnh']] as const).map(([k, l]) => (
-                <button key={k} className={`px-3 py-1.5 text-sm ${preset === k ? 'bg-navy-700 text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => settings && (k === 'custom' ? setPreset('custom') : k === 'last_completed' ? pickLatest(settings) : applyPreset(k, settings))}>
+                <button key={k} className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${preset === k ? 'bg-navy-700 text-white shadow-sm' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`} onClick={() => settings && (k === 'custom' ? (setPreset('custom'), setEditWindow(true)) : (setEditWindow(false), k === 'last_completed' ? pickLatest(settings) : applyPreset(k, settings)))}>
                   {l}
                 </button>
               ))}
             </div>
-          </div>
-          <DateTime24 label="Từ" value={from} onChange={(v) => (setFrom(v), setPreset('custom'))} />
-          <DateTime24 label="Đến" value={to} onChange={(v) => (setTo(v), setPreset('custom'))} />
-          <div className="text-xs text-slate-500">
-            Asia/Ho_Chi_Minh (UTC+07:00)
-            <br />
-            {windowErr ? <span className="text-red-600">{windowErr}</span> : windowIso && `[${formatVn(windowIso.from)}, ${formatVn(windowIso.to)})`}
-          </div>
-          <span className="flex-1" />
-          {run?.active ? (
-            <button className="btn-danger" onClick={() => api.cancel(run.runId)}>
-              <Square className="h-4 w-4" /> Dừng
-            </button>
-          ) : (
             <button
-              className="btn-primary"
-              disabled={starting || !!windowErr || !online || api.mode === 'demo' || (api.mode === 'live' && (!api.shared || !!remote || !!busyRun))}
-              onClick={collect}
-              title={
-                api.mode === 'live'
-                  ? busyRun
-                    ? 'Máy chủ đang chạy một lượt thu thập khác – nút mở lại khi lượt đó xong'
-                    : 'Thu thập trên máy chủ (5–10 phút), tối đa 72 giờ mỗi lần; cần đăng nhập người duyệt'
-                  : api.mode === 'demo'
-                    ? 'Bản demo không thu thập báo thật'
-                    : ''
-              }
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold tabular-nums transition ${windowErr ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-800 hover:border-teal-400'}`}
+              onClick={() => setEditWindow((v) => !v)}
+              aria-expanded={editWindow}
+              title="Bấm để chọn ngày giờ (giờ Việt Nam; giờ kết thúc không tính)"
+              data-testid="window-range"
             >
-              {starting ? <><RefreshCw className="h-4 w-4 animate-spin" /> Đang gửi…</> : <><Play className="h-4 w-4" /> Thu thập</>}
+              <CalendarClock className="h-4 w-4 text-teal-600" />
+              {windowIso ? `${shortVn(windowIso.from)} → ${shortVn(windowIso.to)}` : '—'}
+              <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition ${editWindow ? 'rotate-180' : ''}`} />
             </button>
-          )}
-          {runs.length > 0 && (
-            <div>
-              <span className="label">Lượt đã lưu</span>
-              <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá' : undefined} onRestore={api.restoreRun && canDeleteRuns ? restoreRun : undefined} />
-            </div>
-          )}
+            <span className="flex-1" />
+            {runs.length > 0 && <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá' : undefined} onRestore={api.restoreRun && canDeleteRuns ? restoreRun : undefined} />}
+            {run?.active ? (
+              <button className="btn-danger rounded-full" onClick={() => api.cancel(run.runId)}>
+                <Square className="h-4 w-4" /> Dừng
+              </button>
+            ) : (
+              <button
+                className="btn-primary rounded-full px-4 shadow-sm"
+                disabled={starting || !!windowErr || !online || api.mode === 'demo' || (api.mode === 'live' && (!api.shared || !!remote || !!busyRun))}
+                onClick={collect}
+                title={
+                  api.mode === 'live'
+                    ? busyRun
+                      ? 'Máy chủ đang chạy một lượt thu thập khác – nút mở lại khi lượt đó xong'
+                      : 'Thu thập trên máy chủ (5–10 phút), tối đa 72 giờ mỗi lần; cần đăng nhập người duyệt'
+                    : api.mode === 'demo'
+                      ? 'Bản demo không thu thập báo thật'
+                      : ''
+                }
+              >
+                {starting ? <><RefreshCw className="h-4 w-4 animate-spin" /> Đang gửi…</> : <><Play className="h-4 w-4" /> Thu thập</>}
+              </button>
+            )}
+          </div>
+          {/* exact date/time: shown on demand */}
+          <div className={editWindow ? 'animate-in mt-3 flex flex-wrap items-end gap-4 border-t border-slate-100 pt-3' : 'hidden'}>
+            <DateTime24 label="Từ" value={from} onChange={(v) => (setFrom(v), setPreset('custom'))} />
+            <DateTime24 label="Đến" value={to} onChange={(v) => (setTo(v), setPreset('custom'))} />
+            {windowErr && <span className="pb-2 text-xs text-red-600">{windowErr}</span>}
+          </div>
         </section>
         )}
 
         {api.shared && server && <ServerStrip server={server} profileId={profiles?.activeId ?? 'hcm'} remote={!!remote} onToggle={toggleAuto} />}
 
         {remote && (
-          <section className="card flex flex-wrap items-center gap-3 border-blue-300 bg-blue-50 p-3 text-sm text-blue-900" data-testid="remote-collect">
+          <section className="card animate-in flex flex-wrap items-center gap-3 border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="remote-collect">
             <RefreshCw className="h-4 w-4 animate-spin" />
             <span>
-              Đang thu thập trên máy chủ: <b>{formatVn(remote.from)} → {formatVn(remote.to)}</b> · {remote.status} · gửi lúc {new Date(remote.at).toLocaleTimeString('vi-VN')} (thường 5–10 phút; trang tự mở kết quả khi xong)
+              Đang thu thập trên máy chủ: <b>{shortVn(remote.from)} → {shortVn(remote.to)}</b> · {remote.status}
             </span>
+            <span className="text-xs text-blue-700">thường 5–10 phút, trang tự mở kết quả</span>
           </section>
         )}
 
         {/* sources of the viewed period: one tile per publisher */}
         {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')} />}
 
-        {/* metrics */}
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-6">
-          <Metric label="Link phát hiện" value={counts.total ?? 0} />
-          <Metric label="Sẵn sàng duyệt" value={ready.length} tone="green" />
-          <Metric label="Cần kiểm tra" value={reviewQueue.length} tone="amber" />
-          <Metric label="Trùng lặp" value={n('duplicate')} />
-          <Metric label="Lỗi / bị chặn" value={n('fetch_failed', 'blocked', 'parse_failed')} tone="red" />
-          <Metric label="Đã chọn vào báo cáo" value={selected} tone="navy" />
-        </section>
-
         {!run ? (
-          <div className="card p-8 text-center text-slate-500">Chưa có lượt thu thập. Chọn khung giờ rồi bấm <b>Thu thập</b>. Cấu hình nguồn tin, từ khóa, địa bàn… trong <b>Cài đặt</b>.</div>
+          <div className="card animate-in flex flex-col items-center gap-2 p-10 text-center text-slate-500">
+            <Inbox className="h-10 w-10 text-slate-300" />
+            <p className="text-base font-medium text-slate-700">Chưa có dữ liệu</p>
+            <p className="text-sm">Chọn khung giờ rồi bấm <b>Thu thập</b>.</p>
+          </div>
         ) : (
           <>
             <nav className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/80 p-1" aria-label="Các mục">
@@ -711,12 +698,11 @@ function SourceStrip({ run, arts, ready, sources, onOpen }: { run: RunInfo; arts
   const shown = run.sources.filter((s) => s.status !== 'skipped_disabled');
   const off = run.sources.length - shown.length;
   return (
-    <section className="card p-3" data-testid="source-strip">
-      <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <section className="card animate-in p-3" data-testid="source-strip">
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <h2 className="text-sm font-semibold text-navy-800">Nguồn tin trong kỳ</h2>
-        <span className="text-xs text-slate-500" data-testid="source-strip-caption">
-          {formatVn(run.window.from)} → {formatVn(run.window.to)}
-          {run.finishedAt ? ` · lượt cuối ${formatVn(run.finishedAt)}` : ''}
+        <span className="text-xs text-slate-400" data-testid="source-strip-caption" title={`${formatVn(run.window.from)} → ${formatVn(run.window.to)}${run.finishedAt ? ` · lượt cuối ${formatVn(run.finishedAt)}` : ''}`}>
+          {run.finishedAt ? `cập nhật ${shortVn(run.finishedAt)}` : ''}
         </span>
         {run.active ? (
           <span className="chip border-blue-300 bg-blue-50 text-blue-800"><RefreshCw className="h-3 w-3 animate-spin" /> đang chạy</span>
@@ -725,7 +711,7 @@ function SourceStrip({ run, arts, ready, sources, onOpen }: { run: RunInfo; arts
         ) : api.mode === 'live' ? (
           <span className="chip border-slate-300 bg-slate-50 text-slate-600">kỳ đã chốt</span>
         ) : null}
-        <button className="ml-auto text-xs text-blue-700 underline" onClick={onOpen}>Chi tiết độ phủ →</button>
+        <button className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline" onClick={onOpen}>Chi tiết <ArrowRight className="h-3 w-3" /></button>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {shown.map((s) => {
@@ -738,7 +724,7 @@ function SourceStrip({ run, arts, ready, sources, onOpen }: { run: RunInfo; arts
           return (
             <div
               key={s.sourceId}
-              className={`flex flex-col rounded border bg-white transition hover:border-navy-300 hover:shadow-sm ${warn.length ? 'border-amber-200' : 'border-slate-200'}`}
+              className={`lift flex flex-col rounded-lg border bg-white ${warn.length ? 'border-amber-200' : 'border-slate-200'}`}
               data-testid={`source-tile-${s.sourceId}`}
             >
               {/* the publisher's name opens its home page (new tab); the rest of the tile opens the coverage details */}
@@ -813,6 +799,16 @@ function DateTime24({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
+/** "17:00 16/11" from an ISO time (Vietnam) */
+function shortVn(iso: string): string {
+  const [hm, d] = formatVn(iso).split(' ');
+  return `${hm} ${(d ?? '').slice(0, 5)}`;
+}
+/** avatar letters: "Nguyễn Văn Cường" → "C", "Người duyệt D" → "D" */
+function initials(name: string): string {
+  const w = name.trim().split(/\s+/).filter(Boolean);
+  return (w[w.length - 1]?.[0] ?? '?').toUpperCase();
+}
 /** compact run window: "16/11 · 08:01–16:30" (same day) or "15/11 17:00 → 16/11 08:00" */
 function runLabel(r: { window: { from: string; to: string } }): string {
   const [fh, fd] = formatVn(r.window.from).split(' ');
@@ -864,13 +860,14 @@ function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { r
   const tag = cur && runTag(cur);
   return (
     <div className="relative" ref={box}>
-      <button type="button" className="input flex w-72 items-center gap-2 text-left" aria-label="Lượt đã lưu" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="run-picker">
+      <button type="button" className="flex w-64 max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-left text-sm transition hover:border-teal-400" aria-label="Lượt đã lưu" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="run-picker" title="Lượt đã lưu">
+        <History className="h-4 w-4 shrink-0 text-teal-600" />
         <span className="truncate font-medium tabular-nums">{cur ? runLabel(cur) : 'Chọn lượt…'}</span>
         {tag && <span className={`chip shrink-0 truncate ${tag.tone}`}>{tag.text}</span>}
         <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-slate-500" />
       </button>
       {open && (
-        <div className="absolute left-0 z-30 mt-1 max-h-96 w-[min(24rem,calc(100vw-2rem))] overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg" role="listbox" aria-label="Danh sách các lượt">
+        <div className="animate-in absolute left-0 z-30 mt-1 max-h-96 w-[min(24rem,calc(100vw-2rem))] overflow-auto rounded-xl sm:left-auto sm:right-0 border border-slate-200 bg-white py-1 shadow-lg" role="listbox" aria-label="Danh sách các lượt">
           {sorted.map((r) => {
             const tg = runTag(r);
             const sel = r.runId === runId;
@@ -925,15 +922,6 @@ function presetWindow(p: 'last_completed' | 'today' | 'yesterday' | 'custom', s:
 
 const SRC_STATUS: Record<string, string> = { ok: 'OK', partial: 'Một phần', failed: 'Lỗi', running: 'Đang chạy', pending: 'Chờ', skipped_disabled: 'Đã tắt', manual_only: 'Nhập thủ công', cancelled: 'Đã hủy' };
 
-function Metric({ label, value, tone }: { label: string; value: number; tone?: 'green' | 'amber' | 'red' | 'navy' }) {
-  const c = tone === 'green' ? 'text-green-700' : tone === 'amber' ? 'text-amber-700' : tone === 'red' ? 'text-red-700' : tone === 'navy' ? 'text-navy-700' : 'text-slate-800';
-  return (
-    <div className="card p-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className={`text-2xl font-bold ${c}`}>{value}</div>
-    </div>
-  );
-}
 
 function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect, onPatch, reviewMode, votes }: { list: Article[]; excluded?: Article[]; reviews: Record<string, ReviewDecision>; cands: Map<string, Candidate>; settings: Settings | null; onInspect: (id: string) => void; onPatch: (id: string, p: Partial<ReviewDecision>) => void | Promise<unknown>; reviewMode?: boolean; votes?: Record<string, Vote[]> }) {
   const [q, setQ] = useState('');
@@ -1039,7 +1027,7 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
           const asm = r?.assessment ?? a.suggestedAssessment;
           const img = a.imageCandidates[0];
           return (
-            <article key={a.id} className={`card flex gap-3 p-3 ${r?.included ? 'ring-2 ring-teal-500' : ''}`}>
+            <article key={a.id} className={`card animate-in flex gap-3 p-3 transition-shadow hover:shadow-md ${r?.included ? 'ring-2 ring-teal-500' : ''}`}>
               <label className="flex flex-col items-center gap-1 pt-1 text-[10px] text-slate-500">
                 <input type="checkbox" className="h-4 w-4 accent-teal-600" disabled={!!r?.groupId} title={r?.groupId ? 'Bài đã gộp làm nguồn phụ của tin khác' : ''} checked={!!r?.included && !r?.groupId} onChange={(e) => onPatch(a.id, { included: e.target.checked, order: r?.order ?? Date.now() % 1e6 })} aria-label={`Chọn bài ${a.title}`} />
                 chọn
@@ -1687,31 +1675,44 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
   const run = server.running[0];
   const who = run?.kind === 'request' ? personName(/\((.*)\)(?:\s*\[[^\]]*\])?\s*$/.exec(run.title)?.[1] ?? '') || undefined : undefined;
   return (
-    <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm" data-testid="server-status">
-      <div className="flex flex-col gap-1" data-testid="auto-schedule">
-        <span className="font-medium">Tự động thu thập</span>
+    <section className="card animate-in flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2.5 text-sm" data-testid="server-status">
+      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700" title="Tự động thu thập theo giờ cố định cho địa bàn đang chọn">
+        <AlarmClock className="h-4 w-4 text-teal-600" /> Tự động
+      </span>
+      <div className="flex flex-wrap items-center gap-4" data-testid="auto-schedule">
         {SCHEDULE_SLOTS.map((s) => (
-          <label key={s.id} className="inline-flex cursor-pointer items-center gap-2">
-            <input type="checkbox" className="h-4 w-4" checked={!!prof?.schedule?.[s.id]} disabled={!server.collectEnabled} onChange={(e) => onToggle(s, e.target.checked)} aria-label={`Tự động lúc ${s.at}`} />
-            <span><b>{s.at}</b> – {s.label}</span>
-          </label>
+          <Switch key={s.id} label={s.at} title={`${s.at} – ${s.label}`} ariaLabel={`Tự động lúc ${s.at}`} checked={!!prof?.schedule?.[s.id]} disabled={!server.collectEnabled} onChange={(on) => onToggle(s, on)} />
         ))}
       </div>
-      {prof && <span className="chip border-slate-300 bg-slate-50 text-xs">cấu hình: <b>{prof.name}</b></span>}
-      <span className="text-xs text-slate-500" data-testid="auto-info">
-        {next ? <>Lượt tự động kế tiếp: <b>{next.slot.at} {new Date(next.at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</b> (dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại)</> : <>Không hẹn giờ – chỉ thu thập khi có người bấm <b>Thu thập</b></>}
+      <span className="text-xs text-slate-500" data-testid="auto-info" title={next ? 'Dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại' : 'Chỉ thu thập khi có người bấm Thu thập'}>
+        {next ? <>Tiếp: <b className="text-slate-700">{next.slot.at} {new Date(next.at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit' })}</b></> : 'Đang tắt'}
       </span>
       <span className="flex-1" />
       {run ? (
-        <span className="inline-flex items-center gap-2 font-medium text-amber-800" data-testid="server-busy">
-          <RefreshCw className="h-4 w-4 animate-spin" />
+        <span className="inline-flex items-center gap-2 text-xs font-medium text-amber-800" data-testid="server-busy" title={!remote ? 'Nút Thu thập mở lại khi xong' : undefined}>
+          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
           Máy chủ đang {run.status === 'queued' ? 'xếp hàng' : 'chạy'}: {RUN_KIND[run.kind ?? 'deploy']}
-          {who ? ` (${who})` : ''} – bắt đầu {hhmm(run.createdAt)}
-          {!remote && ' · nút Thu thập mở lại khi xong'}
+          {who ? ` (${who})` : ''} · {hhmm(run.createdAt)}
         </span>
       ) : (
-        <span className="text-xs text-green-700" data-testid="server-idle">● Máy chủ rảnh – có thể bấm Thu thập</span>
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-500" data-testid="server-idle" title="Có thể bấm Thu thập">
+          <span className="h-2 w-2 rounded-full bg-green-500" /> Máy chủ rảnh
+        </span>
       )}
     </section>
+  );
+}
+
+/** on/off switch (a real checkbox underneath: keyboard, screen readers and tests work as before) */
+function Switch({ label, title, ariaLabel, checked, disabled, onChange }: { label: string; title?: string; ariaLabel: string; checked: boolean; disabled?: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <label className={`inline-flex items-center gap-2 ${disabled ? 'opacity-50' : 'cursor-pointer'}`} title={title}>
+      <span className="relative inline-flex h-5 w-9 shrink-0">
+        <input type="checkbox" className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed" aria-label={ariaLabel} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+        <span className="absolute inset-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-teal-600 peer-focus-visible:ring-2 peer-focus-visible:ring-teal-400 peer-focus-visible:ring-offset-1" />
+        <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+      </span>
+      <span className="font-semibold tabular-nums text-slate-700">{label}</span>
+    </label>
   );
 }
