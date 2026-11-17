@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Download, FileUp, History, Info, Plus, Rotat
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings } from '../../src/domain/defaults';
 import { detectLocation } from '../../src/domain/location';
-import { SettingsSchema, withoutSkillNote, type LocationArea, type RuleGroup, type Settings, type Source } from '../../src/domain/schemas';
+import { SettingsSchema, withoutSkillNote, type LocationArea, type RuleGroup, type RuleNode, type RuleTerm, type Settings, type Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
 import { uid } from '../../src/domain/text';
 import { api, type HistoryEntry, type PreviewResult, type ProfilesState, type TemplateOption } from './api';
@@ -222,7 +222,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
             ) : nav === 'sources' ? (
               <SourcesPanel sources={src} setSources={setSrc} />
             ) : nav === 'rules' ? (
-              <RulesPanel s={s} setS={setS} sources={src} />
+              <RulesPanel s={s} setS={setS} sources={src} advanced={advanced} />
             ) : nav === 'location' ? (
               <LocationPanel s={s} up={up} />
             ) : nav === 'categories' ? (
@@ -274,7 +274,7 @@ const SEARCH_INDEX: Record<string, string[]> = {
 type Up = <K extends keyof Settings>(k: K, v: Partial<Settings[K]>) => void;
 
 /* ---------------- Rules ---------------- */
-function RulesPanel({ s, setS, sources }: { s: Settings; setS: (fn: (p: Settings | null) => Settings | null) => void; sources: Source[] }) {
+function RulesPanel({ s, setS, sources, advanced }: { s: Settings; setS: (fn: (p: Settings | null) => Settings | null) => void; sources: Source[]; advanced: boolean }) {
   const toast = useToast();
   const preset = s.rules.presets.find((p) => p.id === s.rules.activePresetId) ?? s.rules.presets[0];
   const [sample, setSample] = useState({ title: 'Mưa lớn khiến đường ở phường Hiệp Bình ngập sâu', body: '' });
@@ -294,12 +294,47 @@ function RulesPanel({ s, setS, sources }: { s: Settings; setS: (fn: (p: Settings
       toast('err', (e as Error).message);
     }
   };
+  // basic view: the active rule's "one of these words" list and the title exclusions, as chips (the rule really filters;
+  // the old "Từ khóa chủ đề" list was only a reference and is kept in step)
+  const root = preset?.root as RuleGroup | undefined;
+  const first = root && root.op === 'AND' && !root.negate ? root.children[0] : undefined;
+  const incGroup = first && first.kind === 'group' && first.op === 'OR' && !first.negate ? first : null;
+  const incTerms = incGroup ? incGroup.children.filter((c): c is RuleTerm => c.kind === 'term' && !c.negate).map((c) => c.value) : [];
+  const setInclude = (vals: string[]) => {
+    if (!incGroup || !root) return;
+    const byVal = new Map(incGroup.children.filter((c): c is RuleTerm => c.kind === 'term' && !c.negate).map((c) => [c.value.toLowerCase(), c]));
+    const kids: RuleNode[] = [
+      ...incGroup.children.filter((c) => c.kind !== 'term' || c.negate),
+      ...vals.map((v) => byVal.get(v.toLowerCase()) ?? ({ kind: 'term', id: uid('t'), field: 'any', match: 'word', value: v, negate: false } as RuleTerm)),
+    ];
+    setPreset({ root: { ...root, children: [{ ...incGroup, children: kids }, ...root.children.slice(1)] } });
+    setKw({ topicKeywords: vals });
+  };
   return (
     <div>
-      <Section title="Từ khóa ngành" help="Danh sách tham khảo dùng để gợi ý; quy tắc chính nằm ở Bộ quy tắc bên dưới">
-        <ChipEditor values={s.keywords.topicKeywords} onChange={(v) => setKw({ topicKeywords: v })} label="Từ khóa chủ đề" />
-        <ChipEditor values={s.keywords.excludePhrases} onChange={(v) => setKw({ excludePhrases: v })} label="Cụm loại trừ trong tiêu đề" help="Bài có cụm này trong tiêu đề bị đánh dấu Không liên quan (vẫn hiện trong danh sách link (Độ phủ & nguồn) kèm lý do)" />
-        <ChipEditor values={s.keywords.excludeUrlSections} onChange={(v) => setKw({ excludeUrlSections: v })} label="Chuyên mục URL loại trừ" help="Ví dụ the-thao, giai-tri" validate={(v) => (/^[a-z0-9-]+$/.test(v) ? null : 'Chỉ a-z, 0-9, dấu gạch')} />
+      <Section title="Lấy bài có một trong các từ" help="Tìm trong tiêu đề, sapo và nội dung bài. Gõ từ rồi Enter để thêm, bấm × để bỏ. Bài còn phải đúng địa bàn (mục Địa điểm).">
+        {incGroup ? (
+          <div data-testid="basic-include">
+            <ChipEditor values={incTerms} onChange={setInclude} placeholder="thêm từ, ví dụ: chống ngập" />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">Bộ quy tắc đang dùng đã được tùy chỉnh – sửa ở chế độ <b>Nâng cao</b>.</p>
+        )}
+      </Section>
+      <Section title="Bỏ bài có tiêu đề chứa" help="Bài có cụm này trong tiêu đề bị loại (vẫn xem được kèm lý do trong danh sách link ở mục Độ phủ & nguồn).">
+        <div data-testid="basic-exclude">
+          <ChipEditor values={s.keywords.excludePhrases} onChange={(v) => setKw({ excludePhrases: v })} placeholder="thêm cụm, ví dụ: giá vàng" />
+        </div>
+      </Section>
+      {!advanced && (
+        <p className="mb-4 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
+          Bật <b>Nâng cao</b> (cột trái) để sửa từ đồng nghĩa, chuyên mục loại trừ và bộ quy tắc AND / OR / NOT.
+        </p>
+      )}
+      {advanced && (
+        <>
+      <Section title="Chuyên mục URL loại trừ" help="Ví dụ the-thao, giai-tri">
+        <ChipEditor values={s.keywords.excludeUrlSections} onChange={(v) => setKw({ excludeUrlSections: v })} validate={(v) => (/^[a-z0-9-]+$/.test(v) ? null : 'Chỉ a-z, 0-9, dấu gạch')} />
       </Section>
       <Section title="Nhóm từ đồng nghĩa" actions={<button className="btn-ghost btn-xs" onClick={() => setKw({ synonyms: [...s.keywords.synonyms, { canonical: 'từ mới', aliases: [] }] })}><Plus className="h-3 w-3" /> Thêm nhóm</button>}>
         {s.keywords.synonyms.map((g, i) => (
@@ -354,6 +389,8 @@ function RulesPanel({ s, setS, sources }: { s: Settings; setS: (fn: (p: Settings
           </>
         )}
       </Section>
+        </>
+      )}
       <Section title="Xem thử kết quả (chưa lưu vẫn thử được)">
         <Field label="Tiêu đề thử">
           <input className="input" value={sample.title} onChange={(e) => setSample({ ...sample, title: e.target.value })} />

@@ -7,7 +7,15 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14b – Settings: Cơ bản / Nâng cao, step 1 = shell + Nguồn tin; 2026-11-17)
+## ▶ RESUME HERE (session 14c – filter words checked on the team labels; Settings step 2 = Từ khóa & quy tắc; 2026-11-17)
+- User's list (TPHCM; xây dựng, bất động sản, nhà ở, hạ tầng, giao thông, kẹt xe, ngập lụt, mưa, triều cường, xây dựng sai phép, không phép, chất lượng công trình): "mưa" (only "mưa lớn"), "sai phép", "không phép" were missing.
+- New tool: scripts/eval-filter.ts replays the filter on every published story and scores it on labels/labels.json (precision of "Sẵn sàng", recall = labelled-relevant not excluded). Before: 93% / 81% (1,021 stories, 111 labels). After: 100% (30/30) / 93% (39/42); the 3 left: other province, UK, a traffic fine without sector words.
+- Changes (schemas.ts, one-time upgrades of saved configs; defaults.ts for new ones): category keywords rev 3 (BUILD + sai phép/không phép/trật tự xây dựng/quy hoạch đô thị…/mất an toàn; FLOOD + mưa, ngập lụt; REALESTATE + nhà xã hội, nhà xưởng; TRAFFIC + CSGT, vi phạm/tai nạn giao thông, phạt nguội), removals ("vi phạm", "an toàn" from BUILD), INFRA: requirement dropped again (it lost "Công viên Thiên niên kỷ…", in the department's sample report) and look-alikes excluded (hạ tầng số/sạc…, kênh truyền hình/đầu tư…, Rạch Giá/Rạch Dừa…); INVEST/POLICY keep BUILD/TRAFFIC. Topic words + default rule terms (topicRev / presetRev 2), title exclusion "Điểm tin".
+- Settings step 2: "Từ khóa & quy tắc" basic view edits the ACTIVE RULE's include words as chips (the old "Từ khóa chủ đề" list was not used by the filter; now kept in step) and the title exclusions; synonyms, URL sections and the AND/OR/NOT builder only with Nâng cao.
+- Tests: vitest 143/143, playwright 12/12 (new basic-view test), live 8/8.
+- Next: Settings step 3 – Địa điểm / Lĩnh vực / Báo cáo & mẫu in the same style; re-run scripts/eval-filter.ts after new labels.
+
+## (history) Session 14b – Settings: Cơ bản / Nâng cao, step 1 = shell + Nguồn tin; 2026-11-17)
 - User approved the Settings plan (no MUI: keep Tailwind; basic/advanced).
 - Shell (web/src/Settings.tsx): basic sections always listed; Thời gian, Chất lượng thu thập & ảnh, Hiệu năng, Sao lưu & lịch sử behind the "Nâng cao" switch (remembered per browser; shown while searching or when open). Long shared-config note → small "Áp dụng cho cả nhóm ⓘ" popover (testid shared-config-note). Lưu / Hủy thay đổi moved to a bottom bar shown only with unsaved changes (testid save-bar); reset = icon.
 - Nguồn tin (web/src/SourcesPanel.tsx): compact cards – coloured initials avatar (no external favicon service), name + site, switch, "Thử", "Sửa" (opens technical details + editor), ⋯ menu (Nhân bản, Xóa). Wizard: plain explanation, "Thêm vào danh sách".

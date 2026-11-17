@@ -182,24 +182,29 @@ describe('no "Skill" notes shown to users', async () => {
   });
 });
 
-describe('Hạ tầng kỹ thuật, Đầu tư công, Chính sách count only for the construction / transport industries', async () => {
+describe('Đầu tư công, Chính sách count only for construction / transport; Hạ tầng kỹ thuật by its own words minus look-alikes', async () => {
   const { SettingsSchema } = await import('../src/domain/schemas.js');
   const { classifyCategory } = await import('../src/domain/classify.js');
   const s = SettingsSchema.parse(defaultSettings());
-  it('defaults and saved configurations (once) require Xây dựng or Giao thông', () => {
-    for (const code of ['INFRA', 'INVEST', 'POLICY']) expect(s.categories.find((c) => c.code === code)!.requiresCategories).toEqual(['BUILD', 'TRAFFIC']);
+  it('defaults and saved configurations (once): Đầu tư công / Chính sách require Xây dựng or Giao thông; Hạ tầng kỹ thuật excludes look-alikes', () => {
+    for (const code of ['INVEST', 'POLICY']) expect(s.categories.find((c) => c.code === code)!.requiresCategories).toEqual(['BUILD', 'TRAFFIC']);
+    expect(s.categories.find((c) => c.code === 'INFRA')!.requiresCategories).toEqual([]);
+    expect(s.categories.find((c) => c.code === 'INFRA')!.excludePhrases).toContain('hạ tầng số');
     const old = defaultSettings() as any;
-    old.categories = old.categories.map(({ requiresRev: _r, ...c }: any) => ({ ...c, requiresCategories: c.code === 'POLICY' ? ['LAND', 'FLOOD'] : [] })); // saved before (no requiresRev)
+    old.categories = old.categories.map(({ requiresRev: _r, keywordsRev: _k, ...c }: any) => ({ ...c, excludePhrases: [], requiresCategories: c.code === 'POLICY' ? ['LAND', 'FLOOD'] : c.code === 'INFRA' ? ['BUILD', 'TRAFFIC'] : [] })); // saved before
     const up = SettingsSchema.parse(old);
-    expect(up.categories.find((c) => c.code === 'INFRA')!.requiresCategories).toEqual(['BUILD', 'TRAFFIC']);
+    expect(up.categories.find((c) => c.code === 'INFRA')!.requiresCategories).toEqual([]);
+    expect(up.categories.find((c) => c.code === 'INFRA')!.excludePhrases).toContain('Rạch Dừa');
     expect(up.categories.find((c) => c.code === 'POLICY')!.requiresCategories).toEqual(['BUILD', 'TRAFFIC']);
     // a later choice in Cài đặt is kept
-    const later = SettingsSchema.parse({ ...up, categories: up.categories.map((c) => (c.code === 'INFRA' ? { ...c, requiresCategories: [] } : c)) });
-    expect(later.categories.find((c) => c.code === 'INFRA')!.requiresCategories).toEqual([]);
+    const later = SettingsSchema.parse({ ...up, categories: up.categories.map((c) => (c.code === 'INVEST' ? { ...c, requiresCategories: [] } : c)) });
+    expect(later.categories.find((c) => c.code === 'INVEST')!.requiresCategories).toEqual([]);
   });
   it('a story only about "hạ tầng" / "giải ngân" / "nghị định" without the industries is not counted', () => {
     expect(classifyCategory('Doanh nghiệp được tiếp cận nguồn lực công để thử nghiệm công nghệ mới theo nghị định', '', s.categories).primary).toBeNull();
-    expect(classifyCategory('Ngày hội Đại đoàn kết tại các khu phố', 'Người dân trang trí vỉa hè, công viên', s.categories).primary).toBeNull();
+    expect(classifyCategory('Sôi nổi Ngày hội Đại đoàn kết tại phường Rạch Dừa', '', s.categories).primary).toBeNull(); // a place name, not a canal
+    expect(classifyCategory('Lynk & Co giải bài toán hạ tầng sạc', '', s.categories).primary).toBeNull();
+    expect(classifyCategory('Hiện trạng dự án Công viên Thiên niên kỷ TP.HCM vừa thu hồi', '', s.categories).primary).toBe('INFRA'); // in the department's sample report
     expect(classifyCategory('Giải ngân vốn đầu tư công cho đường sắt Thủ Thiêm - Long Thành', '', s.categories).primary).not.toBeNull();
     expect(classifyCategory('Cải tạo hệ thống thoát nước', 'Công trình thi công trên đường Nguyễn Hữu Cảnh', s.categories).scores.INFRA).toBeGreaterThan(0);
   });

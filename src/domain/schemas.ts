@@ -133,45 +133,78 @@ export const SECTOR_CODES: CategoryCode[] = ['LAND', 'BUILD', 'INFRA', 'TRAFFIC'
  * Defaults filled in when a stored configuration predates these fields (so saved web/local configs get them too;
  * the user can change them in Cài đặt › Lĩnh vực).
  */
-/** the department's two industries: "Hạ tầng kỹ thuật", "Đầu tư công", "Chính sách, pháp quy" count only for them (user 17/11/2026) */
+/** the department's two industries: "Đầu tư công", "Chính sách, pháp quy" count only for them (user 17/11/2026) */
 export const INDUSTRY_CODES: CategoryCode[] = ['BUILD', 'TRAFFIC'];
+/** look-alikes of the "Hạ tầng kỹ thuật" words that are not urban technical infrastructure (replay on 1,021 stories, 17/11/2026) */
+const INFRA_LOOKALIKES = [
+  'hạ tầng số', 'hạ tầng sạc', 'hạ tầng viễn thông', 'hạ tầng dữ liệu', 'hạ tầng công nghệ', 'hạ tầng mạng', 'hạ tầng thanh toán', 'hạ tầng giao dịch', 'hạ tầng năng lượng',
+  'kênh truyền hình', 'kênh YouTube', 'kênh đầu tư', 'kênh bán hàng', 'kênh phân phối', 'kênh thông tin', 'kênh huy động', 'kênh dẫn vốn', 'kênh tiết kiệm',
+  'Rạch Giá', 'Rạch Dừa', 'Rạch Gầm', 'Rạch Sỏi',
+];
 export const CATEGORY_FIELD_DEFAULTS: Partial<Record<CategoryCode, { requiresCategories?: CategoryCode[]; excludePhrases?: string[] }>> = {
   POLICY: { requiresCategories: INDUSTRY_CODES },
-  INFRA: { requiresCategories: INDUSTRY_CODES },
   INVEST: { requiresCategories: INDUSTRY_CODES },
+  INFRA: { excludePhrases: INFRA_LOOKALIKES },
   TRAFFIC: { excludePhrases: ['yêu cầu', 'nhu cầu', 'cung cầu', 'toàn cầu', 'cầu nguyện', 'cầu thị', 'cầu lông', 'cầu cứu', 'cầu hôn', 'cầu mong', 'cầu môn', 'khẩn cầu', 'mưu cầu'] },
   BUILD: { excludePhrases: ['xây dựng Đảng', 'xây dựng chính quyền', 'xây dựng hệ thống chính trị', 'xây dựng gia đình', 'xây dựng văn hóa', 'xây dựng lực lượng', 'xây dựng pháp luật', 'xây dựng nông thôn mới', 'xây dựng đội ngũ', 'xây dựng thương hiệu', 'an toàn giao thông'] },
 };
 /** default keywords added in each revision – applied once to saved lists of an older revision */
 export const KEYWORD_UPGRADES: Record<number, Partial<Record<CategoryCode, string[]>>> = {
   2: { TRAFFIC: ['đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển'] },
+  // user's list 17/11/2026 + gaps found by replaying the filter on the team's labels
+  3: {
+    BUILD: ['sai phép', 'không phép', 'xây dựng sai phép', 'xây dựng không phép', 'trật tự xây dựng', 'vi phạm trật tự xây dựng', 'mất an toàn', 'an toàn công trình', 'quy hoạch đô thị', 'quy hoạch chung', 'quy hoạch phân khu', 'quy hoạch chi tiết', 'đồ án quy hoạch', 'chỉnh trang đô thị', 'phát triển đô thị'],
+    FLOOD: ['mưa', 'ngập lụt'],
+    REALESTATE: ['nhà xã hội', 'nhà xưởng'],
+    TRAFFIC: ['CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội', 'an toàn giao thông'],
+  },
 };
-export const KEYWORDS_REV = 2;
+/** default keywords that proved too broad – removed once from saved lists of an older revision */
+export const KEYWORD_REMOVALS: Record<number, Partial<Record<CategoryCode, string[]>>> = {
+  3: { BUILD: ['vi phạm', 'an toàn'] }, // "vi phạm" put a multi-level-marketing case in "Sẵn sàng"
+};
+/** excluded look-alike phrases added once to saved categories */
+export const EXCLUDE_UPGRADES: Record<number, Partial<Record<CategoryCode, string[]>>> = {
+  3: { INFRA: INFRA_LOOKALIKES },
+};
+export const KEYWORDS_REV = 3;
 /** "requiresCategories" revisions applied once to saved configurations (afterwards Cài đặt › Lĩnh vực decides) */
 export const REQUIRES_UPGRADES: Record<number, Partial<Record<CategoryCode, CategoryCode[]>>> = {
   2: { POLICY: INDUSTRY_CODES, INFRA: INDUSTRY_CODES, INVEST: INDUSTRY_CODES },
+  // the concrete urban-infrastructure words (công viên, cây xanh, thoát nước…) are the department's own field: "Công viên
+  // Thiên niên kỷ TP.HCM vừa thu hồi" (in the department's sample report) was lost with the requirement; look-alikes are excluded instead
+  3: { INFRA: [] },
 };
-export const REQUIRES_REV = 2;
+export const REQUIRES_REV = 3;
+const sameWord = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 export const CategorySchema = z.preprocess(
   (v) => {
     if (!v || typeof v !== 'object') return v;
     const o = v as Record<string, unknown>;
-    const d = CATEGORY_FIELD_DEFAULTS[o.code as CategoryCode] ?? {};
+    const code = o.code as CategoryCode;
+    const d = CATEGORY_FIELD_DEFAULTS[code] ?? {};
     // keyword upgrades: a saved list older than a revision receives that revision's new default keywords once
-    // (approved by the user 16/11/2026); after that the user's own additions/removals are kept as they are
+    // (approved by the user 16/11 and 17/11/2026); after that the user's own additions/removals are kept as they are
     let keywords = Array.isArray(o.keywords) ? (o.keywords as string[]) : undefined;
+    let exclude = Array.isArray(o.excludePhrases) ? (o.excludePhrases as string[]) : undefined;
     const rev = typeof o.keywordsRev === 'number' ? o.keywordsRev : keywords ? 1 : KEYWORDS_REV;
-    if (keywords) {
-      for (const [r, add] of Object.entries(KEYWORD_UPGRADES)) {
-        if (rev >= Number(r)) continue;
-        const extra = add[o.code as CategoryCode] ?? [];
-        keywords = [...keywords, ...extra.filter((k) => !keywords!.some((x) => x.toLowerCase() === k.toLowerCase()))];
+    for (const r of [...new Set([...Object.keys(KEYWORD_UPGRADES), ...Object.keys(KEYWORD_REMOVALS), ...Object.keys(EXCLUDE_UPGRADES)].map(Number))].sort((a, b) => a - b)) {
+      if (rev >= r) continue;
+      if (keywords) {
+        const drop = KEYWORD_REMOVALS[r]?.[code] ?? [];
+        keywords = keywords.filter((k) => !drop.some((x) => sameWord(x, k)));
+        const extra = KEYWORD_UPGRADES[r]?.[code] ?? [];
+        keywords = [...keywords, ...extra.filter((k) => !keywords!.some((x) => sameWord(x, k)))];
+      }
+      if (exclude) {
+        const extra = EXCLUDE_UPGRADES[r]?.[code] ?? [];
+        exclude = [...exclude, ...extra.filter((k) => !exclude!.some((x) => sameWord(x, k)))];
       }
     }
     let requires = (o.requiresCategories as CategoryCode[] | undefined) ?? d.requiresCategories ?? [];
     const reqRev = typeof o.requiresRev === 'number' ? o.requiresRev : 1;
-    for (const [r, set] of Object.entries(REQUIRES_UPGRADES)) if (reqRev < Number(r) && set[o.code as CategoryCode]) requires = set[o.code as CategoryCode]!;
-    return { ...o, ...(keywords ? { keywords } : {}), keywordsRev: KEYWORDS_REV, requiresCategories: requires, requiresRev: REQUIRES_REV, excludePhrases: o.excludePhrases ?? d.excludePhrases ?? [] };
+    for (const [r, set] of Object.entries(REQUIRES_UPGRADES)) if (reqRev < Number(r) && set[code]) requires = set[code]!;
+    return { ...o, ...(keywords ? { keywords } : {}), keywordsRev: KEYWORDS_REV, requiresCategories: requires, requiresRev: REQUIRES_REV, excludePhrases: exclude ?? d.excludePhrases ?? [] };
   },
   z.object({
     code: CategoryCode,
@@ -200,6 +233,39 @@ export const LocationAreaSchema = z.object({
   requirePrefix: z.boolean().default(false),
 });
 export type LocationArea = z.infer<typeof LocationAreaSchema>;
+
+/** topic words added 17/11/2026 (user's list + gaps found on the team's labels): to the topic keywords and the default rule */
+export const TOPIC_ADDED_V2 = ['mưa', 'ngập lụt', 'sai phép', 'không phép', 'trái phép', 'chất lượng công trình', 'trật tự xây dựng', 'quy hoạch đô thị', 'chỉnh trang đô thị', 'nhà xã hội', 'CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội'];
+/** title phrases excluded since 17/11/2026: "Điểm tin 21h: …" digests mix unrelated topics */
+export const TITLE_EXCLUDE_ADDED_V2 = ['Điểm tin'];
+const addMissing = (list: string[], extra: string[]) => [...list, ...extra.filter((k) => !list.some((x) => x.toLowerCase() === k.toLowerCase()))];
+/** one-time upgrade of saved topic keywords / title exclusions (topicRev < 2) */
+function upgradeKeywords(v: unknown) {
+  if (!v || typeof v !== 'object') return v;
+  const o = v as Record<string, unknown>;
+  if (typeof o.topicRev === 'number' && o.topicRev >= 2) return o;
+  return {
+    ...o,
+    topicKeywords: addMissing(Array.isArray(o.topicKeywords) ? (o.topicKeywords as string[]) : [], TOPIC_ADDED_V2),
+    excludePhrases: addMissing(Array.isArray(o.excludePhrases) ? (o.excludePhrases as string[]) : [], TITLE_EXCLUDE_ADDED_V2),
+    topicRev: 2,
+  };
+}
+/** one-time upgrade of the default rule ("Ngành xây dựng"): its first OR group receives the new topic words (presetRev < 2) */
+function upgradeRules(v: unknown) {
+  if (!v || typeof v !== 'object') return v;
+  const o = v as Record<string, unknown>;
+  if (typeof o.presetRev === 'number' && o.presetRev >= 2) return o;
+  const presets = Array.isArray(o.presets) ? (o.presets as Array<Record<string, any>>) : [];
+  const next = presets.map((p) => {
+    const g = p.id === 'preset_nganh_xay_dung' && p.root?.kind === 'group' && p.root.op === 'AND' ? p.root.children?.[0] : null;
+    if (!g || g.kind !== 'group' || g.op !== 'OR' || g.negate) return p;
+    const have = new Set((g.children as Array<Record<string, any>>).filter((c) => c.kind === 'term').map((c) => String(c.value).toLowerCase()));
+    const add = TOPIC_ADDED_V2.filter((k) => !have.has(k.toLowerCase())).map((k, i) => ({ kind: 'term', id: `t_v2_${i}`, field: 'any', match: 'word', value: k, negate: false }));
+    return { ...p, root: { ...p.root, children: [{ ...g, children: [...g.children, ...add] }, ...p.root.children.slice(1)] } };
+  });
+  return { ...o, presets: next, presetRev: 2 };
+}
 
 export const SettingsSchema = z.object({
   schemaVersion: z.literal(3).default(3),
@@ -248,17 +314,21 @@ export const SettingsSchema = z.object({
       respectRobotsTxt: z.boolean().default(true),
     })
     .default({}),
-  keywords: z
+  keywords: z.preprocess(upgradeKeywords, z
     .object({
       topicKeywords: z.array(z.string()).default([]),
+      /** topic-keyword revision (see upgradeKeywords) */
+      topicRev: z.number().int().default(2),
       synonyms: z.array(z.object({ canonical: z.string().min(1), aliases: z.array(z.string()) })).default([]),
       excludePhrases: z.array(z.string()).default([]),
       excludeUrlSections: z.array(z.string()).default([]),
     })
-    .default({}),
-  rules: z
+    .default({})),
+  rules: z.preprocess(upgradeRules, z
     .object({
       presets: z.array(RulePresetSchema).default([]),
+      /** default-rule revision (see upgradeRules) */
+      presetRev: z.number().int().default(2),
       activePresetId: z.string().default(''),
       /** When no rule/keyword matches: send to review queue instead of excluding */
       unknownRelevancePolicy: z.enum(['review', 'exclude_with_reason']).default('review'),
@@ -267,7 +337,7 @@ export const SettingsSchema = z.object({
       /** safety net for the rule above: body sector score ≥ this → "Cần kiểm tra" instead of excluded (0 = off) */
       bodySectorScoreForReview: z.number().int().min(0).max(50).default(5),
     })
-    .default({}),
+    .default({})),
   location: z
     .object({
       /** the profile's target area as shown to users ("TP.HCM", "Hà Nội", …); location status code "hcm" = inside it */

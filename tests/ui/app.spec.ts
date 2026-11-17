@@ -63,8 +63,33 @@ test('UI-03: disable a source and it stays disabled after reload', async ({ page
   await expect(page.getByTestId('source-fixture-b').getByRole('switch')).toHaveAttribute('aria-checked', 'false');
 });
 
+test('Settings basic view: the filter words as chips (the rule itself), advanced parts behind "Nâng cao"', async ({ page }) => {
+  await openSettings(page, 'Từ khóa & quy tắc');
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  const inc = dlg.getByTestId('basic-include');
+  await expect(inc).toContainText('kẹt xe');
+  await expect(dlg.getByTestId('basic-exclude')).toContainText('xổ số');
+  await expect(dlg.getByText('Bộ quy tắc AND / OR / NOT', { exact: true })).toHaveCount(0); // technical parts hidden
+  await inc.locator('input').fill('chống sạt lở bờ sông');
+  await inc.locator('input').press('Enter');
+  // the word is used by the filter right away (preview, not saved yet)
+  await dlg.getByLabel('Tiêu đề thử').fill('TP.HCM khởi động dự án chống sạt lở bờ sông');
+  await dlg.getByRole('button', { name: /Xem thử trên bài mẫu/ }).click();
+  await expect(dlg.getByText(/✔ Khớp – TP.HCM khởi động dự án chống sạt lở bờ sông/)).toBeVisible();
+  await save(page);
+  await page.reload();
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  await dlg.getByRole('button', { name: 'Từ khóa & quy tắc', exact: true }).click();
+  await expect(dlg.getByTestId('basic-include')).toContainText('chống sạt lở bờ sông');
+  // the same word is in the AND / OR / NOT rule shown with "Nâng cao"
+  await dlg.getByRole('switch', { name: 'Nâng cao' }).click();
+  await expect(dlg.getByText('Bộ quy tắc AND / OR / NOT', { exact: true })).toBeVisible();
+  await expect(dlg.locator('input[value="chống sạt lở bờ sông"]')).toHaveCount(1);
+});
+
 test('UI-04: Boolean builder – add a NOT term, preview explains, persists', async ({ page }) => {
   await openSettings(page, 'Từ khóa & quy tắc');
+  await page.getByRole('dialog', { name: 'Cài đặt' }).getByRole('switch', { name: 'Nâng cao' }).click(); // the builder is an advanced part
   // root group "+ Từ khóa" is the first one
   await page.getByRole('button', { name: 'Từ khóa', exact: true }).first().click();
   const empty = page.getByLabel('Từ khóa', { exact: true }).last();

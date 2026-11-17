@@ -119,8 +119,8 @@ describe('saved keyword lists receive new default keywords once (user approved 1
     tr.keywords = ['giao thông', 'cầu', 'Đường bộ'];
     delete tr.keywordsRev;
     const up = SettingsSchema.parse(raw).categories.find((c) => c.code === 'TRAFFIC')!;
-    expect(up.keywords).toEqual(['giao thông', 'cầu', 'Đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển']); // no duplicate
-    expect(up.keywordsRev).toBe(2);
+    expect(up.keywords).toEqual(['giao thông', 'cầu', 'Đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển', 'CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội', 'an toàn giao thông']); // no duplicate; rev 2 then rev 3
+    expect(up.keywordsRev).toBe(3);
     const saved = JSON.parse(JSON.stringify({ ...raw, categories: raw.categories.map((c: { code: string }) => (c.code === 'TRAFFIC' ? { ...up, keywords: up.keywords.filter((k) => k !== 'sân bay') } : c)) }));
     expect(SettingsSchema.parse(saved).categories.find((c) => c.code === 'TRAFFIC')!.keywords).not.toContain('sân bay');
   });
