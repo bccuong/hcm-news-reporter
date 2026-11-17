@@ -99,4 +99,9 @@ describe('impact preview and "Hỏi nhanh"', async () => {
     expect(picked.some((x) => x.article.id === far.id)).toBe(false);
     expect(uncertainStories([near], s, new Set([near.id]))).toEqual([]);
   });
+  it('"Hỏi nhanh" never asks about a story whose title names another province (excluded without a person, 17/11/2026)', () => {
+    const other = art('Gia Lai: Khởi công dự án chung cư gần 600 căn hộ tại phường Thống Nhất', 'Dự án chung cư góp phần bổ sung nguồn cung nhà ở, thúc đẩy phát triển đô thị tại Gia Lai.', 'Dự án nhà ở, chung cư, xây dựng, khởi công công trình. Doanh nghiệp từng làm dự án ở TP.HCM.');
+    const hanoi = art('Hà Nội sắp mở bán nhà xã hội gần 30 triệu một m2 ở Đông Anh', 'Chủ đầu tư nhận hồ sơ hơn 300 căn nhà ở xã hội, căn hộ, giá bán từ 1,1 tỷ đồng.', 'Dự án nhà ở xã hội xây dựng xong.');
+    expect(uncertainStories([other, hanoi], s, new Set())).toEqual([]);
+  });
 });

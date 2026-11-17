@@ -255,9 +255,11 @@ export function uncertainStories(articles: Article[], s: Settings, skip: Set<str
     } else if (st === 'relevant' && hcm && !v.location.leadHit) {
       why = 'Vào Sẵn sàng nhưng TP.HCM chỉ có trong thân bài';
       weight = 0.6;
-    } else if (st === 'irrelevant' && v.reasonCode === 'NOT_GEOGRAPHICALLY_RELEVANT' && best >= 6) {
-      why = 'Bị loại vì nêu địa phương khác, nhưng rất đúng ngành';
-      weight = 0.5;
+    } else if (st === 'review') {
+      // the filter could not decide: exactly what a reviewer's answer teaches
+      // (stories excluded because the title / sapo names another province are NOT asked: clear without a person, 17/11/2026)
+      why = 'Máy chưa quyết được – đang ở Cần kiểm tra';
+      weight = 0.5 + Math.min(best, 10) / 100;
     }
     if (weight) out.push({ article: a, status: st, why, weight });
   }

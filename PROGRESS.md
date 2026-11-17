@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14l – ESC closes panels; merged story count explained; 2026-11-17)
+## ▶ RESUME HERE (session 14m – Hỏi nhanh: no other-province questions, "✗ Không" asks why; city master plan kept; 2026-11-17)
+- src/domain/suggest.ts `uncertainStories`: stories excluded because title/sapo names another province are never asked; stories in Cần kiểm tra are asked instead ("Máy chưa quyết được").
+- Hỏi nhanh "✗ Không" opens one row of reasons (likely one first: Ngoài địa bàn when the place is not the city): Lạc đề / Ngoài địa bàn → label "không liên quan" + Loại with that reason; Trùng tin / Không quan trọng → Loại with reason only, no label (the nightly suggestions ignore them, the story is in scope).
+- Replaying Hỏi nhanh on 17/11 16:30 showed "TP.HCM công bố hồ sơ quy hoạch tổng thể tầm nhìn 100 năm" excluded (NO_SECTOR_IN_LEAD): BUILD keywords rev 4 add "quy hoạch tổng thể", "quy hoạch kiến trúc" ("quy hoạch" alone = "quy hoạch cán bộ"). eval-filter: Sẵn sàng 67→68, precision 92% (=), recall 94% (=).
+- Tests: suggest + relevance unit tests; live Hỏi nhanh test answers "✗ Không" with a reason. vitest 164/164, test:ui 13/13, test:ui:live 12/12, build OK.
+- Next step: check the 08:02 period on 18/11 for stories outside HCM.
+
+## (history) Session 14l – ESC closes panels; merged story count explained; 2026-11-17)
 - ESC (web/src/ui.tsx `useEscape`): closes the top-most of Chi tiết bài / Biên tập (Inspector), Cài đặt (same as X: asks when unsaved), Hỏi nhanh, đăng nhập; a small menu (Loại reasons, Lượt đã lưu) closes first via preventDefault.
 - "Bài sẵn sàng 21 / Chọn tất cả (20)": not a bug – in the 17/11 16:30 period "Thêm 8 thang máy … Bến Thành - Suối Tiên" (VnExpress) was merged at 16:57 into "Metro số 1 lắp 8 thang máy …" (Báo Xây dựng); a merged secondary is not selectable. The bar now says "+ N bài đã gộp vào tin khác" and the card chip has "Tách".
 - Tests: UI test for ESC (detail, settings, unsaved confirm) and the merged note + Tách; test:ui 13/13, vitest 162/162, test:ui:live 12/12, build OK.

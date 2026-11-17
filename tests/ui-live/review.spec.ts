@@ -518,11 +518,15 @@ test('Hỏi nhanh: an answer moves on at once (save in the background), every vo
     const story = dlg.getByTestId('quick-ask-story');
     titles.push((await story.locator('h3').innerText()).trim());
     const t0 = Date.now();
-    await dlg.getByRole('button', { name: i % 2 ? '✗ Không' : '✓ Liên quan' }).click();
+    if (i % 2) {
+      // "✗ Không" asks why: one more click on a reason answers
+      await dlg.getByRole('button', { name: '✗ Không' }).click();
+      await dlg.getByTestId('ask-reasons').getByRole('button', { name: /Lạc đề/ }).click();
+    } else await dlg.getByRole('button', { name: '✓ Liên quan' }).click();
     // the next story (or the end) shows without waiting for the save
     if (i < total - 1) await expect(dlg.getByTestId('quick-ask-story').locator('h3')).not.toHaveText(titles[i]!, { timeout: 500 });
     else await expect(dlg).toContainText(`Đã chấm ${total} bài`, { timeout: 500 });
-    expect(Date.now() - t0).toBeLessThan(700);
+    expect(Date.now() - t0).toBeLessThan(1200);
   }
   await dlg.getByRole('button', { name: 'Xong' }).click();
   // the round is over: the card says so (no next 8 stories), then closes by itself

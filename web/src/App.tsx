@@ -528,11 +528,15 @@ export function App() {
     if (api.shared && !api.shared.session()) return setLoginOpen(true);
     setAsking(askable);
   };
-  const answerAsk = (x: UncertainStory, relevant: boolean) => {
+  const answerAsk = (x: UncertainStory, relevant: boolean, reason: ExcludeReason = 'off_topic') => {
     if (api.shared && !api.shared.session()) return (setLoginOpen(true), false);
-    // ✗ on a ready story also takes it out of the list (as "✗ Không" does); ✓ on an excluded story records the miss.
-    // Not awaited: the next story shows at once; a failed save is reported and reverted by patch()
-    void guardedPatch(x.article.id, relevant ? { relevanceLabel: 'relevant' } : x.status === 'relevant' ? { relevanceLabel: 'irrelevant', included: false, excludedByEditor: true, excludeReason: 'off_topic' } : { relevanceLabel: 'irrelevant' });
+    // ✗ takes a story out of Sẵn sàng / Cần kiểm tra (as "Loại") WITH the reason; ✓ on an excluded story records the miss.
+    // "Trùng tin" / "Không quan trọng": in scope for the filter, only not wanted → no "không liên quan" label (the nightly
+    // suggestions must not learn to drop such stories). Not awaited: the next story shows at once.
+    if (relevant) return void guardedPatch(x.article.id, { relevanceLabel: 'relevant' }), true;
+    const inScope = reason === 'duplicate' || reason === 'minor';
+    const out = x.status !== 'irrelevant' ? { included: false, excludedByEditor: true } : {};
+    void guardedPatch(x.article.id, { ...(inScope ? {} : { relevanceLabel: 'irrelevant' as const }), ...out, excludeReason: reason });
     return true;
   };
 
@@ -1023,17 +1027,23 @@ function RemoveButton({ title, onRemove, className = '' }: { title: string; onRe
 }
 
 /** "Hỏi nhanh": one story at a time, the ones the filter is least sure about; every answer is a ✓/✗ vote of the team */
-function QuickAsk({ items, onAnswer, onSkip, onClose }: { items: UncertainStory[]; onAnswer: (x: UncertainStory, relevant: boolean) => boolean; onSkip: (x: UncertainStory) => void; onClose: () => void }) {
+function QuickAsk({ items, onAnswer, onSkip, onClose }: { items: UncertainStory[]; onAnswer: (x: UncertainStory, relevant: boolean, reason?: ExcludeReason) => boolean; onSkip: (x: UncertainStory) => void; onClose: () => void }) {
   const [i, setI] = useState(0);
   const [done, setDone] = useState(0);
+  // "✗ Không" asks why (one click): the reason is what the nightly suggestions learn from
+  const [why, setWhy] = useState(false);
   const busy = false;
   const x = items[i];
-  const answer = (rel: boolean) => {
+  const answer = (rel: boolean, reason?: ExcludeReason) => {
     if (!x) return;
-    if (!onAnswer(x, rel)) return onClose(); // no reviewer session: the login dialog opens
+    if (!onAnswer(x, rel, reason)) return onClose(); // no reviewer session: the login dialog opens
+    setWhy(false);
     setDone((n) => n + 1);
     setI((n) => n + 1);
   };
+  const REASON_ICON: Record<ExcludeReason, string> = { off_topic: '🚫', other_area: '📍', duplicate: '⧉', minor: '↓' };
+  // the likely reason first: a story placed outside the city → "Ngoài địa bàn"
+  const likely: ExcludeReason = x && x.article.location?.status && x.article.location.status !== 'hcm' ? 'other_area' : 'off_topic';
   useEscape(onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3" role="dialog" aria-modal="true" aria-label="Hỏi nhanh">
@@ -1056,9 +1066,19 @@ function QuickAsk({ items, onAnswer, onSkip, onClose }: { items: UncertainStory[
             <p className="mt-3 text-sm font-medium text-slate-700">Bài này có thuộc phạm vi điểm tin không?</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <button className="btn rounded-full border-green-600 bg-green-600 px-5 text-white hover:bg-green-700" disabled={busy} onClick={() => answer(true)}>✓ Liên quan</button>
-              <button className="btn rounded-full border-red-600 bg-red-600 px-5 text-white hover:bg-red-700" disabled={busy} onClick={() => answer(false)}>✗ Không</button>
-              <button className="btn-ghost rounded-full" disabled={busy} onClick={() => { if (x) onSkip(x); setI((n) => n + 1); }}>Bỏ qua</button>
+              <button className={`btn rounded-full border-red-600 px-5 ${why ? 'bg-white text-red-700' : 'bg-red-600 text-white hover:bg-red-700'}`} disabled={busy} aria-expanded={why} onClick={() => setWhy((v) => !v)}>✗ Không</button>
+              <button className="btn-ghost rounded-full" disabled={busy} onClick={() => { if (x) onSkip(x); setWhy(false); setI((n) => n + 1); }}>Bỏ qua</button>
             </div>
+            {why && (
+              <div className="animate-in mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-red-50 px-3 py-2" data-testid="ask-reasons">
+                <span className="text-xs font-medium text-red-900">Vì sao?</span>
+                {[likely, ...EXCLUDE_REASONS.filter((k) => k !== likely)].map((k) => (
+                  <button key={k} className={`btn btn-xs rounded-full ${k === likely ? 'border-red-600 bg-red-600 text-white hover:bg-red-700' : 'border-red-200 bg-white text-red-800 hover:bg-red-100'}`} onClick={() => answer(false, k)}>
+                    <span aria-hidden="true">{REASON_ICON[k]}</span> {EXCLUDE_REASON_LABEL[k]}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="animate-in flex flex-col items-center gap-2 py-6 text-center">

@@ -158,6 +158,8 @@ export const KEYWORD_UPGRADES: Record<number, Partial<Record<CategoryCode, strin
     REALESTATE: ['nhà xã hội', 'nhà xưởng'],
     TRAFFIC: ['CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội', 'an toàn giao thông'],
   },
+  // a city master plan ('Quy hoạch tổng thể TP.HCM … tầm nhìn 100 năm') was excluded: 'quy hoạch' alone is too broad ('quy hoạch cán bộ')
+  4: { BUILD: ['quy hoạch tổng thể', 'quy hoạch kiến trúc'] },
 };
 /** default keywords that proved too broad – removed once from saved lists of an older revision */
 export const KEYWORD_REMOVALS: Record<number, Partial<Record<CategoryCode, string[]>>> = {
@@ -167,7 +169,7 @@ export const KEYWORD_REMOVALS: Record<number, Partial<Record<CategoryCode, strin
 export const EXCLUDE_UPGRADES: Record<number, Partial<Record<CategoryCode, string[]>>> = {
   3: { INFRA: INFRA_LOOKALIKES },
 };
-export const KEYWORDS_REV = 3;
+export const KEYWORDS_REV = 4;
 /** "requiresCategories" revisions applied once to saved configurations (afterwards Cài đặt › Lĩnh vực decides) */
 export const REQUIRES_UPGRADES: Record<number, Partial<Record<CategoryCode, CategoryCode[]>>> = {
   2: { POLICY: INDUSTRY_CODES, INFRA: INDUSTRY_CODES, INVEST: INDUSTRY_CODES },

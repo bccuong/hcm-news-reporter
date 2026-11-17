@@ -127,8 +127,8 @@ describe('saved keyword lists receive new default keywords once (user approved 1
     tr.keywords = ['giao thông', 'cầu', 'Đường bộ'];
     delete tr.keywordsRev;
     const up = SettingsSchema.parse(raw).categories.find((c) => c.code === 'TRAFFIC')!;
-    expect(up.keywords).toEqual(['giao thông', 'cầu', 'Đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển', 'CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội', 'an toàn giao thông']); // no duplicate; rev 2 then rev 3
-    expect(up.keywordsRev).toBe(3);
+    expect(up.keywords).toEqual(['giao thông', 'cầu', 'Đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển', 'CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội', 'an toàn giao thông']); // no duplicate; rev 2, 3 then 4
+    expect(up.keywordsRev).toBe(4);
     const saved = JSON.parse(JSON.stringify({ ...raw, categories: raw.categories.map((c: { code: string }) => (c.code === 'TRAFFIC' ? { ...up, keywords: up.keywords.filter((k) => k !== 'sân bay') } : c)) }));
     expect(SettingsSchema.parse(saved).categories.find((c) => c.code === 'TRAFFIC')!.keywords).not.toContain('sân bay');
   });
@@ -201,5 +201,14 @@ describe('a story must be placed in the city, except sector-wide policy / law (u
   });
   it('a city ward in the lead still counts when no other province is named', () => {
     expect(ex('Khởi công trường học mới', 'Sáng 17/11, tại phường Xuân Hòa, UBND phường khởi công công trình trường học.').location.status).not.toBe('other_province');
+  });
+});
+
+describe('a city master plan is construction news (Hỏi nhanh found it excluded, 17/11/2026)', () => {
+  it('"Quy hoạch tổng thể TP.HCM" goes to the review lists, "quy hoạch cán bộ" does not', () => {
+    const plan = judgeRelevance('TP.HCM công bố hồ sơ quy hoạch tổng thể tầm nhìn 100 năm', 'Sở Quy hoạch - Kiến trúc TP.HCM đã công bố hồ sơ Quy hoạch tổng thể TP.HCM thời kỳ 2025 - 2050.', 'x', s, 'Sở Quy hoạch - Kiến trúc TP.HCM đã công bố hồ sơ Quy hoạch tổng thể TP.HCM thời kỳ 2025 - 2050.');
+    expect(plan.status).not.toBe('irrelevant');
+    const staff = judgeRelevance('TP.HCM triển khai công tác quy hoạch cán bộ nhiệm kỳ mới', 'Thành ủy TP.HCM họp về công tác cán bộ.', 'x', s, 'Thành ủy TP.HCM họp về công tác cán bộ.');
+    expect(staff.status).toBe('irrelevant');
   });
 });
