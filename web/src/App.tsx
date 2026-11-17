@@ -1407,6 +1407,13 @@ function QualityTrend({ runs }: { runs: RelevanceQuality['runs'] }) {
   const pct = (v: number | null) => (v == null ? '–' : `${Math.round(v * 100)}%`);
   const step = Math.ceil(pts.length / 7);
   const last = pts[pts.length - 1]!;
+  const endY: Record<string, number> = {};
+  {
+    const ends = TREND.map((s) => ({ k: s.key as string, v: last[s.key] })).filter((e): e is { k: string; v: number } => e.v != null).map((e) => ({ k: e.k, y: y(e.v) + 4 }));
+    ends.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i]!.y - ends[i - 1]!.y < 13) ends[i]!.y = ends[i - 1]!.y + 13;
+    for (const e of ends) endY[e.k] = e.y;
+  }
   return (
     <div className="mt-3" data-testid="quality-trend">
       <div className="mb-1 flex flex-wrap items-center gap-4 text-xs text-slate-600">
@@ -1415,7 +1422,7 @@ function QualityTrend({ runs }: { runs: RelevanceQuality['runs'] }) {
           <span key={s.key} className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded" style={{ background: s.color }} /> {s.label}</span>
         ))}
       </div>
-      <div className="relative">
+      <div className="relative max-w-[740px]">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Chất lượng bộ lọc theo từng kỳ">
           {[0, 0.5, 1].map((v) => (
             <g key={v}>
@@ -1433,7 +1440,7 @@ function QualityTrend({ runs }: { runs: RelevanceQuality['runs'] }) {
                 <polyline points={seg.map(([i, v]) => `${x(i)},${y(v)}`).join(' ')} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
                 {seg.map(([i, v]) => <circle key={i} cx={x(i)} cy={y(v)} r={hover === i ? 5 : 4} fill={s.color} stroke="#ffffff" strokeWidth={2} />)}
                 {lastV != null && (
-                  <text x={x(pts.length - 1) + 10} y={y(lastV) + (s.key === 'precision' ? -4 : 12)} fontSize={11} fill="#52514e">
+                  <text x={x(pts.length - 1) + 10} y={endY[s.key] ?? y(lastV) + 4} fontSize={11} fill="#52514e">
                     {s.label} {pct(lastV)}
                   </text>
                 )}
