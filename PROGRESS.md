@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14f – "Vì sao?", Loại with a reason, impact preview, Hỏi nhanh; 2026-11-17)
+## ▶ RESUME HERE (session 14g – place suggestions, quality per period chart; 2026-11-17)
+- Suggestions kind "place" (suggest.ts placesOf/withPlace): relevant stories held back because the city was not recognised → "<phường|xã|đường|khu đô thị|chợ|cầu|kênh|…> <Proper Name>" phrases they share, added to Địa điểm as a landmark; same replay rule (≥ 2 judged stories fixed, none broken). Worker/server accept the kind; Settings shows it with a map pin. Merged provinces (Bình Dương, Bà Rịa – Vũng Tàu) were checked: already TP.HCM areas.
+- Độ phủ & nguồn › Chất lượng bộ lọc: line chart per period (Đúng chủ đề / Không bỏ sót, one % axis, palette validated with the dataviz validator: #2a78d6/#eb6834 all checks PASS, direct end labels de-overlapped, hover tooltip, table view); periods with < 3 judged stories left out. Web: team votes are used when logged in. Rendered and checked on the live site (158 judged stories, 5 periods).
+- Note: the chart shows the filter as it was at collection time; today's keyword changes apply from the next collection.
+- Tests: vitest 153/153, playwright 12/12, live 9/9.
+- Next (proposals 6–8): assessment/assignment learned from editor edits (move NEGATIVE/POSITIVE words into Settings first), merge suggestions, local ML score after ~300 labels.
+
+## (history) Session 14f – "Vì sao?", Loại with a reason, impact preview, Hỏi nhanh; 2026-11-17)
 - "Vì sao?" button on every story (App.tsx MatchWhy): places, rule keywords + where (tiêu đề/sapo/nội dung), sector scores (ignored ones struck), assessment words, the review reason – from the evidence stored at collection, read-only.
 - Loại asks why (RemoveButton menu): Lạc đề / Ngoài địa bàn / Trùng tin / Không quan trọng → ReviewDecision.excludeReason (schemas, local PATCH, worker cleanReviewPatch, web shared fields); "Đã loại" shows it, restore clears it. Suggestions/golden truth: only off-topic / other area (or no reason) count as not relevant.
 - Impact preview: the save bar scores the draft vs the saved settings on the judged stories – precision / recall before → after and the stories that change (Settings.tsx ImpactLine). Data: worker GET/POST /golden (nightly with the suggestions, EXPORT_TOKEN), local GET /api/golden; computed in the page (suggest.ts impactOf/scoreFilter).
