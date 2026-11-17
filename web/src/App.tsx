@@ -436,9 +436,9 @@ export function App() {
   const selected = Object.values(reviews).filter((r) => r.included).length;
   // "Hỏi nhanh": stories nobody judged yet that the filter is least sure about
   // the filter is replayed ONCE per period (when the page is idle), not after every answer: answering only removes stories
-  const [uncertain, setUncertain] = useState<UncertainStory[]>([]);
+  const [uncertain, setUncertain] = useState<UncertainStory[] | null>(null);
   useEffect(() => {
-    setUncertain([]);
+    setUncertain(null);
     if (!settings || !arts.length) return;
     const timer = setTimeout(() => {
       try {
@@ -451,7 +451,7 @@ export function App() {
   }, [arts, settings]);
   const askable = useMemo(() => {
     const judged = (id: string) => { const r = reviews[id]; return !!(r?.relevanceLabel || r?.included || r?.excludedByEditor || r?.promotedToReady || r?.groupId || votes[id]?.length); };
-    return uncertain.filter((x) => !judged(x.article.id)).slice(0, 8);
+    return (uncertain ?? []).filter((x) => !judged(x.article.id)).slice(0, 8);
   }, [uncertain, reviews, votes]);
   const [asking, setAsking] = useState<UncertainStory[] | null>(null);
   const startAsk = () => {
@@ -585,14 +585,29 @@ export function App() {
           </section>
         )}
 
-        {run && askable.length > 0 && (
-          <section className="card animate-in flex flex-wrap items-center gap-3 border-amber-200 bg-gradient-to-r from-amber-50 to-white px-4 py-2.5" data-testid="quick-ask">
-            <HelpCircle className="h-5 w-5 text-amber-500" />
-            <span className="text-sm">
-              <b>Hỏi nhanh</b> · {askable.length} bài máy chưa chắc chắn <span className="text-slate-500">– chấm giúp vài giây để bộ lọc chính xác hơn mỗi ngày</span>
-            </span>
-            <span className="flex-1" />
-            <button className="btn rounded-full border-amber-500 bg-amber-500 px-4 text-white hover:bg-amber-600" onClick={startAsk}>Bắt đầu</button>
+        {/* always visible for a period: looking / N stories to ask / all done – it never just disappears */}
+        {run && arts.length > 0 && (
+          <section className={`card animate-in flex flex-wrap items-center gap-3 px-4 py-2.5 ${askable.length ? 'border-amber-200 bg-gradient-to-r from-amber-50 to-white' : ''}`} data-testid="quick-ask" data-state={uncertain === null ? 'loading' : askable.length ? 'ready' : 'done'}>
+            {uncertain === null ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin text-slate-400" />
+                <span className="text-sm text-slate-500"><b className="text-slate-700">Hỏi nhanh</b> · đang tìm bài máy chưa chắc chắn…</span>
+              </>
+            ) : askable.length ? (
+              <>
+                <HelpCircle className="h-5 w-5 text-amber-500" />
+                <span className="text-sm">
+                  <b>Hỏi nhanh</b> · {askable.length} bài máy chưa chắc chắn <span className="text-slate-500">– chấm giúp vài giây để bộ lọc chính xác hơn mỗi ngày</span>
+                </span>
+                <span className="flex-1" />
+                <button className="btn rounded-full border-amber-500 bg-amber-500 px-4 text-white hover:bg-amber-600" onClick={startAsk}>Bắt đầu</button>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <span className="text-sm text-slate-600"><b className="text-slate-700">Hỏi nhanh</b> · đã chấm hết bài cần hỏi của kỳ này – cảm ơn!</span>
+              </>
+            )}
           </section>
         )}
         {asking && <QuickAsk items={asking} onAnswer={answerAsk} onClose={() => setAsking(null)} />}
