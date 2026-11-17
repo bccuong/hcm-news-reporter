@@ -589,7 +589,7 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     const b = (await req.json().catch(() => null)) as { profile?: string; generatedAt?: string; basis?: unknown; items?: unknown } | null;
     const pid = String(b?.profile ?? DEFAULT_PROFILE);
     if (!PROFILE_ID.test(pid) || !Array.isArray(b?.items)) return json({ error: 'INVALID' }, 400, {});
-    const items = (b!.items as Array<Record<string, unknown>>).slice(0, 30).filter((x) => typeof x.id === 'string' && (x.kind === 'include' || x.kind === 'exclude_title') && typeof x.phrase === 'string' && x.phrase.length <= 80);
+    const items = (b!.items as Array<Record<string, unknown>>).slice(0, 30).filter((x) => typeof x.id === 'string' && (x.kind === 'include' || x.kind === 'exclude_title' || x.kind === 'place') && typeof x.phrase === 'string' && x.phrase.length <= 80);
     const prev = await readSuggestions(env, pid);
     await env.REVIEWS.put(`sug:${pid}`, JSON.stringify({ generatedAt: String(b!.generatedAt ?? new Date().toISOString()), basis: b!.basis ?? null, items, dismissed: prev.dismissed }));
     return json({ ok: true, count: items.length }, 200, {});
@@ -663,7 +663,7 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     const b = (await req.json().catch(() => null)) as { profile?: string; id?: string; reviewer?: string } | null;
     const pid = String(b?.profile ?? DEFAULT_PROFILE);
     const id = String(b?.id ?? '');
-    if (!PROFILE_ID.test(pid) || !/^(include|exclude_title):.{1,80}$/.test(id)) return json({ error: 'INVALID' }, 400, h);
+    if (!PROFILE_ID.test(pid) || !/^(include|exclude_title|place):.{1,80}$/.test(id)) return json({ error: 'INVALID' }, 400, h);
     if (!String(b?.reviewer ?? '').trim()) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
     const s = await readSuggestions(env, pid);
     if (!s.dismissed.includes(id)) s.dismissed = [...s.dismissed, id].slice(-500);

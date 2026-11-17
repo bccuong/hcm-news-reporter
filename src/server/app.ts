@@ -318,7 +318,7 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     return { articles: list.map((x) => ({ id: x.id, sourceId: x.sourceId, sourceName: x.sourceName, title: x.title, sapo: x.sapo, bodyText: x.bodyText })), judged: Object.fromEntries(list.map((x) => [x.id, judged.get(x.id)!.relevant])) };
   });
   app.post('/api/suggestions/dismiss', async (req) => {
-    const b = z.object({ id: z.string().regex(/^(include|exclude_title):.{1,80}$/) }).parse(req.body);
+    const b = z.object({ id: z.string().regex(/^(include|exclude_title|place):.{1,80}$/) }).parse(req.body);
     const pid = (await stores.getProfiles()).activeId;
     const list = await readDismissed(pid);
     if (!list.includes(b.id)) await writeJsonAtomic(dismissedFile(pid), [...list, b.id].slice(-500));

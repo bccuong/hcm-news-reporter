@@ -1,4 +1,4 @@
-import { CheckCircle, ChevronDown, ChevronRight, Download, FileUp, History, Info, Minus, Plus, Sparkles, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, Download, FileUp, History, Info, MapPin, Minus, Plus, Sparkles, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings } from '../../src/domain/defaults';
 import { detectLocation } from '../../src/domain/location';
@@ -896,15 +896,15 @@ function SuggestPanel({ s, setS, onCount }: { s: Settings; setS: (fn: (p: Settin
         {open.map((x) => (
           <div key={x.id} className="card animate-in p-4" data-testid="suggestion">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`flex h-8 w-8 items-center justify-center rounded-full text-white ${x.kind === 'include' ? 'bg-teal-600' : 'bg-rose-500'}`} aria-hidden="true">
-                {x.kind === 'include' ? <Plus className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full text-white ${x.kind === 'include' ? 'bg-teal-600' : x.kind === 'place' ? 'bg-sky-600' : 'bg-rose-500'}`} aria-hidden="true">
+                {x.kind === 'include' ? <Plus className="h-4 w-4" /> : x.kind === 'place' ? <MapPin className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
                 <div className="font-semibold text-slate-800">
-                  {x.kind === 'include' ? 'Lấy thêm bài có' : 'Bỏ bài có tiêu đề chứa'} <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-sm">{x.phrase}</span>
+                  {x.kind === 'include' ? 'Lấy thêm bài có' : x.kind === 'place' ? `Nhận là địa bàn ${s.location.regionName}:` : 'Bỏ bài có tiêu đề chứa'} <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-sm">{x.phrase}</span>
                 </div>
                 <div className="text-xs text-slate-600">
-                  {x.kind === 'include' ? `Giữ lại ${x.fixes} bài nhóm đánh giá liên quan nhưng đang bị loại` : `Loại ${x.fixes} bài lạc đề đang lọt vào Bài sẵn sàng`}
+                  {x.kind === 'include' ? `Giữ lại ${x.fixes} bài nhóm đánh giá liên quan nhưng đang bị loại` : x.kind === 'place' ? `Đưa ${x.fixes} bài liên quan chưa nhận ra địa bàn lên (thêm vào mục Địa điểm)` : `Loại ${x.fixes} bài lạc đề đang lọt vào Bài sẵn sàng`}
                   {x.sideEffects > 0 ? ` · ảnh hưởng thêm ${x.sideEffects} bài chưa chấm` : ' · không ảnh hưởng bài nào khác'}
                 </div>
               </div>

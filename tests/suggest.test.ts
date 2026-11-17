@@ -53,6 +53,18 @@ describe('daily filter suggestions (learned from the team review, applied by an 
     expect(statusOf(wrong, next)).toBe('irrelevant');
     expect(statusOf(good, next)).toBe('relevant'); // never at the cost of a relevant story
   });
+  it('place: relevant stories held back because the city was not recognised → the place they share', () => {
+    const p1 = art('Cư dân khu đô thị Sao Mai Xanh phản ánh công trình xây dựng sai phép', 'Công trình xây dựng không phép trong khu đô thị Sao Mai Xanh gây bức xúc.');
+    const p2 = art('Khu đô thị Sao Mai Xanh ngập sâu sau mưa lớn', 'Nhiều tuyến đường trong khu đô thị Sao Mai Xanh ngập sâu, công trình thoát nước chậm thi công.');
+    expect(statusOf(p1, s)).not.toBe('relevant');
+    const judged = new Map<string, Judged>([[p1.id, { relevant: true, why: 'label' }], [p2.id, { relevant: true, why: 'decision' }]]);
+    const pl = suggestFilter([p1, p2], judged, s).find((y) => y.kind === 'place');
+    expect(pl?.phrase).toBe('khu đô thị Sao Mai Xanh');
+    expect(pl!.fixes).toBe(2);
+    const next = applySuggestion(s, pl!);
+    expect(next.location.areas.at(-1)).toMatchObject({ name: 'khu đô thị Sao Mai Xanh', kind: 'landmark' });
+    expect(statusOf(p1, next)).toBe('relevant');
+  });
   it('a football exclusion ("cầu thủ") does not drop the bridges "cầu Thủ Thiêm" / "cầu Thủ Đức"', () => {
     expect(statusOf(art('Khởi công xây dựng cầu Thủ Thiêm 4 ở TP.HCM', 'Công trình cầu Thủ Thiêm 4 được khởi công tại TP.HCM.'), s)).toBe('relevant');
     expect(statusOf(art('Cầu thủ đội TP.HCM tập luyện trên công trình sân mới', 'Cầu thủ TP.HCM tập luyện tại công trình sân mới.'), s)).toBe('irrelevant');

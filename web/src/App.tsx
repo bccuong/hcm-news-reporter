@@ -1380,6 +1380,92 @@ function RelevanceButtons({ r, onPatch, title, votes }: { r?: ReviewDecision; on
   );
 }
 
+/**
+ * Filter quality per period (team labels): "Đúng chủ đề" = labelled-relevant share of "Bài sẵn sàng", "Không bỏ sót" =
+ * labelled-relevant stories not excluded. One y axis (both are %), two series in fixed categorical order, direct labels at
+ * the line ends + legend, hover tooltip per period, table view. Periods with fewer than 3 labelled stories are left out.
+ */
+const TREND = [
+  { key: 'precision', label: 'Đúng chủ đề', color: '#2a78d6' },
+  { key: 'recall', label: 'Không bỏ sót', color: '#eb6834' },
+] as const;
+function QualityTrend({ runs }: { runs: RelevanceQuality['runs'] }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const pts = runs
+    .filter((r) => r.labelled >= 3)
+    .map((r) => {
+      const ready = r.ready.R + r.ready.N;
+      const rel = r.ready.R + r.review.R + r.excluded.R;
+      return { id: r.runId, to: r.window.to, label: shortVn(r.window.to), n: r.labelled, precision: ready ? r.ready.R / ready : null, recall: rel ? (r.ready.R + r.review.R) / rel : null };
+    })
+    .sort((a, b) => Date.parse(a.to) - Date.parse(b.to))
+    .slice(-14);
+  if (pts.length < 2) return <p className="mt-2 text-xs text-slate-500">Biểu đồ theo kỳ hiện khi có từ 2 kỳ, mỗi kỳ ≥ 3 bài đã chấm.</p>;
+  const W = 640, H = 170, L = 34, R = 118, T = 12, B = 26;
+  const x = (i: number) => L + (i * (W - L - R)) / (pts.length - 1);
+  const y = (v: number) => T + (1 - v) * (H - T - B);
+  const pct = (v: number | null) => (v == null ? '–' : `${Math.round(v * 100)}%`);
+  const step = Math.ceil(pts.length / 7);
+  const last = pts[pts.length - 1]!;
+  return (
+    <div className="mt-3" data-testid="quality-trend">
+      <div className="mb-1 flex flex-wrap items-center gap-4 text-xs text-slate-600">
+        <span className="font-semibold text-slate-700">Theo từng kỳ</span>
+        {TREND.map((s) => (
+          <span key={s.key} className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded" style={{ background: s.color }} /> {s.label}</span>
+        ))}
+      </div>
+      <div className="relative">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Chất lượng bộ lọc theo từng kỳ">
+          {[0, 0.5, 1].map((v) => (
+            <g key={v}>
+              <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="#e2e8f0" strokeWidth={1} />
+              <text x={L - 6} y={y(v) + 3} textAnchor="end" fontSize={10} fill="#898781">{v * 100}%</text>
+            </g>
+          ))}
+          {pts.map((p, i) => (i % step === 0 || i === pts.length - 1 ? <text key={p.id} x={x(i)} y={H - 8} textAnchor="middle" fontSize={10} fill="#898781">{p.label}</text> : null))}
+          {hover != null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />}
+          {TREND.map((s) => {
+            const seg = pts.map((p, i) => [i, p[s.key]] as const).filter(([, v]) => v != null) as Array<readonly [number, number]>;
+            const lastV = last[s.key];
+            return (
+              <g key={s.key}>
+                <polyline points={seg.map(([i, v]) => `${x(i)},${y(v)}`).join(' ')} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                {seg.map(([i, v]) => <circle key={i} cx={x(i)} cy={y(v)} r={hover === i ? 5 : 4} fill={s.color} stroke="#ffffff" strokeWidth={2} />)}
+                {lastV != null && (
+                  <text x={x(pts.length - 1) + 10} y={y(lastV) + (s.key === 'precision' ? -4 : 12)} fontSize={11} fill="#52514e">
+                    {s.label} {pct(lastV)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          {/* hit targets: one column per period, wider than the marks */}
+          {pts.map((p, i) => (
+            <rect key={p.id} x={x(i) - (W - L - R) / (pts.length - 1) / 2} y={T} width={(W - L - R) / (pts.length - 1)} height={H - T - B} fill="transparent" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
+          ))}
+        </svg>
+        {hover != null && (
+          <div className="pointer-events-none absolute top-0 z-10 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-md" style={{ left: `${(x(hover) / W) * 100}%`, transform: hover > pts.length / 2 ? 'translateX(-105%)' : 'translateX(8px)' }}>
+            <div className="font-semibold text-slate-800">Kỳ đến {pts[hover]!.label}</div>
+            {TREND.map((s) => (
+              <div key={s.key} className="flex items-center gap-1.5 text-slate-700"><span className="h-2 w-2 rounded-full" style={{ background: s.color }} /> {s.label}: <b>{pct(pts[hover]![s.key])}</b></div>
+            ))}
+            <div className="text-slate-500">{pts[hover]!.n} bài đã chấm</div>
+          </div>
+        )}
+      </div>
+      <details className="mt-1 text-xs">
+        <summary className="cursor-pointer text-slate-500">Xem bảng số</summary>
+        <table className="mt-1 w-full">
+          <thead><tr><th className="th">Kỳ đến</th><th className="th">Đúng chủ đề</th><th className="th">Không bỏ sót</th><th className="th">Bài đã chấm</th></tr></thead>
+          <tbody>{pts.map((p) => <tr key={p.id}><td className="td">{p.label}</td><td className="td">{pct(p.precision)}</td><td className="td">{pct(p.recall)}</td><td className="td">{p.n}</td></tr>)}</tbody>
+        </table>
+      </details>
+    </div>
+  );
+}
+
 function QualityCard({ reviewsKey }: { reviewsKey: string }) {
   const [q, setQ] = useState<RelevanceQuality | null>(null);
   useEffect(() => {
@@ -1399,6 +1485,7 @@ function QualityCard({ reviewsKey }: { reviewsKey: string }) {
       <div className="mt-1 text-xs text-slate-600">
         Sẵn sàng: {t.ready.R} liên quan · {t.ready.N} không · Cần kiểm tra: {t.review.R} liên quan · {t.review.N} không · Bị loại nhưng biên tập viên đánh dấu liên quan: <b className={t.excluded.R ? 'text-red-700' : ''}>{t.excluded.R}</b>
       </div>
+      {t.labelled > 0 && <QualityTrend runs={q.runs} />}
       {t.labelled === 0 && <p className="mt-1 text-xs text-slate-500">Chưa có đánh giá. Bấm "✓ Liên quan / ✗ Không" ở các bài, hoặc "Thực ra liên quan?" trong danh sách link (cuối mục Độ phủ & nguồn) cho bài bị loại; bài được chọn vào báo cáo tự tính là liên quan.</p>}
       {q.missed.length > 0 && (
         <details className="mt-2 text-xs" open>

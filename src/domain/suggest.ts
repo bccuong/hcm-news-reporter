@@ -15,7 +15,7 @@ import { findWord, normText } from './text.js';
 
 export interface FilterSuggestion {
   id: string;
-  kind: 'include' | 'exclude_title';
+  kind: 'include' | 'exclude_title' | 'place';
   phrase: string;
   /** include: the sector the word is added to as well (a story needs a sector word in its title/sapo) */
   category?: CategoryCode;
@@ -92,8 +92,24 @@ export function withCategoryKeyword(s: Settings, code: CategoryCode, word: strin
 /** what applying a suggestion changes */
 export function applySuggestion(s: Settings, x: Pick<FilterSuggestion, 'kind' | 'phrase' | 'category'>): Settings {
   if (x.kind === 'exclude_title') return withTitleExclusion(s, x.phrase);
+  if (x.kind === 'place') return withPlace(s, x.phrase);
   const r = withIncludeWord(s, x.phrase);
   return x.category ? withCategoryKeyword(r, x.category, x.phrase) : r;
+}
+/** settings with a place of the city (e.g. "khu đô thị Vạn Phúc") added to Địa điểm */
+export function withPlace(s: Settings, name: string): Settings {
+  if (s.location.areas.some((a) => [a.name, ...a.aliases].some((x) => normText(x) === normText(name)))) return s;
+  return { ...s, location: { ...s.location, areas: [...s.location.areas, { id: `loc_sg_${normText(name).replace(/[^\p{L}\p{N}]+/gu, '_')}`, name, kind: 'landmark', aliases: [], requirePrefix: false }] } };
+}
+const PLACE_PREFIX = 'phường|xã|đường|khu đô thị|khu dân cư|khu công nghiệp|khu chế xuất|chợ|cầu|kênh|rạch|công viên|bến xe|bến phà|cảng|ga|nút giao|vòng xoay|chung cư';
+/** "<kind of place> <Proper Name>" in a text, e.g. "khu đô thị Vạn Phúc", "chợ Bình Điền" (kept as written) */
+export function placesOf(text: string): string[] {
+  // the kind of place in any case ("phường" / "Phường"), the name itself capitalised word by word
+  const prefix = PLACE_PREFIX.split('|').map((w) => `[${w[0]}${w[0]!.toUpperCase()}]${w.slice(1)}`).join('|');
+  const re = new RegExp(`(?<![\\p{L}])(${prefix})\\s+((?:\\p{Lu}[\\p{Ll}\\p{M}]*(?:[ \\t]+|(?=[^\\p{L}\\p{M}])|$)){1,4})`, 'gu');
+  const out = new Set<string>();
+  for (const m of text.normalize('NFC').matchAll(re)) out.add(`${m[1]!.toLowerCase()} ${m[2]!.trim()}`.replace(/\s+/g, ' '));
+  return [...out];
 }
 /** settings with `phrase` added to the title exclusions */
 export function withTitleExclusion(s: Settings, phrase: string): Settings {
@@ -121,18 +137,19 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
     let fixes = 0, harms = 0, side = 0;
     const examples: string[] = [], sideExamples: string[] = [];
     for (const a of articles) {
-      const hit = kind === 'include' ? findWord(`${a.title}\n${a.sapo ?? ''}\n${a.bodyText ?? ''}`, phrase) >= 0 : findWord(a.title, phrase) >= 0;
+      const hit = kind === 'exclude_title' ? findWord(a.title, phrase) >= 0 : findWord(`${a.title}\n${a.sapo ?? ''}\n${a.bodyText ?? ''}`, phrase) >= 0;
       if (!hit) continue;
       const before = base.get(a.id)!;
       const after = statusOf(a, next);
       if (after === before) continue;
       const j = judged.get(a.id);
-      const good = kind === 'include' ? before === 'irrelevant' && after !== 'irrelevant' : before === 'relevant' && after !== 'relevant';
+      const rank = (x: Status) => (x === 'relevant' ? 2 : x === 'review' ? 1 : 0);
+      const good = kind === 'include' ? before === 'irrelevant' && after !== 'irrelevant' : kind === 'place' ? rank(after) > rank(before) : before === 'relevant' && after !== 'relevant';
       if (j) {
-        const right = kind === 'include' ? j.relevant : !j.relevant;
+        const right = kind === 'exclude_title' ? !j.relevant : j.relevant;
         if (good && right) (fixes++, examples.push(a.title));
         else harms++;
-      } else if ((kind === 'include' && after === 'relevant') || (kind === 'exclude_title' && before !== 'irrelevant')) {
+      } else if ((kind !== 'exclude_title' && after === 'relevant') || (kind === 'exclude_title' && before !== 'irrelevant')) {
         side++;
         if (sideExamples.length < 3) sideExamples.push(a.title);
       }
@@ -149,10 +166,10 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
     }
     return ([...votes].sort((a, b) => b[1] - a[1])[0]?.[0] as CategoryCode | undefined) ?? 'BUILD';
   };
-  const consider = (kind: FilterSuggestion['kind'], targets: Article[], source: (a: Article) => string) => {
+  const consider = (kind: FilterSuggestion['kind'], targets: Article[], source: (a: Article) => string, candidates: (text: string) => string[] = (x) => phrasesOf(x, pairs)) => {
     // candidate phrases ranked by how many target stories contain them
     const support = new Map<string, number>();
-    for (const a of targets) for (const p of phrasesOf(source(a), pairs)) if (!known.has(p)) support.set(p, (support.get(p) ?? 0) + 1);
+    for (const a of targets) for (const p of candidates(source(a))) if (!known.has(normText(p))) support.set(p, (support.get(p) ?? 0) + 1);
     const ranked = [...support].sort((x, y) => y[1] - x[1] || y[0].length - x[0].length).slice(0, 40); // same support: the longer (more specific) phrase first
     const tried: FilterSuggestion[] = [];
     for (const [phrase] of ranked) {
@@ -177,6 +194,10 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
 
   out.push(...consider('include', missed, lead));
   out.push(...consider('exclude_title', wrong, (a) => a.title));
+  // places the filter does not know: relevant stories held back because no place of the city was recognised
+  const placeless = articles.filter((a) => judged.get(a.id)?.relevant && base.get(a.id) !== 'relevant' && annotateArticle(a, s)._verdict.location.status !== 'hcm');
+  const knownPlaces = new Set(s.location.areas.flatMap((x) => [x.name, ...x.aliases]).map(normText));
+  out.push(...consider('place', placeless, (a) => `${a.title}\n${a.sapo ?? ''}\n${a.bodyText ?? ''}`, (x) => placesOf(x).filter((pl) => !knownPlaces.has(normText(pl)) && !knownPlaces.has(normText(pl.replace(/^\S+(?:\s(?:đô thị|dân cư|công nghiệp|chế xuất|viên|xe|phà|giao|xoay|cư))?\s/, ''))))));
   return out.slice(0, opts.max ?? 12);
 }
 
