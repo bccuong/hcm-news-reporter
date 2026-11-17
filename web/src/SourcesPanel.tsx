@@ -1,4 +1,4 @@
-import { Copy, FlaskConical, Pencil, Plus, Radar, Trash2, Upload } from 'lucide-react';
+import { Copy, FlaskConical, MoreHorizontal, Pencil, Plus, Radar, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { sourceFromUrl } from '../../src/domain/defaults';
 import { SourceSchema, type DiscoveryMethod, type Source } from '../../src/domain/schemas';
@@ -38,50 +38,88 @@ export function SourcesPanel({ sources, setSources }: { sources: Source[]; setSo
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap gap-2">
-        <button className="btn-teal" onClick={() => setWizard(true)}>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button className="btn-teal rounded-full px-4 shadow-sm" onClick={() => setWizard(true)}>
           <Plus className="h-4 w-4" /> Thêm nguồn
         </button>
-        <button className="btn-ghost" onClick={() => setImportOpen(true)}>
-          <Upload className="h-4 w-4" /> Nhập danh sách nguồn (websites.txt)
+        <button className="btn-ghost rounded-full" onClick={() => setImportOpen(true)} title="Nhập nhiều nguồn một lần từ tệp websites.txt">
+          <Upload className="h-4 w-4" /> Nhập từ tệp
         </button>
+        <span className="ml-auto text-xs text-slate-500">{sources.filter((s) => s.enabled).length}/{sources.length} nguồn đang bật</span>
       </div>
       {wizard && <AddSourceWizard existing={sources} onClose={() => setWizard(false)} onAdd={(s) => { setSources([...sources, s]); setWizard(false); setEditing(s.id); }} />}
       {importOpen && <ImportSkill existing={sources} onClose={() => setImportOpen(false)} onApply={(list) => { setSources(list); setImportOpen(false); }} />}
-      <div className="space-y-2">
+      <div className="grid gap-2">
         {sources.map((s, idx) => (
-          <div key={s.id} className={`card p-3 ${!s.enabled ? 'opacity-75' : ''}`} data-testid={`source-${s.id}`}>
-            <div className="flex flex-wrap items-center gap-2">
+          <div key={s.id} className={`card animate-in p-3 transition hover:shadow-md ${!s.enabled ? 'bg-slate-50 opacity-70' : ''}`} data-testid={`source-${s.id}`}>
+            <div className="flex items-center gap-3">
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${avatarColor(s.name)}`} aria-hidden="true">
+                {sourceInitials(s.name)}
+              </span>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setEditing(editing === s.id ? null : s.id)} title="Bấm để xem / sửa chi tiết">
+                <div className="truncate font-semibold text-slate-800">{s.name}</div>
+                <div className="truncate text-xs text-slate-500">
+                  {hostOf(s.baseUrl)}
+                  {s.fetchMode === 'manual_only' ? <span className="text-amber-700"> · chỉ nhập link thủ công</span> : null}
+                </div>
+              </button>
               <Toggle checked={s.enabled} onChange={(v) => patch(s.id, { enabled: v })} label="" />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold text-navy-700">
-                  {s.name} <span className="font-mono text-xs font-normal text-slate-500">{s.baseUrl}</span>
+              <button className="btn-ghost rounded-full px-3" disabled={busy === s.id} onClick={() => test(s)} aria-label="Thử thu thập" title="Thử thu thập vài bài để kiểm tra nguồn">
+                <FlaskConical className={`h-4 w-4 ${busy === s.id ? 'animate-pulse text-teal-600' : ''}`} /> <span className="hidden sm:inline">{busy === s.id ? 'Đang thử…' : 'Thử'}</span>
+              </button>
+              <button className={`btn-ghost rounded-full px-2.5 ${editing === s.id ? 'border-teal-400 bg-teal-50' : ''}`} onClick={() => setEditing(editing === s.id ? null : s.id)} aria-label="Sửa" aria-expanded={editing === s.id} title="Sửa chi tiết (RSS, sitemap, chuyên mục, giới hạn)">
+                <Pencil className="h-4 w-4" />
+              </button>
+              <details className="relative">
+                <summary className="btn-ghost list-none rounded-full px-2.5" aria-label="Thêm thao tác" title="Thêm thao tác">
+                  <MoreHorizontal className="h-4 w-4" />
+                </summary>
+                <div className="animate-in absolute right-0 z-20 mt-1 w-44 rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                  <button className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement).open = false; setSources([...sources.slice(0, idx + 1), { ...s, id: `${s.id}-copy`.slice(0, 40), name: `${s.name} (bản sao)`, origin: 'user' }, ...sources.slice(idx + 1)]); }}>
+                    <Copy className="h-4 w-4 text-slate-500" /> Nhân bản
+                  </button>
+                  <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-700 hover:bg-red-50" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement).open = false; if (confirm(`Xóa nguồn "${s.name}"? (có thể khôi phục ở Sao lưu & lịch sử)`)) setSources(sources.filter((x) => x.id !== s.id)); }}>
+                    <Trash2 className="h-4 w-4" /> Xóa
+                  </button>
                 </div>
-                <div className="text-xs text-slate-500">
-                  {s.fetchMode === 'manual_only' ? <span className="text-amber-700">Chỉ nhập link thủ công · </span> : null}
-                  RSS {s.rssUrls.length} · Sitemap {s.sitemapUrls.length} · Chuyên mục {s.sectionUrls.length} · tối đa {s.crawlLimits.maxListingPages} trang / {s.crawlLimits.perRunArticles ?? 'giới hạn chung'} bài mỗi lượt · nguồn gốc: {s.origin === 'skill' ? 'mặc định' : s.origin === 'import' ? 'nhập từ tệp' : 'tự thêm'}
-                </div>
-              </div>
-              <button className="btn-ghost btn-xs" disabled={busy === s.id} onClick={() => test(s)}>
-                <FlaskConical className="h-3.5 w-3.5" /> {busy === s.id ? 'Đang thử…' : 'Thử thu thập'}
-              </button>
-              <button className="btn-ghost btn-xs" onClick={() => setEditing(editing === s.id ? null : s.id)}>
-                <Pencil className="h-3.5 w-3.5" /> Sửa
-              </button>
-              <button className="btn-ghost btn-xs" onClick={() => setSources([...sources.slice(0, idx + 1), { ...s, id: `${s.id}-copy`.slice(0, 40), name: `${s.name} (bản sao)`, origin: 'user' }, ...sources.slice(idx + 1)])}>
-                <Copy className="h-3.5 w-3.5" /> Nhân bản
-              </button>
-              <button className="btn-danger btn-xs" onClick={() => confirm(`Xóa nguồn "${s.name}"? (có thể khôi phục ở Sao lưu & lịch sử)`) && setSources(sources.filter((x) => x.id !== s.id))}>
-                <Trash2 className="h-3.5 w-3.5" /> Xóa
-              </button>
+              </details>
             </div>
             {tests[s.id] && <TestResult r={tests[s.id]} />}
-            {editing === s.id && <SourceEditor s={s} onChange={(p) => patch(s.id, p)} />}
+            {editing === s.id && (
+              <div className="animate-in">
+                <p className="mt-3 text-xs text-slate-500">
+                  RSS {s.rssUrls.length} · Sitemap {s.sitemapUrls.length} · Chuyên mục {s.sectionUrls.length} · tối đa {s.crawlLimits.maxListingPages} trang / {s.crawlLimits.perRunArticles ?? 'giới hạn chung'} bài mỗi lượt · {s.origin === 'skill' ? 'nguồn mặc định' : s.origin === 'import' ? 'nhập từ tệp' : 'tự thêm'}
+                </p>
+                <SourceEditor s={s} onChange={(p) => patch(s.id, p)} />
+              </div>
+            )}
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+/** "Thanh Niên" → "TN", "VnExpress" → "VN", "Báo Xây dựng" → "XD" (the word "Báo" is skipped) */
+function sourceInitials(name: string): string {
+  const words = name.replace(/^báo\s+/i, '').split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase();
+  const w = words[0] ?? '?';
+  const caps = w.match(/[A-ZÀ-Ỹ]/g);
+  return (caps && caps.length >= 2 ? caps.slice(0, 2).join('') : w.slice(0, 2)).toUpperCase();
+}
+const AVATAR_COLORS = ['bg-teal-600', 'bg-navy-700', 'bg-sky-600', 'bg-indigo-500', 'bg-rose-500', 'bg-amber-600', 'bg-emerald-600', 'bg-violet-600'];
+function avatarColor(name: string): string {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]!;
+}
+function hostOf(u: string): string {
+  try {
+    return new URL(u).hostname.replace(/^www\./, '');
+  } catch {
+    return u;
+  }
 }
 
 function TestResult({ r }: { r: any }) {
@@ -220,8 +258,9 @@ function AddSourceWizard({ existing, onClose, onAdd }: { existing: Source[]; onC
     });
   };
   return (
-    <div className="card mb-3 border-teal-300 p-3">
-      <h4 className="mb-2 font-semibold text-teal-700">Thêm nguồn mới</h4>
+    <div className="card animate-in mb-3 border-teal-300 p-4">
+      <h4 className="mb-1 font-semibold text-teal-800">Thêm nguồn mới</h4>
+      <p className="mb-2 text-xs text-slate-500">Dán link trang chủ của báo, bấm dò để ứng dụng tự tìm RSS / sitemap / chuyên mục.</p>
       <div className="flex gap-2">
         <input className="input font-mono" value={url} onChange={(e) => setUrl(e.target.value)} aria-label="URL trang chủ báo" />
         <button className="btn-ghost" disabled={!!err || busy} onClick={detect}>
@@ -248,7 +287,7 @@ function AddSourceWizard({ existing, onClose, onAdd }: { existing: Source[]; onC
         </div>
       )}
       <div className="mt-3 flex gap-2">
-        <button className="btn-teal" disabled={!!err} onClick={create}>Tạo thẻ nguồn (chưa lưu)</button>
+        <button className="btn-teal rounded-full px-4" disabled={!!err} onClick={create}>Thêm vào danh sách</button>
         <button className="btn-ghost" onClick={onClose}>Hủy</button>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Download, FileUp, History, Plus, RotateCcw, Save, Search, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileUp, History, Info, Plus, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings } from '../../src/domain/defaults';
 import { detectLocation } from '../../src/domain/location';
@@ -23,6 +23,16 @@ const NAV = [
   ['backup', 'Sao lưu & lịch sử'],
 ] as const;
 type NavKey = (typeof NAV)[number][0] | 'newProfile';
+/** technical sections, shown with the "Nâng cao" switch (everything stays editable in the UI) */
+const ADVANCED: ReadonlyArray<NavKey> = ['time', 'quality', 'performance', 'backup'];
+const ADV_KEY = 'hcm-settings-advanced';
+const readAdvanced = () => {
+  try {
+    return localStorage.getItem(ADV_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 
 export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { open: boolean; onClose: () => void; onSaved: (s: Settings, src: Source[]) => void; initialSection?: NavKey }) {
   const toast = useToast();
@@ -32,6 +42,15 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
   const [nav, setNav] = useState<NavKey>(initialSection ?? 'sources');
   const [filter, setFilter] = useState('');
   const [saving, setSaving] = useState(false);
+  const [advanced, setAdvancedState] = useState(readAdvanced);
+  const setAdvanced = (v: boolean) => {
+    setAdvancedState(v);
+    try {
+      localStorage.setItem(ADV_KEY, v ? '1' : '0');
+    } catch {
+      /* private mode: per session only */
+    }
+  };
 
   /** all profiles; every section edits the open (active) one */
   const [profs, setProfs] = useState<ProfilesState | null>(null);
@@ -103,37 +122,43 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
   };
 
   const navItems = NAV.filter(([, l]) => !filter || l.toLowerCase().includes(filter.toLowerCase()) || SEARCH_INDEX[NAV.find((n) => n[1] === l)![0]]?.some((w) => w.includes(filter.toLowerCase())));
+  // advanced sections are listed when the switch is on, while searching, or when one of them is open
+  const showAdvanced = advanced || !!filter || ADVANCED.includes(nav);
+  const navBtn = ([k, l]: (typeof NAV)[number]) => (
+    <button key={k} onClick={() => setNav(k)} className={`mb-0.5 block w-full rounded-lg px-2.5 py-1.5 text-left text-sm transition ${nav === k ? 'bg-navy-700 text-white shadow-sm' : 'text-slate-700 hover:bg-slate-100'}`}>
+      {l}
+    </button>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30" role="dialog" aria-modal="true" aria-label="Cài đặt">
       <div className="flex h-full w-full max-w-[1100px] flex-col bg-slate-50 shadow-2xl">
         <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
-          <h2 className="text-lg font-bold text-navy-700">Cài đặt</h2>
+          <SlidersHorizontal className="h-5 w-5 text-teal-600" />
+          <h2 className="text-lg font-bold text-navy-800">Cài đặt</h2>
           {profName && (
             <span className="chip border-navy-100 bg-navy-50 text-navy-800" data-testid="settings-profile" title="Nguồn tin, từ khóa & quy tắc, địa điểm, lĩnh vực, thời gian, chất lượng, báo cáo và hiệu năng thuộc riêng cấu hình này. Đổi cấu hình ở mục Cấu hình (profile).">
               Cấu hình: <b className="ml-1">{profName}</b>
             </span>
           )}
-          {(dirtyS || dirtySrc) && <span className="chip border-amber-300 bg-amber-50 text-amber-800">Chưa lưu</span>}
+          {api.mode === 'live' && api.shared && (
+            <details className="relative" data-testid="shared-config-note">
+              <summary className="chip cursor-pointer list-none border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100">
+                <Users className="h-3 w-3" /> Áp dụng cho cả nhóm <Info className="h-3 w-3" />
+              </summary>
+              <div className="animate-in absolute left-0 z-10 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-700 shadow-lg">
+                Cài đặt của cấu hình <b>{profName}</b> dùng chung cho cả nhóm: bấm <b>Lưu</b> (cần đăng nhập người duyệt) là áp dụng cho máy chủ thu thập từ lượt kế tiếp. Mỗi lần lưu được ghi vào lịch sử, có thể khôi phục. Riêng mẫu PPTX tải lên chỉ lưu trong trình duyệt này.
+              </div>
+            </details>
+          )}
           <span className="flex-1" />
-          <button className="btn-ghost" onClick={resetSection} disabled={nav === 'profiles' || nav === 'newProfile' || nav === 'sources' || nav === 'backup'}>
-            <RotateCcw className="h-4 w-4" /> Mặc định mục này
+          <button className="btn-ghost rounded-full px-2.5" onClick={resetSection} disabled={nav === 'profiles' || nav === 'newProfile' || nav === 'sources' || nav === 'backup'} title="Đặt mục này về mặc định" aria-label="Mặc định mục này">
+            <RotateCcw className="h-4 w-4" />
           </button>
-          <button className="btn-ghost" disabled={!(dirtyS || dirtySrc)} onClick={() => saved && (setS(structuredClone(saved.s)), setSrc(structuredClone(saved.src)))}>
-            Hủy thay đổi
-          </button>
-          <button className="btn-primary" disabled={!(dirtyS || dirtySrc) || saving || (validation ? !validation.success : true)} onClick={save}>
-            <Save className="h-4 w-4" /> {saving ? 'Đang lưu…' : 'Lưu'}
-          </button>
-          <button className="btn-ghost" onClick={close} aria-label="Đóng cài đặt">
+          <button className="btn-ghost rounded-full px-2.5" onClick={close} aria-label="Đóng cài đặt" title="Đóng">
             <X className="h-4 w-4" />
           </button>
         </header>
-        {api.mode === 'live' && api.shared && (
-          <div className="border-b border-teal-200 bg-teal-50 px-4 py-2 text-xs text-teal-900" data-testid="shared-config-note">
-            <b>Cài đặt dùng chung cho nhóm, riêng từng cấu hình{profName ? ` (đang sửa: ${profName})` : ''}:</b> bấm Lưu (cần đăng nhập người duyệt) là áp dụng cho <b>máy chủ thu thập</b> từ lượt kế tiếp (tự động hoặc bấm Thu thập) và cho mọi người dùng web. Mỗi lần lưu được ghi vào Lịch sử, có thể khôi phục. Riêng <b>mẫu PPTX</b> chỉ lưu trong trình duyệt này.
-          </div>
-        )}
         {validation && !validation.success && (
           <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-800">
             {validation.error.issues.slice(0, 5).map((i) => (
@@ -157,11 +182,13 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
                     <span className="chip ml-auto border-teal-300 bg-teal-50 px-1.5 text-[10px] text-teal-900">đang mở</span>
                   </div>
                   <div className="ml-3 border-l-2 border-navy-100 pl-1">
-                    {navItems.map(([k, l]) => (
-                      <button key={k} onClick={() => setNav(k)} className={`mb-0.5 block w-full rounded px-2 py-1.5 text-left text-sm ${nav === k ? 'bg-navy-700 text-white' : 'hover:bg-slate-100'}`}>
-                        {l}
-                      </button>
-                    ))}
+                    {navItems.filter(([k]) => !ADVANCED.includes(k)).map(navBtn)}
+                    {showAdvanced && navItems.some(([k]) => ADVANCED.includes(k)) && (
+                      <div className="mt-2 border-t border-dashed border-slate-200 pt-2" data-testid="nav-advanced">
+                        <div className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Nâng cao</div>
+                        {navItems.filter(([k]) => ADVANCED.includes(k)).map(navBtn)}
+                      </div>
+                    )}
                     {navItems.length === 0 && <p className="px-2 py-1 text-xs text-slate-500">Không có mục khớp "{filter}"</p>}
                   </div>
                 </div>
@@ -183,6 +210,9 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
             >
               <Plus className="h-4 w-4" /> Tạo cấu hình mới
             </button>
+            <div className="mt-4 border-t border-slate-100 px-2 pt-3">
+              <Toggle checked={advanced} onChange={setAdvanced} label="Nâng cao" help="Hiện thêm các mục kỹ thuật: thời gian, chất lượng thu thập & ảnh, hiệu năng, sao lưu & lịch sử." />
+            </div>
           </nav>
           <main className="min-w-0 flex-1 overflow-auto p-4">
             {!s ? (
@@ -210,6 +240,19 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
             )}
           </main>
         </div>
+        {(dirtyS || dirtySrc) && (
+          <div className="animate-in flex items-center gap-3 border-t border-amber-200 bg-amber-50 px-4 py-2.5" data-testid="save-bar">
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            <span className="text-sm font-medium text-amber-900">Có thay đổi chưa lưu</span>
+            <span className="flex-1" />
+            <button className="btn-ghost rounded-full" onClick={() => saved && (setS(structuredClone(saved.s)), setSrc(structuredClone(saved.src)))}>
+              Hủy thay đổi
+            </button>
+            <button className="btn-primary rounded-full px-5 shadow-sm" disabled={saving || (validation ? !validation.success : true)} onClick={save}>
+              <Save className="h-4 w-4" /> {saving ? 'Đang lưu…' : 'Lưu'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

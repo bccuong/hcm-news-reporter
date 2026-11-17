@@ -379,7 +379,7 @@ test('web: "Dò cấu trúc" and "Thử thu thập" run in the browser through t
   await dlg.getByLabel('URL trang chủ báo').fill('https://fixture-a.example.vn/');
   await dlg.getByRole('button', { name: /Dò cấu trúc tự động/ }).click();
   await expect(dlg.getByText('https://fixture-a.example.vn/rss/thoi-su.rss').first()).toBeVisible({ timeout: 20_000 });
-  await dlg.getByRole('button', { name: 'Tạo thẻ nguồn (chưa lưu)' }).click();
+  await dlg.getByRole('button', { name: 'Thêm vào danh sách' }).click();
   const card = dlg.locator('[data-testid^="source-"]').filter({ hasText: 'fixture-a.example.vn' }).first();
   await card.getByRole('button', { name: 'Thử thu thập' }).click();
   await expect(card).toContainText(/Kết quả thử \(\d+ link ứng viên\)/, { timeout: 30_000 });

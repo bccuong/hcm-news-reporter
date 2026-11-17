@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14a – minimal, icon-led web UI; 2026-11-17)
+## ▶ RESUME HERE (session 14b – Settings: Cơ bản / Nâng cao, step 1 = shell + Nguồn tin; 2026-11-17)
+- User approved the Settings plan (no MUI: keep Tailwind; basic/advanced).
+- Shell (web/src/Settings.tsx): basic sections always listed; Thời gian, Chất lượng thu thập & ảnh, Hiệu năng, Sao lưu & lịch sử behind the "Nâng cao" switch (remembered per browser; shown while searching or when open). Long shared-config note → small "Áp dụng cho cả nhóm ⓘ" popover (testid shared-config-note). Lưu / Hủy thay đổi moved to a bottom bar shown only with unsaved changes (testid save-bar); reset = icon.
+- Nguồn tin (web/src/SourcesPanel.tsx): compact cards – coloured initials avatar (no external favicon service), name + site, switch, "Thử", "Sửa" (opens technical details + editor), ⋯ menu (Nhân bản, Xóa). Wizard: plain explanation, "Thêm vào danh sách".
+- Tests: vitest 143/143, playwright 11/11 (openSettings switches Nâng cao on when needed), live 8/8.
+- Next: step 2 – "Từ khóa & quy tắc": keyword chips on the basic view, AND/OR/NOT builder under Nâng cao; then Địa điểm / Lĩnh vực / Báo cáo in the same style.
+
+## (history) Session 14a – minimal, icon-led web UI; 2026-11-17)
 - User: lines still wrapped; wants a minimal, professional, mostly visual UI that non-technical people understand.
 - Top bar on one line: logo + title (settings subtitle), profile pill with map pin, status dot (live/demo/offline, full sentence in title + sr-only, testid live-banner), avatar chip for the reviewer with logout icon, icon buttons for login/settings (aria-labels kept). Long banner removed.
 - Window card: rounded preset pills, compact window chip "17:00 16/11 → 08:00 17/11" (testid window-range) opening the date/time editors on demand (always open on Tùy chỉnh), saved-runs pill with history icon, Thu thập. Timezone text removed (tooltip). z-20 so the run list is never covered.

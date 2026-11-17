@@ -15,7 +15,11 @@ async function setWindowField(p: Page, label: string, v: string) {
 async function openSettings(page: Page, section: string) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Cài đặt' }).click();
-  await page.getByRole('dialog', { name: 'Cài đặt' }).getByRole('button', { name: section, exact: true }).click();
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  const btn = dlg.getByRole('button', { name: section, exact: true });
+  // technical sections are listed after switching "Nâng cao" on
+  if (!(await btn.isVisible())) await dlg.getByRole('switch', { name: 'Nâng cao' }).click();
+  await btn.click();
 }
 async function save(page: Page) {
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
@@ -28,9 +32,9 @@ test('UI-01: add a source via the wizard, validation blocks bad URL, persists af
   const url = page.getByLabel('URL trang chủ báo');
   await url.fill('abc');
   await expect(page.getByText(/URL không hợp lệ/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Tạo thẻ nguồn (chưa lưu)' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Thêm vào danh sách' })).toBeDisabled();
   await url.fill('https://bao-moi-mau.example.vn');
-  await page.getByRole('button', { name: 'Tạo thẻ nguồn (chưa lưu)' }).click();
+  await page.getByRole('button', { name: 'Thêm vào danh sách' }).click();
   // editor opens: add an RSS route through the URL list control
   const card = page.getByTestId('source-bao-moi-mau-example-vn');
   await expect(card).toBeVisible();
@@ -41,7 +45,11 @@ test('UI-01: add a source via the wizard, validation blocks bad URL, persists af
   await page.reload();
   await page.getByRole('button', { name: 'Cài đặt' }).click();
   const after = page.getByTestId('source-bao-moi-mau-example-vn');
+  await expect(after).toContainText('bao-moi-mau.example.vn'); // compact card: name + site
+  await expect(after).not.toContainText('RSS 1'); // technical details only when opened
+  await after.getByRole('button', { name: 'Sửa', exact: true }).click();
   await expect(after).toContainText('RSS 1');
+  await expect(after).toContainText('https://bao-moi-mau.example.vn/rss/thoi-su.rss');
 });
 
 test('UI-03: disable a source and it stays disabled after reload', async ({ page }) => {
