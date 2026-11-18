@@ -7,7 +7,11 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14m – Hỏi nhanh: no other-province questions, "✗ Không" asks why; city master plan kept; 2026-11-17)
+## ▶ RESUME HERE (session 14n – story title = link to the original; 2026-11-18)
+- Story cards and Hỏi nhanh: the title opens the original article (new tab, ↗ icon) with its short address (shortUrl: host + path) under it; the "Bài gốc" button and "Đọc bài gốc" link are gone. UI test checks the link. vitest 164/164, test:ui 13/13, test:ui:live 12/12.
+- Next step: check the 08:02 period on 18/11 for stories outside HCM.
+
+## (history) Session 14m – Hỏi nhanh: no other-province questions, "✗ Không" asks why; city master plan kept; 2026-11-17)
 - src/domain/suggest.ts `uncertainStories`: stories excluded because title/sapo names another province are never asked; stories in Cần kiểm tra are asked instead ("Máy chưa quyết được").
 - Hỏi nhanh "✗ Không" opens one row of reasons (likely one first: Ngoài địa bàn when the place is not the city): Lạc đề / Ngoài địa bàn → label "không liên quan" + Loại with that reason; Trùng tin / Không quan trọng → Loại with reason only, no label (the nightly suggestions ignore them, the story is in scope).
 - Replaying Hỏi nhanh on 17/11 16:30 showed "TP.HCM công bố hồ sơ quy hoạch tổng thể tầm nhìn 100 năm" excluded (NO_SECTOR_IN_LEAD): BUILD keywords rev 4 add "quy hoạch tổng thể", "quy hoạch kiến trúc" ("quy hoạch" alone = "quy hoạch cán bộ"). eval-filter: Sẵn sàng 67→68, precision 92% (=), recall 94% (=).

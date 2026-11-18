@@ -470,6 +470,11 @@ test('ESC closes "Xem chi tiết" / "Biên tập", Cài đặt and dialogs like 
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: /^Bài sẵn sàng/ }).click();
+  // the title is the link to the original article (new tab) – no separate 'Bài gốc' button
+  const link = page.getByTestId('story-title-link').first();
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('href', /^https?:\/\//);
+  await expect(page.getByRole('link', { name: /Bài gốc/ })).toHaveCount(0);
   // Xem chi tiết (the same panel as "Biên tập" in Xuất báo cáo)
   await page.getByRole('button', { name: 'Xem chi tiết' }).first().click();
   const detail = page.getByRole('dialog', { name: 'Chi tiết bài' });
