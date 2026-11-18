@@ -283,6 +283,20 @@ class DemoApi implements Api {
   mode: 'demo' | 'live' = import.meta.env.VITE_LIVE ? 'live' : 'demo';
   private bundles = new Map<string, Promise<DemoBundle>>();
   private index: Promise<any> | null = null;
+  constructor() {
+    // F5 on a phone: start downloading the newest period right away, in parallel with the settings / profiles /
+    // review requests the page makes first (it was fetched last, after all of them: ~5 s on 4G, 18/11/2026)
+    if (this.mode === 'live') void this.warmUp();
+  }
+  private async warmUp() {
+    const i = await this.liveIndex();
+    const days: any[] = i?.days ?? [];
+    const newest = days.reduce<any>((m, d) => (!m || String(d.window?.to ?? '') > String(m.window?.to ?? '') ? d : m), null);
+    if (!newest) return;
+    const runId = `run_live_${String(newest.key ?? newest.reportDate).replace(/[^0-9a-z]/gi, '')}`;
+    this.runMeta.set(runId, { file: newest.file ?? `${newest.reportDate}.json`, reportDate: newest.reportDate, v: newest.generatedAt });
+    this.load(runId).catch(() => this.bundles.delete(runId));
+  }
   /* ---- profiles: the active one is chosen per browser; each has its own published data live/<id>/ ---- */
   private get pid() {
     return store.get<string>('profile') ?? 'hcm';
