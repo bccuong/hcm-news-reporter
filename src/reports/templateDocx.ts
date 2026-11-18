@@ -45,7 +45,7 @@ const runs = (p: string) => [...p.matchAll(/<w:r>[\s\S]*?<\/w:r>|<w:r\s[^>]*>[\s
 const rPrOf = (run: string | undefined) => (run ? /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(run)?.[0] ?? '' : '');
 const run = (rPr: string, text: string) => `<w:r>${rPr}<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`;
 
-/** same paragraph (properties + first text run's format), new text; symbol runs (☹ / 😐 in Wingdings) are kept after the text */
+/** same paragraph (properties + first text run's format), new text; symbol runs (☹ / 😐 in Wingdings) are kept only on request (the user removed them, 18/11/2026) */
 function withText(p: string, text: string, keepSymbols = false): string {
   const rs = runs(p);
   const first = rs.find((r) => /<w:t[\s>]/.test(r));
@@ -159,7 +159,7 @@ export async function buildDocxFromTemplate(templateBytes: Uint8Array, input: Do
     const list = input.stories.filter((s) => s.group === g.group);
     if (!list.length) out.push(withText(proto.summary, '(Không có tin.)'));
     for (const s of list) {
-      out.push(withText(proto[g.key].story, s.title, true));
+      out.push(withText(proto[g.key].story, s.title));
       if (s.summary) out.push(withText(proto.summary, s.summary));
       for (const src of s.sources) out.push(linkPara(src.url));
       if (g.group === 'needs_attention' && s.proposal) out.push(proposalPara(proto.proposal, s.proposal));
@@ -195,6 +195,24 @@ export async function buildDocxFromTemplate(templateBytes: Uint8Array, input: Do
     const ctFile = zip.file('[Content_Types].xml')!;
     const ct = await ctFile.async('string');
     if (!ct.includes('/word/charts/chart1.xml')) zip.file('[Content_Types].xml', ct.replace('</Types>', '<Override PartName="/word/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>'));
+  }
+  // group numbers "I." / "II." / "III." take the colour of their heading (the template's list level forced "auto" = black)
+  const numFile = zip.file('word/numbering.xml');
+  if (numFile) {
+    let num = await numFile.async('string');
+    for (const h of [proto.TT.heading, proto.TC.heading, proto.TL.heading]) {
+      const numId = /<w:numId w:val="(\d+)"/.exec(h)?.[1];
+      const ilvl = /<w:ilvl w:val="(\d+)"/.exec(h)?.[1] ?? '0';
+      const abs = numId ? new RegExp(`<w:num w:numId="${numId}"[^>]*>\\s*<w:abstractNumId w:val="(\\d+)"`).exec(num)?.[1] : undefined;
+      if (!abs) continue;
+      const a0 = num.indexOf(`w:abstractNumId="${abs}"`);
+      const a1 = num.indexOf('</w:abstractNum>', a0);
+      const l0 = num.indexOf(`<w:lvl w:ilvl="${ilvl}"`, a0);
+      if (a0 < 0 || l0 < 0 || l0 > a1) continue;
+      const l1 = num.indexOf('</w:lvl>', l0);
+      num = num.slice(0, l0) + num.slice(l0, l1).replace(/<w:color [^>]*\/>/g, '') + num.slice(l1);
+    }
+    zip.file('word/numbering.xml', num);
   }
   zip.file('word/document.xml', doc.slice(0, bStart) + body + doc.slice(bEnd));
   zip.file('word/_rels/document.xml.rels', rels);

@@ -52,6 +52,16 @@ describe('Word report from the Department template', () => {
     // valid XML parts
     expect(doc.split('<w:p>').length + doc.split('<w:p ').length).toBeGreaterThan(20);
     expect(doc.match(/<w:hyperlink /g)?.length).toBe(3 + 1); // 3 sources + the e-mail link of the closing note
+    // no smiley / sad-face symbols after story titles (user, 18/11/2026)
+    expect(doc.slice(0, doc.indexOf('Lưu ý'))).not.toContain('<w:sym ');
+    // "I." / "II." / "III." take their heading's colour: the list level no longer forces "auto"
+    const num = await z.file('word/numbering.xml')!.async('string');
+    const numId = /TỒN TẠI CẦN KHẮC PHỤC/.test(doc) ? /<w:numId w:val="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?TỒN TẠI CẦN KHẮC PHỤC/.exec(doc.slice(doc.lastIndexOf('<w:p', doc.indexOf('TỒN TẠI CẦN KHẮC PHỤC'))))?.[1] : undefined;
+    const abs = new RegExp(`<w:num w:numId="${numId}"[^>]*>\\s*<w:abstractNumId w:val="(\\d+)"`).exec(num)![1];
+    const a0 = num.indexOf(`w:abstractNumId="${abs}"`);
+    const lvl0 = num.slice(num.indexOf('<w:lvl w:ilvl="0"', a0), num.indexOf('</w:lvl>', a0));
+    expect(lvl0).toContain('upperRoman');
+    expect(lvl0).not.toContain('<w:color ');
   });
   it('a template whose structure changed is BLOCKED instead of producing a wrong file', async () => {
     const z = await JSZip.loadAsync(TPL);
