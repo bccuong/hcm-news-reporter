@@ -158,3 +158,31 @@ describe('never a suggestion to look for another province (18/11/2026)', () => {
     expect(suggestFilter([a1, a2], judged, s).filter((x) => /hà nội/i.test(x.phrase))).toEqual([]);
   });
 });
+
+describe('suggestion hygiene (18/11/2026)', async () => {
+  const { alreadyApplied, distinctStories } = await import('../src/domain/suggest.js');
+  it('one press release published twice is one story, not a trend', () => {
+    expect(distinctStories(['Bán đảo SOLA - Tư duy toàn cầu gặp gỡ giá trị gia đình Việt', 'Bán đảo SOLA - Nơi tư duy toàn cầu gặp gỡ giá trị gia đình Việt'])).toHaveLength(1);
+    expect(distinctStories(['TP.HCM lát đá lối đi bộ Nguyễn Huệ', 'Cử tri Bình Thạnh kiến nghị lát lại lối đi bộ'])).toHaveLength(2);
+    const a1 = art('Bán đảo SOLA - Tư duy toàn cầu gặp gỡ giá trị gia đình Việt', 'Dự án tại TP.HCM.', 'Công trình nhà ở.');
+    const a2 = art('Bán đảo SOLA - Nơi tư duy toàn cầu gặp gỡ giá trị gia đình Việt', 'Dự án tại TP.HCM.', 'Công trình nhà ở.');
+    const judged = new Map<string, Judged>([[a1.id, { relevant: true, why: 'decision' }], [a2.id, { relevant: true, why: 'decision' }]]);
+    expect(suggestFilter([a1, a2], judged, s).filter((x) => /giá trị gia đình/.test(x.phrase))).toEqual([]);
+  });
+  it('an applied (saved) suggestion is recognised in the settings, so it is not shown again', () => {
+    const x = { kind: 'include' as const, phrase: 'lối đi bộ', category: 'INFRA' as const };
+    expect(alreadyApplied(s, x)).toBe(false);
+    expect(alreadyApplied(applySuggestion(s, x), x)).toBe(true);
+    const st = { kind: 'setting' as const, phrase: 'x', setting: { path: 'location.nationalToReady', value: false, from: true, label: 'x' } };
+    expect(alreadyApplied(s, st)).toBe(false);
+    expect(alreadyApplied(applySuggestion(s, st), st)).toBe(true);
+    expect(alreadyApplied(applySuggestion(s, { kind: 'sector', phrase: 'đại đô thị', category: 'BUILD' }), { kind: 'sector', phrase: 'đại đô thị' })).toBe(true);
+  });
+  it('every example comes with the address of its original article', () => {
+    const missed = { ...art('Cử tri phường Bình Thạnh TP.HCM kiến nghị lát lại lối đi bộ', 'Người dân phường Bình Thạnh phản ánh lối đi bộ xuống cấp.'), originalUrl: 'https://tn.vn/a-1.htm' } as Article;
+    const missed2 = { ...art('TP.HCM lát đá lại lối đi bộ phố Nguyễn Huệ', 'Lối đi bộ phố Nguyễn Huệ ở TP.HCM được lát đá lại sau 10 năm.'), originalUrl: 'https://tn.vn/a-2.htm' } as Article;
+    const judged = new Map<string, Judged>([[missed.id, { relevant: true, why: 'label' }], [missed2.id, { relevant: true, why: 'label' }]]);
+    const inc = suggestFilter([missed, missed2], judged, s).find((x) => x.kind === 'include')!;
+    expect(inc.links).toEqual({ [missed.title]: 'https://tn.vn/a-1.htm', [missed2.title]: 'https://tn.vn/a-2.htm' });
+  });
+});

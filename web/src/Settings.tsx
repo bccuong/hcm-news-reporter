@@ -6,7 +6,7 @@ import { SettingsSchema, withoutSkillNote, type Article, type CategoryCode, type
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
 import { uid } from '../../src/domain/text';
 import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption } from './api';
-import { applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
+import { alreadyApplied, applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
 import { RuleBuilder } from './RuleBuilder';
 import { SourcesPanel } from './SourcesPanel';
 import { ChipEditor, Field, NumberField, Section, Select, Toggle, useEscape, useToast } from './ui';
@@ -868,7 +868,8 @@ function SuggestPanel({ s, setS, onCount }: { s: Settings; setS: (fn: (p: Settin
     if (!api.suggestions) return setSt({ generatedAt: null, basis: null, items: [] });
     api.suggestions().then(setSt).catch((e) => setErr((e as Error).message));
   }, []);
-  const open = (st?.items ?? []).filter((x) => !done[x.id]);
+  // applied (and saved) ones disappear at once, not only after the nightly list is renewed
+  const open = (st?.items ?? []).filter((x) => !done[x.id] && !alreadyApplied(s, x));
   useEffect(() => onCount(open.length), [open.length, onCount]);
   const apply = (x: FilterSuggestion) => {
     setS((p) => (p ? applySuggestion(p, { ...x, category: x.kind === 'include' || x.kind === 'sector' ? (cat[x.id] ?? x.category) : undefined }) : p));
@@ -947,18 +948,18 @@ function SuggestPanel({ s, setS, onCount }: { s: Settings; setS: (fn: (p: Settin
             <details className="mt-2 text-xs text-slate-600">
               <summary className="cursor-pointer select-none text-teal-700">Xem bài liên quan</summary>
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                {x.examples.map((t) => <li key={t}>{t}</li>)}
+                {x.examples.map((t) => <li key={t}>{x.links?.[t] ? <a className="text-teal-700 hover:underline" href={x.links[t]} target="_blank" rel="noreferrer" title="Mở bài gốc (tab mới)">{t} ↗</a> : t}</li>)}
               </ul>
               {(x.harmExamples?.length ?? 0) > 0 && (
                 <>
                   <div className="mt-1 text-amber-800">Bài đã chấm sẽ bị xếp sai:</div>
-                  <ul className="list-disc space-y-0.5 pl-5 text-amber-800">{x.harmExamples!.map((t) => <li key={t}>{t}</li>)}</ul>
+                  <ul className="list-disc space-y-0.5 pl-5 text-amber-800">{x.harmExamples!.map((t) => <li key={t}>{x.links?.[t] ? <a className="hover:underline" href={x.links[t]} target="_blank" rel="noreferrer">{t} ↗</a> : t}</li>)}</ul>
                 </>
               )}
               {x.sideExamples.length > 0 && (
                 <>
                   <div className="mt-1 text-slate-500">Bài chưa chấm bị ảnh hưởng:</div>
-                  <ul className="list-disc space-y-0.5 pl-5 text-slate-500">{x.sideExamples.map((t) => <li key={t}>{t}</li>)}</ul>
+                  <ul className="list-disc space-y-0.5 pl-5 text-slate-500">{x.sideExamples.map((t) => <li key={t}>{x.links?.[t] ? <a className="hover:underline" href={x.links[t]} target="_blank" rel="noreferrer">{t} ↗</a> : t}</li>)}</ul>
                 </>
               )}
             </details>

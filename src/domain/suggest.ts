@@ -36,6 +36,8 @@ export interface FilterSuggestion {
   /** stories not judged yet whose status changes (moved into or out of "Bài sẵn sàng") */
   sideEffects: number;
   examples: string[];
+  /** example title → address of the original article (the editor opens it from the suggestion) */
+  links?: Record<string, string>;
   sideExamples: string[];
 }
 export interface Judged { relevant: boolean; why: 'label' | 'decision'; category?: string | null }
@@ -154,6 +156,37 @@ export function withTitleExclusion(s: Settings, phrase: string): Settings {
   return { ...s, keywords: { ...s.keywords, excludePhrases: [...s.keywords.excludePhrases, phrase] } };
 }
 
+/** titles of different stories: near-identical titles (one press release on two sites, a re-published story) count once */
+export function distinctStories(titles: string[]): string[] {
+  const set = (t: string) => new Set(normText(t).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1));
+  const kept: Array<Set<string>> = [];
+  const out: string[] = [];
+  for (const t of titles) {
+    const w = set(t);
+    const same = kept.some((k) => {
+      let both = 0;
+      for (const x of w) if (k.has(x)) both++;
+      return both / Math.max(1, w.size + k.size - both) >= 0.75; // share of all words: ≥ 75 % the same
+    });
+    if (!same) (kept.push(w), out.push(t));
+  }
+  return out;
+}
+
+/** the suggestion is already in the settings (applied and saved): not shown again until the nightly list is renewed */
+export function alreadyApplied(s: Settings, x: Pick<FilterSuggestion, 'kind' | 'phrase' | 'category' | 'setting'>): boolean {
+  const p = normText(x.phrase);
+  if (x.kind === 'include') return (includeGroup(s)?.group.children ?? []).some((c) => c.kind === 'term' && !c.negate && normText(c.value) === p);
+  if (x.kind === 'sector') return s.categories.some((c) => c.keywords.some((k) => normText(k) === p));
+  if (x.kind === 'place') return s.location.areas.some((a) => [a.name, ...a.aliases].some((n) => normText(n) === p));
+  if (x.kind === 'exclude_title') return s.keywords.excludePhrases.some((k) => normText(k) === p);
+  if (x.kind === 'setting' && x.setting) {
+    const [g, k] = x.setting.path.split('.') as [keyof Settings, string];
+    return (s[g] as unknown as Record<string, unknown> | undefined)?.[k] === x.setting.value;
+  }
+  return false;
+}
+
 export function statusOf(a: Article, s: Settings): Status {
   return annotateArticle(a, s).relevance.status as Status;
 }
@@ -217,8 +250,9 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
       if (dismissed.has(id)) continue;
       const category = kind === 'include' ? sectorFor(targets.filter((a) => findWord(source(a), phrase) >= 0)) : undefined;
       const r = evaluate(kind, phrase, category);
-      if (r.fixes < minFixes || r.harms > 0) continue; // a trend (≥ 2 stories), not one story's wording
-      tried.push({ id, kind, phrase, ...(category ? { category } : {}), fixes: r.fixes, sideEffects: r.side, examples: r.examples, sideExamples: r.sideExamples });
+      const fixes = distinctStories(r.examples).length;
+      if (fixes < minFixes || r.harms > 0) continue; // a trend (≥ 2 different stories), not one story's wording
+      tried.push({ id, kind, phrase, ...(category ? { category } : {}), fixes, sideEffects: r.side, examples: r.examples, sideExamples: r.sideExamples });
     }
     // best first (most stories fixed, fewest side effects, more specific); one suggestion per wrongly filtered story is enough
     tried.sort((a, b) => b.fixes - a.fixes || a.sideEffects - b.sideEffects || b.phrase.length - a.phrase.length);
@@ -243,7 +277,11 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
   const placeless = articles.filter((a) => judged.get(a.id)?.relevant && base.get(a.id) !== 'relevant' && annotateArticle(a, s)._verdict.location.status !== 'hcm');
   const knownPlaces = new Set(s.location.areas.flatMap((x) => [x.name, ...x.aliases]).map(normText));
   out.push(...consider('place', placeless, (a) => `${a.title}\n${a.sapo ?? ''}\n${a.bodyText ?? ''}`, (x) => placesOf(x).filter((pl) => !knownPlaces.has(normText(pl)) && !knownPlaces.has(normText(pl.replace(/^\S+(?:\s(?:đô thị|dân cư|công nghiệp|chế xuất|viên|xe|phà|giao|xoay|cư))?\s/, ''))))));
-  return out.slice(0, opts.max ?? 12);
+  const urlOf = new Map(articles.map((a) => [a.title, (a as Article & { url?: string }).canonicalUrl ?? a.originalUrl ?? (a as Article & { url?: string }).url ?? '']));
+  return out.slice(0, opts.max ?? 12).map((x) => ({
+    ...x,
+    links: Object.fromEntries([...x.examples, ...x.sideExamples, ...(x.harmExamples ?? [])].map((t) => [t, urlOf.get(t) ?? '']).filter(([, u]) => u)),
+  }));
 
   /** a change judged on every judged story it moves: up for a relevant one / down for an off-topic one is right */
   function judgeChange(next: Settings, touch: (a: Article) => boolean) {
@@ -278,8 +316,9 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
       if (dismissed.has(id)) continue;
       const category = sectorFor(targets.filter((a) => findWord(a.title, phrase) >= 0));
       const r = judgeChange(withCategoryKeyword(s, category, phrase), (a) => findWord(`${a.title}\n${a.sapo ?? ''}\n${a.bodyText ?? ''}`, phrase) >= 0);
-      if (r.fixes < minFixes || r.harms > 0) continue;
-      tried.push({ id, kind, phrase, category, fixes: r.fixes, sideEffects: r.side, examples: r.examples.slice(0, 3), sideExamples: r.sideExamples });
+      const fixes = distinctStories(r.examples).length;
+      if (fixes < minFixes || r.harms > 0) continue;
+      tried.push({ id, kind, phrase, category, fixes, sideEffects: r.side, examples: r.examples.slice(0, 3), sideExamples: r.sideExamples });
     }
     tried.sort((a, b) => b.fixes - a.fixes || a.sideEffects - b.sideEffects || b.phrase.length - a.phrase.length);
     const covered = new Set<string>();
