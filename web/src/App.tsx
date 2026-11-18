@@ -1,5 +1,5 @@
 import { Activity, AlarmClock, AlertTriangle, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, QrCode, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import { EXCLUDE_REASONS, EXCLUDE_REASON_LABEL, type AdapterHealth, type Article, type Candidate, type CategoryCode, type EditorialAssessment, type ExcludeReason, type ReviewDecision, type Settings, type Source } from '../../src/domain/schemas';
@@ -615,6 +615,7 @@ export function App() {
                 </button>
               ))}
             </div>
+            <div className="flex flex-wrap items-center gap-2">
             <button
               className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold tabular-nums transition ${windowErr ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-800 hover:border-teal-400'}`}
               onClick={() => setEditWindow((v) => !v)}
@@ -626,8 +627,6 @@ export function App() {
               {windowIso ? windowText(windowIso.from, windowIso.to) : '—'}
               <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition ${editWindow ? 'rotate-180' : ''}`} />
             </button>
-            <span className="flex-1" />
-            {runs.length > 0 && <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá' : undefined} onRestore={api.restoreRun && canDeleteRuns ? restoreRun : undefined} />}
             {run?.active ? (
               <button className="btn-danger rounded-full" onClick={() => api.cancel(run.runId)}>
                 <Square className="h-4 w-4" /> Dừng
@@ -650,6 +649,7 @@ export function App() {
                 {starting ? <><RefreshCw className="h-4 w-4 animate-spin" /> Đang gửi…</> : <><Play className="h-4 w-4" /> Thu thập</>}
               </button>
             )}
+            </div>
           </div>
           {/* exact date/time: shown on demand */}
           <div className={editWindow ? 'animate-in mt-3 flex flex-wrap items-end gap-4 border-t border-slate-100 pt-3' : 'hidden'}>
@@ -700,7 +700,8 @@ export function App() {
         {asking && <QuickAsk items={asking} onAnswer={answerAsk} onSkip={(x) => setAskSkipped((s) => new Set(s).add(x.article.id))} onClose={() => setAsking(null)} />}
 
         {/* sources of the viewed period: one tile per publisher */}
-        {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')} canTest={() => (api.shared && !api.shared.session() ? (setLoginOpen(true), false) : true)} />}
+        {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')}
+          picker={runs.length > 0 ? <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá' : undefined} onRestore={api.restoreRun && canDeleteRuns ? restoreRun : undefined} /> : null} canTest={() => (api.shared && !api.shared.session() ? (setLoginOpen(true), false) : true)} />}
 
         {!run ? (
           <div className="card animate-in flex flex-col items-center gap-2 p-10 text-center text-slate-500">
@@ -851,7 +852,7 @@ function summarizeProbe(r: any): QuickCheck {
   if (bad.length || (sample && !sampleOk)) return { at, tone: 'warn', text: `${okR.length}/${routes.length} đường OK`, detail };
   return { at, tone: 'ok', text: `hoạt động · ${links} link`, detail };
 }
-function SourceStrip({ run, arts, ready, sources, onOpen, canTest }: { run: RunInfo; arts: Article[]; ready: Article[]; sources: Source[]; onOpen: () => void; canTest: () => boolean }) {
+function SourceStrip({ run, arts, ready, sources, onOpen, canTest, picker }: { run: RunInfo; arts: Article[]; ready: Article[]; sources: Source[]; onOpen: () => void; canTest: () => boolean; picker?: ReactNode }) {
   const [checks, setChecks] = useState<Record<string, QuickCheck>>({});
   const quickCheck = async (id: string) => {
     const src = sources.find((x) => x.id === id);
@@ -873,9 +874,10 @@ function SourceStrip({ run, arts, ready, sources, onOpen, canTest }: { run: RunI
   const shown = run.sources.filter((s) => s.status !== 'skipped_disabled');
   const off = run.sources.length - shown.length;
   return (
-    <section className="card animate-in p-3" data-testid="source-strip">
+    <section className="card animate-in relative z-10 p-3" data-testid="source-strip">
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <h2 className="text-sm font-semibold text-navy-800">Nguồn tin trong kỳ</h2>
+        {picker && <div className="w-full sm:w-auto">{picker}</div>}
         <span className="text-xs text-slate-400" data-testid="source-strip-caption" title={`${formatVn(run.window.from)} → ${formatVn(run.window.to)}${run.finishedAt ? ` · lượt cuối ${formatVn(run.finishedAt)}` : ''}`}>
           {run.finishedAt ? `cập nhật ${formatVn(run.finishedAt)}` : ''}
         </span>
