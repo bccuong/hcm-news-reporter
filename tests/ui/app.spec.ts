@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import JSZip from 'jszip';
+import jsQR from 'jsqr';
 
 /** Click-through UI tests: every assertion goes through real controls, then a page reload proves persistence. */
 
@@ -503,6 +504,51 @@ test('ESC closes "Xem chi tiết" / "Biên tập", Cài đặt and dialogs like 
   await page.keyboard.press('Escape');
   await expect(dlg).toBeVisible();
   page.once('dialog', (d) => d.accept());
+  await page.keyboard.press('Escape');
+  await expect(dlg).toBeHidden();
+});
+
+test('"Tạo mã QR": any address → preview, the PNG decodes back to that address; https:// added to a bare domain; ESC closes', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('qr-open').click();
+  const dlg = page.getByRole('dialog', { name: 'Tạo mã QR' });
+  await expect(dlg).toBeVisible();
+  await expect(dlg.getByRole('button', { name: /Tải PNG/ })).toBeDisabled();
+  await dlg.getByTestId('qr-url').fill('sxd.hochiminhcity.gov.vn/tin-tuc?a=1&b=2');
+  await expect(dlg.getByText('https://sxd.hochiminhcity.gov.vn/tin-tuc?a=1&b=2')).toBeVisible();
+  await dlg.getByLabel('Dòng chữ dưới mã').fill('Quét để đọc bài gốc');
+  await expect(dlg.getByTestId('qr-preview')).toBeVisible();
+  await dlg.getByLabel('Kích thước ảnh').selectOption('600');
+  // catch the saved file inside the page (a real browser download leaves the test browser in a bad state)
+  await page.evaluate(() => {
+    const w = window as unknown as { __saved?: Promise<{ name: string; src: string }> };
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      const name = this.download;
+      w.__saved = fetch(this.href).then((r) => r.blob()).then((b) => new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok({ name, src: String(fr.result) }); fr.readAsDataURL(b); }));
+    };
+  });
+  await dlg.getByTestId('qr-download-png').click();
+  const px = await page.evaluate(async () => {
+    const saved = await (window as unknown as { __saved: Promise<{ name: string; src: string }> }).__saved;
+    const img = new Image();
+    img.src = saved.src;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d')!;
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height);
+    let s = '';
+    for (let i = 0; i < d.data.length; i += 0x8000) s += String.fromCharCode(...d.data.subarray(i, i + 0x8000));
+    return { name: saved.name, w: c.width, h: c.height, data: btoa(s) };
+  });
+  expect(px.name).toBe('qr-sxd.hochiminhcity.gov.vn.png');
+  expect(px.w).toBeGreaterThanOrEqual(500);
+  expect(jsQR(new Uint8ClampedArray(Buffer.from(px.data, 'base64')), px.w, px.h)?.data).toBe('https://sxd.hochiminhcity.gov.vn/tin-tuc?a=1&b=2');
+  // plain text is allowed, with a warning
+  await dlg.getByTestId('qr-url').fill('Sở Xây dựng TP.HCM');
+  await expect(dlg.getByText(/Không phải địa chỉ web/)).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dlg).toBeHidden();
 });

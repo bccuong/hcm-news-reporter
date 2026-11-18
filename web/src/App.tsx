@@ -1,4 +1,4 @@
-import { AlarmClock, AlertTriangle, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
+import { AlarmClock, AlertTriangle, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, QrCode, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
@@ -9,6 +9,7 @@ import { nextRun, SCHEDULE_SLOTS, type ScheduleSlot } from '../../src/domain/sch
 import { uncertainStories, type UncertainStory } from '../../src/domain/suggest';
 import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
+import { QrDialog } from './QrTool';
 import { STATE_LABEL, StateChip, useEscape, useToast } from './ui';
 
 type Tab = 'articles' | 'review' | 'coverage' | 'export';
@@ -420,6 +421,7 @@ export function App() {
   // shared review (GitHub Pages): reviewer session + the team's votes for the current period
   const [reviewer, setReviewer] = useState(api.shared?.session() ?? null);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [votes, setVotes] = useState<Record<string, Vote[]>>({});
   const reloadVotes = useCallback(() => {
     if (!api.shared || !runId || !api.shared.session()) return setVotes({});
@@ -580,6 +582,9 @@ export function App() {
                 <LogIn className="h-4 w-4" /> <span className="hidden sm:inline">Đăng nhập</span>
               </button>
             ))}
+          <button className="btn-ghost shrink-0 rounded-full px-2.5" onClick={() => setQrOpen(true)} aria-label="Tạo mã QR" title="Tạo mã QR từ một địa chỉ bất kỳ (để chèn vào slide)" data-testid="qr-open">
+            <QrCode className="h-4 w-4" /> <span className="hidden xl:inline">QR</span>
+          </button>
           <button className="btn-ghost shrink-0 rounded-full px-2.5" onClick={() => setSettingsOpen(true)} aria-label="Cài đặt" title="Cài đặt">
             <Cog className="h-4 w-4" /> <span className="hidden xl:inline">Cài đặt</span>
           </button>
@@ -736,6 +741,7 @@ export function App() {
         <Inspector a={artById.get(inspect)!} c={candByArticle.get(inspect)} r={reviews[inspect]} settings={settings} onClose={() => setInspect(null)} onPatch={(p) => guardedPatch(inspect, p)}
           arts={artById} reviews={reviews} onMerge={merge} onSplit={split} onOpen={setInspect} />
       )}
+      {qrOpen && <QrDialog onClose={() => setQrOpen(false)} />}
       {loginOpen && api.shared && (
         <ReviewerLogin
           onClose={() => setLoginOpen(false)}
