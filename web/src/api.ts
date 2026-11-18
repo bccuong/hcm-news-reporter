@@ -18,7 +18,7 @@ export interface ExportResult { ok: boolean; dryRun?: boolean; blockers?: string
 export interface HistoryEntry { id: string; at: string; kind: string; summary: string }
 
 /** profiles (cấu hình theo địa bàn); web: the active one is chosen per browser */
-export interface ProfileInfo { id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string; autoBy?: string; autoAt?: string; schedule?: ScheduleState }
+export interface ProfileInfo { id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string; autoBy?: string; autoAt?: string; schedule?: ScheduleState; /** web: slot ids already collected today (from the review worker) */ scheduleDone?: string[] }
 export interface ProfilesState { activeId: string; profiles: ProfileInfo[] }
 export interface TemplateOption { id: string; name: string; description: string; kind: 'original-pptx' | 'style' | 'upload'; orientation: 'portrait' | 'landscape'; available?: boolean }
 export interface NewProfileInput { name: string; description?: string; cloneFrom?: string | null; regionName?: string; regionAliases?: string[] }

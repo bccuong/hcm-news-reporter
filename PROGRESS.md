@@ -7,7 +7,11 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14n – story title = link to the original; 2026-11-18)
+## ▶ RESUME HERE (session 14o – "Tiếp:" moves to 16:30 once the 08:00 run is done; 2026-11-18)
+- nextRun(state, now, doneToday): a slot already dispatched today is skipped (before: 08:00 stayed "next" until 10:00). Worker /status adds profiles[].scheduleDone (from sched:<pid>:<slot>:<day> keys); worker redeployed, live status shows done=["morning"]. tests/schedule.test.ts. vitest 167/167, build OK.
+- Next step: check the 08:02 period on 18/11 for stories outside HCM.
+
+## (history) Session 14n – story title = link to the original; 2026-11-18)
 - Story cards and Hỏi nhanh: the title opens the original article (new tab, ↗ icon) with its short address (shortUrl: host + path) under it; the "Bài gốc" button and "Đọc bài gốc" link are gone. UI test checks the link. vitest 164/164, test:ui 13/13, test:ui:live 12/12.
 - Next step: check the 08:02 period on 18/11 for stories outside HCM.
 

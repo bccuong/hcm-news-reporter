@@ -198,7 +198,14 @@ const mapRun = (x: RunInfo) => ({
 
 /** public server status: per-profile hourly switch + what the collection server is doing right now */
 async function serverStatus(env: Env, f: Fetch, h: Record<string, string>) {
-  const profiles = await getProfiles(env);
+  const now = new Date();
+  const profiles = await Promise.all(
+    (await getProfiles(env)).map(async (p) => {
+      const done: string[] = [];
+      for (const s of SCHEDULE_SLOTS) if (p.schedule?.[s.id] && (await env.REVIEWS.get(doneKey(p.id, s, now)))) done.push(s.id);
+      return { ...p, scheduleDone: done };
+    }),
+  );
   const lv = await env.REVIEWS.get(AUTO_LAST_KEY);
   const lastAuto = lv ? (JSON.parse(lv) as AutoLast) : null;
   if (!ghReady(env)) return json({ collectEnabled: false, profiles, lastAuto, running: [] }, 200, h);

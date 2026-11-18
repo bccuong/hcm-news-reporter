@@ -38,14 +38,18 @@ export function dueSlots(now: Date): ScheduleSlot[] {
   const m = vn.getUTCHours() * 60 + vn.getUTCMinutes();
   return SCHEDULE_SLOTS.filter((s) => m >= minutesOf(s.at) + 2 && m < minutesOf(s.at) + 120);
 }
-/** next run time (ISO) of the ticked slots, or null */
-export function nextRun(state: ScheduleState | undefined, now: Date): { slot: ScheduleSlot; at: string } | null {
+/**
+ * next run time (ISO) of the ticked slots, or null. `doneToday` = slot ids already collected today (Vietnam day):
+ * once the 08:00 run has been dispatched, the next one is 16:30, not 08:00 again until its 2-hour window closes.
+ */
+export function nextRun(state: ScheduleState | undefined, now: Date, doneToday: readonly string[] = []): { slot: ScheduleSlot; at: string } | null {
   const on = SCHEDULE_SLOTS.filter((s) => state?.[s.id]);
   let best: { slot: ScheduleSlot; at: string } | null = null;
   for (const day of [0, 1])
     for (const s of on) {
       const at = `${vnDay(now, day)}T${s.at}:00+07:00`;
       if (Date.parse(at) + 120 * 60_000 <= now.getTime()) continue;
+      if (day === 0 && doneToday.includes(s.id)) continue;
       if (!best || Date.parse(at) < Date.parse(best.at)) best = { slot: s, at };
     }
   return best;

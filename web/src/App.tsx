@@ -2097,7 +2097,7 @@ const RUN_KIND: Record<string, string> = { auto: 'lượt tự động theo lị
 /** web: hourly automatic switch + what the collection server is doing now */
 function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerStatus; profileId: string; remote: boolean; onToggle: (slot: ScheduleSlot, on: boolean) => void }) {
   const prof = server.profiles.find((p) => p.id === profileId);
-  const next = nextRun(prof?.schedule, new Date());
+  const next = nextRun(prof?.schedule, new Date(), prof?.scheduleDone);
   const run = server.running[0];
   const who = run?.kind === 'request' ? personName(/\((.*)\)(?:\s*\[[^\]]*\])?\s*$/.exec(run.title)?.[1] ?? '') || undefined : undefined;
   return (
