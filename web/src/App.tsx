@@ -615,7 +615,7 @@ export function App() {
               data-testid="window-range"
             >
               <CalendarClock className="h-4 w-4 text-teal-600" />
-              {windowIso ? `${shortVn(windowIso.from)} → ${shortVn(windowIso.to)}` : '—'}
+              {windowIso ? windowText(windowIso.from, windowIso.to) : '—'}
               <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition ${editWindow ? 'rotate-180' : ''}`} />
             </button>
             <span className="flex-1" />
@@ -658,7 +658,7 @@ export function App() {
           <section className="card animate-in flex flex-wrap items-center gap-3 border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="remote-collect">
             <RefreshCw className="h-4 w-4 animate-spin" />
             <span>
-              Đang thu thập trên máy chủ: <b>{shortVn(remote.from)} → {shortVn(remote.to)}</b> · {remote.status}
+              Đang thu thập trên máy chủ: <b>{windowText(remote.from, remote.to)}</b> · {remote.status}
             </span>
             <span className="text-xs text-blue-700">thường 5–10 phút, trang tự mở kết quả</span>
           </section>
@@ -1113,12 +1113,21 @@ function initials(name: string): string {
   const w = name.trim().split(/\s+/).filter(Boolean);
   return (w[w.length - 1]?.[0] ?? '?').toUpperCase();
 }
-/** compact run window: "16/11 · 08:01–16:30" (same day) or "15/11 17:00 → 16/11 08:00" */
+/**
+ * compact run window with the year (the app is used over several years, 18/11/2026):
+ * "16/11/2026 · 08:01–16:30" (same day), "15/11 17:00 → 16/11/2026 08:00", "31/12/2026 17:00 → 01/01/2027 08:00"
+ */
 function runLabel(r: { window: { from: string; to: string } }): string {
-  const [fh, fd] = formatVn(r.window.from).split(' ');
-  const [th, td] = formatVn(r.window.to).split(' ');
-  const dm = (d?: string) => (d ?? '').slice(0, 5);
-  return fd === td ? `${dm(fd)} · ${fh}–${th}` : `${dm(fd)} ${fh} → ${dm(td)} ${th}`;
+  const [fh, fd = ''] = formatVn(r.window.from).split(' ');
+  const [th, td = ''] = formatVn(r.window.to).split(' ');
+  if (fd === td) return `${fd} · ${fh}–${th}`;
+  return `${fd.slice(6) === td.slice(6) ? fd.slice(0, 5) : fd} ${fh} → ${td} ${th}`;
+}
+/** "17:00 17/11 → 08:01 18/11/2026" (year once, on both dates when they differ) */
+function windowText(from: string, to: string): string {
+  const [fh, fd = ''] = formatVn(from).split(' ');
+  const [th, td = ''] = formatVn(to).split(' ');
+  return `${fh} ${fd.slice(6) === td.slice(6) ? fd.slice(0, 5) : fd} → ${th} ${td}`;
 }
 /** requests sent for a reviewer by the assistant were recorded as "Claude (cho X)": shown as X */
 function personName(s: string): string {

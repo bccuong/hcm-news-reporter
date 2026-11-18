@@ -151,7 +151,7 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await expect(page.getByLabel('Từ – giờ')).toHaveValue('17');
   await expect(page.getByLabel('Đến – phút').locator('option')).toHaveCount(60);
   await setWindowField(page, 'Đến', '2026-11-09T08:00');
-  await expect(page.getByTestId('window-range')).toHaveText('17:00 08/11 → 08:00 09/11'); // compact window shown above the editors
+  await expect(page.getByTestId('window-range')).toHaveText('17:00 08/11 → 08:00 09/11/2026'); // compact window shown above the editors
   // invalid range is blocked
   await setWindowField(page, 'Đến', '2026-11-08T10:00');
   await expect(page.getByText('Thời điểm kết thúc phải sau thời điểm bắt đầu')).toBeVisible();

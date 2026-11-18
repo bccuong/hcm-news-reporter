@@ -115,7 +115,7 @@ test('web "Thu thập" like the local app: choose from/to → server collection 
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
   await setWindowField(page, 'Từ', '2026-11-08T18:00');
   await setWindowField(page, 'Đến', '2026-11-09T07:00');
-  await expect(page.getByTestId('window-range')).toHaveText('18:00 08/11 → 07:00 09/11');
+  await expect(page.getByTestId('window-range')).toHaveText('18:00 08/11 → 07:00 09/11/2026');
   // collecting requires a reviewer session
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
@@ -132,7 +132,7 @@ test('web "Thu thập" like the local app: choose from/to → server collection 
   await expect(page.getByText(/Đã thu thập xong 18:00 08\/11\/2026 → 07:00 09\/11\/2026/)).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('remote-collect')).toHaveCount(0);
   // the new period is opened: compact label + who asked for it
-  await expect(page.getByTestId('run-picker')).toContainText('08/11 18:00 → 09/11 07:00');
+  await expect(page.getByTestId('run-picker')).toContainText('08/11 18:00 → 09/11/2026 07:00');
   await expect(page.getByTestId('run-picker')).toContainText('Người duyệt C');
 });
 
@@ -400,7 +400,7 @@ test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; pic
   const rows = page.getByRole('listbox', { name: 'Danh sách các lượt' }).getByRole('option');
   const field = async (l: string) => `${await page.getByLabel(`${l} – ngày`).inputValue()}T${await page.getByLabel(`${l} – giờ`).inputValue()}:${await page.getByLabel(`${l} – phút`).inputValue()}`;
   // the on-demand period 18:00 08/11 → 07:00 09/11 (collected in an earlier test) is the most recent collection
-  await expect(picker).toContainText('08/11 18:00 → 09/11 07:00'); // compact label
+  await expect(picker).toContainText('08/11 18:00 → 09/11/2026 07:00'); // compact label
   expect(await field('Từ')).toBe('2026-11-08T18:00');
   expect(await field('Đến')).toBe('2026-11-09T07:00');
   await expect(page.getByRole('button', { name: 'Kỳ gần nhất' })).toHaveClass(/bg-navy-700/); // latest run = "Kỳ gần nhất"
@@ -408,16 +408,16 @@ test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; pic
   expect(await rows.count()).toBeGreaterThanOrEqual(2);
   await expect(rows.first()).toHaveAttribute('aria-selected', 'true'); // newest first, current one ticked
   // pick the daily period: Từ / Đến follow
-  await rows.filter({ hasText: '08/11 17:00 → 09/11 08:00' }).click();
+  await rows.filter({ hasText: '08/11 17:00 → 09/11/2026 08:00' }).click();
   await expect.poll(() => field('Từ')).toBe('2026-11-08T17:00');
   expect(await field('Đến')).toBe('2026-11-09T08:00');
   // "Kỳ gần nhất" goes back to the most recent run (not a computed clock window)
   await page.getByRole('button', { name: 'Kỳ gần nhất' }).click();
-  await expect(picker).toContainText('08/11 18:00 → 09/11 07:00');
+  await expect(picker).toContainText('08/11 18:00 → 09/11/2026 07:00');
   await expect.poll(() => field('Từ')).toBe('2026-11-08T18:00');
   await page.reload();
   await page.waitForLoadState('networkidle');
-  await expect(picker).toContainText('08/11 18:00 → 09/11 07:00'); // F5 → most recent again
+  await expect(picker).toContainText('08/11 18:00 → 09/11/2026 07:00'); // F5 → most recent again
   // not logged in: no delete
   await picker.click();
   await expect(page.getByRole('button', { name: /^Xoá lượt/ })).toHaveCount(0);
@@ -426,18 +426,18 @@ test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; pic
   await login(page, 'Người duyệt E', 'HCM-TEST-CODE');
   await picker.click();
   page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: 'Xoá lượt 08/11 18:00 → 09/11 07:00' }).click();
-  await expect(picker).not.toContainText('08/11 18:00 → 09/11 07:00');
+  await page.getByRole('button', { name: 'Xoá lượt 08/11 18:00 → 09/11/2026 07:00' }).click();
+  await expect(picker).not.toContainText('08/11 18:00 → 09/11/2026 07:00');
   const other = await page.context().browser()!.newPage();
   await other.goto(page.url());
   await other.waitForLoadState('networkidle');
   await other.getByTestId('run-picker').click();
-  await expect(other.getByRole('listbox', { name: 'Danh sách các lượt' })).not.toContainText('08/11 18:00 → 09/11 07:00');
+  await expect(other.getByRole('listbox', { name: 'Danh sách các lượt' })).not.toContainText('08/11 18:00 → 09/11/2026 07:00');
   await other.close();
   await picker.click();
   await page.getByText(/^Lượt đã xoá \(1\)/).click();
   await page.getByRole('button', { name: 'Khôi phục' }).click(); // the list stays open
-  await expect(rows.filter({ hasText: '08/11 18:00 → 09/11 07:00' })).toHaveCount(1);
+  await expect(rows.filter({ hasText: '08/11 18:00 → 09/11/2026 07:00' })).toHaveCount(1);
 });
 
 test('daily suggestions: published by the nightly job, applied (then saved) or dismissed for the whole team', async ({ page, request, browser }) => {
@@ -583,7 +583,7 @@ test('after a scheduled run finishes, the open page shows the new period by itse
   await expect(page.getByTestId('server-busy')).toContainText('lượt tự động theo lịch');
   // no reload from here on: the run finishes, the page looks for the new data and opens it
   await expect(page.getByTestId('server-idle')).toBeVisible({ timeout: 40_000 });
-  await expect(page.getByTestId('run-picker')).toContainText('10/11 · 08:01–16:30', { timeout: 40_000 });
+  await expect(page.getByTestId('run-picker')).toContainText('10/11/2026 · 08:01–16:30', { timeout: 40_000 });
   await expect(page.getByTestId('run-picker')).toContainText('lịch 16:30');
-  await expect(page.getByText(/Có kỳ mới 10\/11 · 08:01–16:30 – đã mở/)).toBeVisible();
+  await expect(page.getByText(/Có kỳ mới 10\/11\/2026 · 08:01–16:30 – đã mở/)).toBeVisible();
 });
