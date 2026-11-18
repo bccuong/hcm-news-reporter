@@ -1060,12 +1060,11 @@ function QuickAsk({ items, onAnswer, onSkip, onClose }: { items: UncertainStory[
             <p className="mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-900">🤔 {x.why}</p>
             <div className="text-xs text-slate-500">{x.article.sourceName} · {x.article.publishedAt ? formatVn(x.article.publishedAt) : 'chưa rõ giờ đăng'} · hiện: <b>{x.status === 'relevant' ? 'Sẵn sàng' : x.status === 'review' ? 'Cần kiểm tra' : 'đã loại'}</b></div>
             <h3 className="mt-1 text-lg font-semibold leading-snug">
-              <a className="group hover:text-teal-700 hover:underline" href={x.article.canonicalUrl ?? x.article.originalUrl} target="_blank" rel="noreferrer" title="Mở bài gốc (tab mới)">
+              <a className="group hover:text-teal-700 hover:underline" href={x.article.canonicalUrl ?? x.article.originalUrl} target="_blank" rel="noreferrer" title={`Mở bài gốc (tab mới): ${x.article.canonicalUrl ?? x.article.originalUrl}`}>
                 {x.article.title}
                 <ExternalLink className="ml-1 inline h-4 w-4 align-baseline text-slate-400 group-hover:text-teal-600" aria-hidden="true" />
               </a>
             </h3>
-            <a className="block truncate text-xs text-slate-400 hover:text-teal-700 hover:underline" href={x.article.canonicalUrl ?? x.article.originalUrl} target="_blank" rel="noreferrer" tabIndex={-1}>{shortUrl(x.article.canonicalUrl ?? x.article.originalUrl)}</a>
             <p className="mt-1 line-clamp-4 text-sm text-slate-600">{x.article.sapo}</p>
             <MatchWhy a={x.article} />
             <p className="mt-3 text-sm font-medium text-slate-700">Bài này có thuộc phạm vi điểm tin không?</p>
@@ -1098,15 +1097,6 @@ function QuickAsk({ items, onAnswer, onSkip, onClose }: { items: UncertainStory[
   );
 }
 
-/** "vnexpress.net/them-8-thang-may-…" – the original address, readable (no https://, www.) */
-function shortUrl(u: string): string {
-  try {
-    const x = new URL(u);
-    return decodeURIComponent(x.hostname.replace(/^www\./, '') + x.pathname).replace(/\/$/, '');
-  } catch {
-    return u;
-  }
-}
 /** "17:00 16/11" from an ISO time (Vietnam) */
 function shortVn(iso: string): string {
   const [hm, d] = formatVn(iso).split(' ');
@@ -1376,12 +1366,11 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                   {!reviewMode && r?.promotedToReady && <span className="chip border-sky-300 bg-sky-50 text-sky-800" title="Biên tập viên đã chuyển bài này từ Cần kiểm tra">từ Cần kiểm tra</span>}
                 </div>
                 <h3 className="font-semibold leading-snug">
-                  <a className="group hover:text-teal-700 hover:underline" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer" title="Mở bài gốc (tab mới)" data-testid="story-title-link">
+                  <a className="group hover:text-teal-700 hover:underline" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer" title={`Mở bài gốc (tab mới): ${a.canonicalUrl ?? a.originalUrl}`} data-testid="story-title-link">
                     {r?.title ?? a.title}
                     <ExternalLink className="ml-1 inline h-3.5 w-3.5 align-baseline text-slate-400 group-hover:text-teal-600" aria-hidden="true" />
                   </a>
                 </h3>
-                <a className="block truncate text-xs text-slate-400 hover:text-teal-700 hover:underline" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer" tabIndex={-1}>{shortUrl(a.canonicalUrl ?? a.originalUrl)}</a>
                 <p className="line-clamp-2 text-sm text-slate-600">{r?.summary ?? a.sapo}</p>
                 {reviewMode && c?.reasonDetail && <p className="mt-1 text-xs text-amber-800">Lý do: {c.reasonDetail}</p>}
                 <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-slate-100 pt-2" data-testid="story-actions">
