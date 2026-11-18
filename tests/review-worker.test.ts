@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { handle, reviewerId, runKind, scheduledCollect, type Env, type KVLike } from '../cloud/review-worker/src/handler.js';
+import { handle, ReviewPeriod, reviewerId, runKind, scheduledCollect, type DONamespaceLike, type Env, type KVLike } from '../cloud/review-worker/src/handler.js';
 
 class MemKV implements KVLike {
   m = new Map<string, { v: string; meta?: unknown }>();
@@ -261,6 +261,63 @@ describe('shared review worker', () => {
     const read = async (e: Env, period = 'custom-202611151700-202611161145', profile = 'hcm') =>
       (await (await handle(new Request(`https://w.example/review?profile=${profile}&period=${period}`, { headers: { origin: ORIGIN } }), e)).json()) as { reviews: Record<string, any> };
     const P = 'custom-202611151700-202611161145';
+    it('Cloudflare KV reads can be ~60 s old: saved edits were overwritten by the next save (18/11/2026) – the Durable Object keeps every save', async () => {
+      /** KV like Cloudflare: a read returns the copy cached by the first read for 60 s */
+      class StaleKV extends MemKV {
+        cache = new Map<string, string | null>();
+        async get(k: string) {
+          if (!this.cache.has(k)) this.cache.set(k, await super.get(k));
+          return this.cache.get(k)!;
+        }
+      }
+      /** Durable Object namespace: one object per name, requests one at a time */
+      const doNs = (e: Env): DONamespaceLike => {
+        const objs = new Map<string, { obj: ReviewPeriod; q: Promise<unknown> }>();
+        return {
+          idFromName: (n) => n,
+          get: (id) => ({
+            fetch: (input, init) => {
+              let o = objs.get(String(id));
+              if (!o) {
+                const store = new Map<string, unknown>();
+                o = { obj: new ReviewPeriod({ storage: { get: async <T,>(k: string) => structuredClone(store.get(k)) as T | undefined, put: async (k, v) => void store.set(k, structuredClone(v)) } }, e), q: Promise.resolve() };
+                objs.set(String(id), o);
+              }
+              const run = o.q.then(() => o!.obj.fetch(new Request(input, init)));
+              o.q = run.catch(() => undefined);
+              return run;
+            },
+          }),
+        };
+      };
+      const A = 'a_0e625d5a32f2d0ce';
+      const B = 'a_1234abcd5678';
+      const edits = async (e: Env) => {
+        await read(e); // the page loads the period (KV caches this copy)
+        await rv(e, { profile: 'hcm', period: P, articleId: A, patch: { title: 'Tiêu đề đã sửa' }, reviewer: 'Cường' });
+        await rv(e, { profile: 'hcm', period: P, articleId: A, patch: { summary: 'Tóm tắt đã sửa' }, reviewer: 'Cường' });
+        await rv(e, { profile: 'hcm', period: P, articleId: B, patch: { included: true }, reviewer: 'Người B' });
+        return (await read(e)).reviews;
+      };
+      // KV only: the stale copy loses the first saves
+      const kvOnly = env();
+      kvOnly.REVIEWS = new StaleKV();
+      const lost = await edits(kvOnly);
+      expect(lost[A]?.title).toBeUndefined();
+      // with the Durable Object: every save is kept, and KV holds a copy
+      const e = env();
+      e.REVIEWS = new StaleKV();
+      e.REVIEW_DO = doNs(e);
+      const kept = await edits(e);
+      expect(kept[A]).toMatchObject({ title: 'Tiêu đề đã sửa', summary: 'Tóm tắt đã sửa', by: 'Cường' });
+      expect(kept[B]).toMatchObject({ included: true });
+      expect(JSON.parse((await new MemKV().get.call(e.REVIEWS as MemKV, 'rva:hcm:' + P))!).reviews[A].title).toBe('Tiêu đề đã sửa');
+      // a period reviewed before the change is imported from KV once
+      const old = env();
+      await rv(old, { profile: 'hcm', period: P, articleId: B, patch: { excludedByEditor: true }, reviewer: 'Người A' });
+      old.REVIEW_DO = doNs(old);
+      expect((await read(old)).reviews[B]).toMatchObject({ excludedByEditor: true });
+    });
     it('public read, reviewer write; patches merge per article and record who/when', async () => {
       const e = env();
       expect((await rv(e, { profile: 'hcm', period: P, articleId: 'a_1234abcd5678', patch: { included: true }, reviewer: 'A' }, 'wrong')).status).toBe(401);

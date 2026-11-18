@@ -457,7 +457,7 @@ export function App() {
     // web: the review is the team's (selection, Sẵn sàng/Loại, edits too) → every change needs a reviewer session
     if (api.shared && !s) {
       setLoginOpen(true);
-      return;
+      return false;
     }
     const before = reviews[articleId];
     const ok = await patch(articleId, p);
@@ -470,6 +470,7 @@ export function App() {
         return { ...v, [articleId]: empty ? others : [...others, own] };
       });
     }
+    return !!ok;
   };
 
   const merge = async (secondaryId: string, targetId: string) => {
@@ -1814,7 +1815,7 @@ function Coverage({ run, cands, onRetry, onOpenSettings, reviewsKey, ledger }: {
   );
 }
 
-function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge, onSplit, onOpen }: { a: Article; c?: Candidate; r?: ReviewDecision; settings: Settings; onClose: () => void; onPatch: (p: Partial<ReviewDecision>) => void; arts: Map<string, Article>; reviews: Record<string, ReviewDecision>; onMerge: (s: string, p: string) => void; onSplit: (s: string) => void; onOpen: (id: string) => void }) {
+function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge, onSplit, onOpen }: { a: Article; c?: Candidate; r?: ReviewDecision; settings: Settings; onClose: () => void; onPatch: (p: Partial<ReviewDecision>) => Promise<boolean | void> | void; arts: Map<string, Article>; reviews: Record<string, ReviewDecision>; onMerge: (s: string, p: string) => void; onSplit: (s: string) => void; onOpen: (id: string) => void }) {
   const mergedInto = r?.groupId ? arts.get(rootOf(a.id, reviews)) : undefined;
   const [title, setTitle] = useState(r?.title ?? a.title);
   const [summary, setSummary] = useState(r?.summary ?? a.sapo);
@@ -1825,7 +1826,12 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
   // numbers in summary that do not appear in source text -> warning (EXT-07)
   const srcText = `${a.title} ${a.sapo} ${a.bodyText}`;
   const missingNums = (summary.match(/\d[\d.,]*/g) ?? []).filter((x) => !srcText.includes(x));
+  const toast = useToast();
   const save = () => onPatch({ title, summary, shortLabel: short, proposal });
+  // the button confirms (the fields also save when leaving them)
+  const saveNow = async () => {
+    if ((await save()) !== false) toast('ok', 'Đã lưu biên tập');
+  };
   // "Tồn tại cần khắc phục": unit suggested from the topic (Cài đặt › Báo cáo & mẫu › Đề xuất giao đơn vị)
   const suggested = suggestAssignment({ title, sapo: a.sapo }, settings);
   useEscape(onClose);
@@ -1962,7 +1968,7 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
                 <button className={`rounded border p-2 text-xs ${r?.primaryImageUrl === null ? 'ring-2 ring-teal-500' : ''}`} onClick={() => onPatch({ primaryImageUrl: null })}>Không dùng ảnh (bố cục chữ)</button>
               </div>
             </div>
-            <button className="btn-primary" onClick={save}>Lưu biên tập</button>
+            <button className="btn-primary" onClick={saveNow}>Lưu biên tập</button>
             <div className="rounded border border-slate-200 bg-slate-50 p-2">
               <span className="label">Góp ý cho bộ lọc (vì sao bài này nên/không nên được thu thập, lĩnh vực đúng là gì…)</span>
               <div className="mb-1 flex gap-1">

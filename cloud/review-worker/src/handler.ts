@@ -17,8 +17,17 @@ export interface KVLike {
   delete(key: string): Promise<void>;
   list(opts: { prefix: string; cursor?: string; limit?: number }): Promise<{ keys: Array<{ name: string; metadata?: unknown }>; list_complete: boolean; cursor?: string }>;
 }
+/** the parts of a Cloudflare Durable Object namespace / storage this worker uses */
+export interface DONamespaceLike { idFromName(name: string): unknown; get(id: unknown): { fetch(input: string, init?: RequestInit): Promise<Response> } }
+export interface DOStorageLike { get<T>(key: string): Promise<T | undefined>; put(key: string, value: unknown): Promise<void> }
 export interface Env {
   REVIEWS: KVLike;
+  /**
+   * one Durable Object per (profile, period) holds the team's review: writes are applied one after another on fresh data.
+   * KV alone lost edits (18/11/2026): its reads can be up to 60 s old, so a save read a stale copy and overwrote the
+   * previous save (title edited, then "Lưu biên tập", then a photo…). Without the binding (tests) KV is used.
+   */
+  REVIEW_DO?: DONamespaceLike;
   ACCESS_CODE: string;
   EXPORT_TOKEN: string;
   ALLOWED_ORIGINS: string; // comma separated
@@ -487,9 +496,60 @@ async function loadReviewAgg(env: Env, pid: string, period: string): Promise<{ a
   }
 }
 async function readReviews(env: Env, pid: string, period: string): Promise<{ reviews: Record<string, SharedDecision>; pending: boolean }> {
+  if (env.REVIEW_DO) return (await periodObject(env, pid, period, { op: 'read' })) as { reviews: Record<string, SharedDecision>; pending: boolean };
   const { agg, changed, pending } = await loadReviewAgg(env, pid, period);
   if (changed) await env.REVIEWS.put(rvAggKey(pid, period), JSON.stringify(agg)).catch(() => undefined);
   return { reviews: agg.reviews, pending };
+}
+type ReviewItem = { articleId: string; patch: Partial<SharedDecision> | null };
+/** applies the patches to the period's decisions (in place) and returns the new decisions */
+function applyReview(agg: ReviewAgg, items: ReviewItem[], reviewer: string): Record<string, SharedDecision> {
+  const at = new Date().toISOString();
+  const out: Record<string, SharedDecision> = {};
+  for (const { articleId, patch } of items) {
+    const next: SharedDecision = { ...(agg.reviews[articleId] ?? { articleId }), ...patch!, articleId, by: reviewer, at };
+    for (const k of Object.keys(next) as Array<keyof SharedDecision>) if (next[k] === undefined) delete next[k];
+    agg.reviews[articleId] = out[articleId] = next;
+  }
+  return out;
+}
+async function writeReviews(env: Env, pid: string, period: string, items: ReviewItem[], reviewer: string): Promise<Record<string, SharedDecision>> {
+  if (env.REVIEW_DO) return ((await periodObject(env, pid, period, { op: 'patch', items, reviewer })) as { out: Record<string, SharedDecision> }).out;
+  const { agg } = await loadReviewAgg(env, pid, period);
+  const out = applyReview(agg, items, reviewer);
+  await env.REVIEWS.put(rvAggKey(pid, period), JSON.stringify(agg));
+  return out;
+}
+async function periodObject(env: Env, pid: string, period: string, body: Record<string, unknown>): Promise<unknown> {
+  const ns = env.REVIEW_DO!;
+  const r = await ns.get(ns.idFromName(`${pid}:${period}`)).fetch('https://review-period/op', { method: 'POST', body: JSON.stringify({ ...body, pid, period }) });
+  if (!r.ok) throw new Error(`ReviewPeriod ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return r.json();
+}
+
+/**
+ * Durable Object: the review of ONE period. Requests to one object run one at a time on its own storage, so every
+ * save sees the previous one. The first use imports the period from KV; every save is mirrored to KV (backup, and the
+ * fallback when the binding is missing).
+ */
+export class ReviewPeriod {
+  constructor(private readonly state: { storage: DOStorageLike }, private readonly env: Env) {}
+  async fetch(req: Request): Promise<Response> {
+    const b = (await req.json()) as { op: 'read' | 'patch'; pid: string; period: string; items?: ReviewItem[]; reviewer?: string };
+    let agg = await this.state.storage.get<ReviewAgg>('agg');
+    let pending = false;
+    if (!agg) {
+      const r = await loadReviewAgg(this.env, b.pid, b.period);
+      agg = r.agg;
+      pending = r.pending;
+      if (!pending) await this.state.storage.put('agg', agg);
+    }
+    if (b.op === 'read') return Response.json({ reviews: agg.reviews, pending });
+    const out = applyReview(agg, b.items ?? [], String(b.reviewer ?? ''));
+    await this.state.storage.put('agg', agg);
+    await this.env.REVIEWS.put(rvAggKey(b.pid, b.period), JSON.stringify(agg)).catch(() => undefined);
+    return Response.json({ out });
+  }
 }
 async function readLegacyReviews(env: Env, pid: string, period: string): Promise<Record<string, SharedDecision>> {
   const keys = await listAll(env.REVIEWS, rvPrefix(pid, period));
@@ -703,15 +763,7 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     if (!reviewer) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
     const items = raw.map((x) => ({ articleId: String(x.articleId), patch: cleanReviewPatch(x.patch) }));
     if (items.some((x) => !x.patch || !Object.keys(x.patch).length)) return json({ error: 'INVALID_PATCH' }, 400, h);
-    const { agg } = await loadReviewAgg(env, pid, period);
-    const at = new Date().toISOString();
-    const out: Record<string, SharedDecision> = {};
-    for (const { articleId, patch } of items) {
-      const next: SharedDecision = { ...(agg.reviews[articleId] ?? { articleId }), ...patch!, articleId, by: reviewer, at };
-      for (const k of Object.keys(next) as Array<keyof SharedDecision>) if (next[k] === undefined) delete next[k];
-      agg.reviews[articleId] = out[articleId] = next;
-    }
-    await env.REVIEWS.put(rvAggKey(pid, period), JSON.stringify(agg));
+    const out = await writeReviews(env, pid, period, items, reviewer);
     return Array.isArray(b?.items) ? json({ ok: true, reviews: out }, 200, h) : json({ ok: true, review: out[items[0]!.articleId] }, 200, h);
   }
 

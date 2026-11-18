@@ -1,4 +1,5 @@
 import { handle, scheduledCollect, type Env } from './handler';
+export { ReviewPeriod } from './handler';
 
 export default {
   fetch(req: Request, env: Env): Promise<Response> {

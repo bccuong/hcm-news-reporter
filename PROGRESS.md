@@ -13,6 +13,7 @@
 - eval (225 labelled): Sẵn sàng 67→82 stories, precision 93%→90% (+12 correct, +3 wrong: công chứng toàn quốc, thuế bồi thường, Mr Pips), recall 88% (=). On 18/11 08:00: 7 of the 13 moved stories now ready by themselves, Huế no longer ready, none of the removed ones ready.
 - vitest 172/172, test:ui 13/13, build OK.
 - Later on 18/11: Word report without ☹/😐 symbols, I./II./III. coloured like their heading (numbering level colour removed); story cards without the address line; header button QR → web/src/QrTool.tsx (any URL → PNG 600/1200/2400 px, SVG, copy image; caption, colour, transparent; qrcode@1.5.4 in the browser). UI test decodes the PNG with jsqr. test:ui 14/14, vitest 172/172.
+- Lost edits fixed (18/11): the team review of a period was ONE KV value read-modify-written; KV reads can be ~60 s stale, so a save could overwrite the previous one. Now a Durable Object ReviewPeriod per (profile, period) (SQLite, wrangler.toml migration v1, binding REVIEW_DO) applies saves in order, imports the KV copy on first use and mirrors every save to KV. Deployed; the 2 latest periods read back identical (41 / 36 decisions). "Lưu biên tập" now confirms with a toast. Tests: worker test with a stale KV (KV-only loses the title, DO keeps it); live UI test edits title+summary, refresh, pull. vitest 173, test:ui 14, test:ui:live 13.
 - Next step: check the 16:30 period on 18/11 with why-period.ts against the team review.
 
 ## (history) Session 14o – "Tiếp:" moves to 16:30 once the 08:00 run is done; 2026-11-18)

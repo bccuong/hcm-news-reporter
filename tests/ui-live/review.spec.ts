@@ -587,3 +587,29 @@ test('after a scheduled run finishes, the open page shows the new period by itse
   await expect(page.getByTestId('run-picker')).toContainText('lịch 16:30');
   await expect(page.getByText(/Có kỳ mới 10\/11\/2026 · 08:01–16:30 – đã mở/)).toBeVisible();
 });
+
+test('Biên tập in "Xem chi tiết": edited title / summary are saved for the team and survive a refresh and a later pull', async ({ page }) => {
+  await page.goto('');
+  await login(page, 'Người duyệt H', 'HCM-TEST-CODE');
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+  const card = page.locator('article').first();
+  await card.getByRole('button', { name: 'Xem chi tiết' }).click();
+  const dlg = page.getByRole('dialog').last();
+  const title = dlg.getByLabel(/Tiêu đề trên báo cáo/);
+  await title.fill('Tiêu đề đã biên tập H');
+  const sum = dlg.getByLabel(/Tóm tắt/);
+  await sum.fill('Tóm tắt đã biên tập H.');
+  await dlg.getByRole('button', { name: 'Lưu biên tập' }).click();
+  await expect(page.getByText('Đã lưu biên tập')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('article').filter({ hasText: 'Tiêu đề đã biên tập H' })).toBeVisible();
+  // another tab focus pulls the team review: the edit stays
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForTimeout(1500);
+  await expect(page.locator('article').filter({ hasText: 'Tiêu đề đã biên tập H' })).toBeVisible();
+  await page.reload();
+  await expect(page.locator('article').filter({ hasText: 'Tiêu đề đã biên tập H' })).toBeVisible();
+  await page.locator('article').filter({ hasText: 'Tiêu đề đã biên tập H' }).getByRole('button', { name: 'Xem chi tiết' }).click();
+  await expect(page.getByRole('dialog').last().getByLabel(/Tóm tắt/)).toHaveValue('Tóm tắt đã biên tập H.');
+});
