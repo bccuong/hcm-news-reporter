@@ -1,6 +1,6 @@
 {
  "note": "Team review labels pulled nightly from the review worker; reviewer names pseudonymised.",
- "count": 281,
+ "count": 297,
  "labels": [
   {
    "v": 1,
@@ -3225,6 +3225,48 @@
   {
    "v": 1,
    "reportDate": "2026-11-18",
+   "articleId": "a_06b6d53bd51dc85b",
+   "url": "https://www.sggp.org.vn/chu-dong-phat-trien-nguon-thu-ngan-sach-post882333.html",
+   "title": "Chủ động phát triển nguồn thu ngân sách",
+   "sourceId": "sggp-org-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:58:10.578Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_07b242f443328e3a",
+   "url": "https://www.sggp.org.vn/3-thu-tuc-ve-bao-hiem-xa-hoi-thuc-hien-khong-phu-thuoc-dia-gioi-hanh-chinh-post882288.html",
+   "title": "3 thủ tục về bảo hiểm xã hội thực hiện không phụ thuộc địa giới hành chính",
+   "sourceId": "sggp-org-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:58:39.209Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_0b16f305bf26da2d",
+   "url": "https://thanhnien.vn/chi-gan-100-trieu-dong-dung-gian-rau-tren-san-thuong-chu-quan-banh-xeo-co-cach-dai-khach-ky-la-185261114162614091.htm",
+   "title": "Chi gần 100 triệu đồng dựng giàn rau trên sân thượng, chủ quán bánh xèo có cách đãi khách kỳ lạ",
+   "sourceId": "thanhnien-vn",
+   "label": "relevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:57:09.600Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
    "articleId": "a_0c4a65cdc74afdd1",
    "url": "https://dantri.com.vn/tam-diem/kham-suc-khoe-toan-dan-ghi-chep-sau-ca-nghin-luot-kham-20261118003658424.htm",
    "title": "Khám sức khỏe toàn dân: Ghi chép sau cả nghìn lượt khám",
@@ -3262,6 +3304,20 @@
    "assessment": "neutral",
    "note": "",
    "at": "2026-11-18T05:18:46.267Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_10351d4a24dfecd4",
+   "url": "https://dantri.com.vn/kinh-doanh/cuc-thue-da-ban-hanh-tren-250000-thong-bao-tam-hoan-xuat-canh-20261117185825153.htm",
+   "title": "Cục Thuế: Đã ban hành trên 250.000 thông báo tạm hoãn xuất cảnh",
+   "sourceId": "dantri-com-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:59:24.081Z",
    "reviewer": "r_f0b6828d51"
   },
   {
@@ -3477,6 +3533,20 @@
   {
    "v": 1,
    "reportDate": "2026-11-18",
+   "articleId": "a_52ee45cfeea4be47",
+   "url": "https://dantri.com.vn/o-to-xe-may/vinfast-vf-9-khac-biet-giua-hai-phien-ban-eco-va-plus-20261117191204436.htm",
+   "title": "VinFast VF 9: Khác biệt giữa hai phiên bản Eco và Plus",
+   "sourceId": "dantri-com-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:59:20.237Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
    "articleId": "a_5b780371cbd54855",
    "url": "https://dantri.com.vn/thoi-su/phat-hien-them-8-hai-cot-liet-si-o-cong-vien-le-thi-rieng-20261117191556108.htm",
    "title": "Phát hiện thêm 8 hài cốt liệt sĩ ở Công viên Lê Thị Riêng",
@@ -3505,6 +3575,20 @@
   {
    "v": 1,
    "reportDate": "2026-11-18",
+   "articleId": "a_66fd2e5626af67d8",
+   "url": "https://dantri.com.vn/thoi-su/thu-tuong-le-minh-hung-ket-thuc-tot-dep-chuyen-cong-tac-du-hoi-nghi-cap-cao-asean-49-20261118060635879.htm",
+   "title": "Thủ tướng Lê Minh Hưng kết thúc tốt đẹp chuyến công tác dự Hội nghị cấp cao ASEAN 49",
+   "sourceId": "dantri-com-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:58:54.588Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
    "articleId": "a_68aa544bfe60f6f3",
    "url": "https://thanhnien.vn/phuong-trang-trung-thau-7-tuyen-xe-buyt-tro-gia-o-tphcm-211-xe-chay-tu-2027-185261117201129896.htm",
    "title": "Phương Trang trúng thầu 7 tuyến xe buýt trợ giá ở TP.HCM, 211 xe chạy từ 2027",
@@ -3528,6 +3612,20 @@
    "assessment": null,
    "note": "",
    "at": "2026-11-18T02:17:30.140Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_6ae42e23f1117933",
+   "url": "https://dantri.com.vn/kinh-doanh/ocb-tung-goi-tin-dung-2000-ty-dong-giam-lai-suat-den-15-cho-vay-san-xuat-kinh-doanh-20261117204231738.htm",
+   "title": "OCB tung gói tín dụng 2.000 tỷ đồng, giảm lãi suất đến 1,5% cho vay sản xuất kinh doanh",
+   "sourceId": "dantri-com-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:58:49.307Z",
    "reviewer": "r_f0b6828d51"
   },
   {
@@ -3575,6 +3673,20 @@
   {
    "v": 1,
    "reportDate": "2026-11-18",
+   "articleId": "a_738bb439310db919",
+   "url": "https://baoxaydung.vn/uy-ban-thuong-vu-quoc-hoi-cho-y-kien-sua-doi-bo-sung-3-luat-ve-thue-192261117181420721.htm",
+   "title": "Ủy ban Thường vụ Quốc hội cho ý kiến sửa đổi, bổ sung 3 luật về thuế",
+   "sourceId": "baoxaydung-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:58:21.602Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
    "articleId": "a_750ebeeae6dc675a",
    "url": "https://dantri.com.vn/thoi-tiet/trieu-cuong-o-tphcm-sap-tang-tro-lai-co-noi-cham-muc-bao-dong-3-20261117171727166.htm",
    "title": "Triều cường ở TPHCM sắp tăng trở lại, có nơi chạm mức báo động 3",
@@ -3584,6 +3696,20 @@
    "assessment": null,
    "note": "",
    "at": "2026-11-18T02:02:42.432Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_75c267c0f8c73eca",
+   "url": "https://dantri.com.vn/thoi-su/thu-tuong-le-minh-hung-du-hoi-nghi-cap-cao-dac-biet-asean-hoa-ky-20261117225616771.htm",
+   "title": "Thủ tướng Lê Minh Hưng dự Hội nghị Cấp cao đặc biệt ASEAN - Hoa Kỳ",
+   "sourceId": "dantri-com-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:58:45.323Z",
    "reviewer": "r_f0b6828d51"
   },
   {
@@ -3673,6 +3799,48 @@
   {
    "v": 1,
    "reportDate": "2026-11-18",
+   "articleId": "a_8ff88785c73478f9",
+   "url": "https://baoxaydung.vn/ngan-viec-trung-thau-nhung-khong-lam-192261117224924744.htm",
+   "title": "Ngăn việc trúng thầu nhưng không làm",
+   "sourceId": "baoxaydung-vn",
+   "label": "relevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:56:10.833Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_9013bdd750b88767",
+   "url": "https://thanhnien.vn/senturia-an-phu-tu-tam-huyet-thiet-ke-den-trai-nghiem-home-resort-185261117204233421.htm",
+   "title": "Senturia An Phú: Từ tâm huyết thiết kế đến trải nghiệm Home Resort",
+   "sourceId": "thanhnien-vn",
+   "label": "relevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:56:55.636Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_95762f689d43f3fe",
+   "url": "https://dantri.com.vn/bat-dong-san/maison-privee-va-ba-gia-tri-tao-dau-an-khong-gian-song-thuong-luu-20261117190525138.htm",
+   "title": "Maison Privée và ba giá trị tạo dấu ấn không gian sống thượng lưu",
+   "sourceId": "dantri-com-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:57:38.239Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
    "articleId": "a_a924b6eaf9e16512",
    "url": "https://www.sggp.org.vn/cong-ty-cp-phat-trien-nha-thanh-da-huy-dong-850-ty-dong-tu-trai-phieu-post882302.html",
    "title": "Công ty CP Phát triển Nhà Thanh Đa huy động 850 tỷ đồng từ trái phiếu",
@@ -3729,6 +3897,20 @@
   {
    "v": 1,
    "reportDate": "2026-11-18",
+   "articleId": "a_c437411806c87c22",
+   "url": "https://thanhnien.vn/lai-vay-kho-giam-sau-185261117205404655.htm",
+   "title": "Lãi vay khó giảm sâu",
+   "sourceId": "thanhnien-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:57:59.919Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
    "articleId": "a_c86cf31e7a24ab9c",
    "url": "https://www.sggp.org.vn/cong-tac-mat-tran-bat-dau-tu-viec-nho-nhat-post882328.html",
    "title": "Công tác Mặt trận bắt đầu từ việc nhỏ nhất",
@@ -3766,6 +3948,34 @@
    "assessment": null,
    "note": "",
    "at": "2026-11-18T01:55:54.914Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_d20040f664dda098",
+   "url": "https://vnexpress.net/xoa-bo-dia-gioi-hanh-chinh-trong-chi-tro-cap-rut-bhxh-mot-lan-5145757.html",
+   "title": "Xóa bỏ địa giới hành chính trong chi trợ cấp, rút BHXH một lần",
+   "sourceId": "vnexpress-net",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:57:45.907Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_d7522ef2beed009e",
+   "url": "https://vnexpress.net/vi-sao-nhieu-xe-ve-so-lui-gay-tai-nan-ma-tai-xe-khong-biet-5145239.html",
+   "title": "Vì sao nhiều xe về số lùi gây tai nạn mà tài xế không biết?",
+   "sourceId": "vnexpress-net",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:59:16.240Z",
    "reviewer": "r_f0b6828d51"
   },
   {
@@ -3892,6 +4102,20 @@
    "assessment": null,
    "note": "",
    "at": "2026-11-18T02:02:31.761Z",
+   "reviewer": "r_f0b6828d51"
+  },
+  {
+   "v": 1,
+   "reportDate": "2026-11-18",
+   "articleId": "a_f2deb1ef56a6016f",
+   "url": "https://xe.baoxaydung.vn/hon-720-nghin-xe-bmw-bi-trieu-hoi-vi-nguy-co-chay-192261117204841182.htm",
+   "title": "Hơn 720 nghìn xe BMW bị triệu hồi vì nguy cơ cháy",
+   "sourceId": "baoxaydung-vn",
+   "label": "irrelevant",
+   "category": null,
+   "assessment": null,
+   "note": "",
+   "at": "2026-11-18T07:59:29.418Z",
    "reviewer": "r_f0b6828d51"
   },
   {
