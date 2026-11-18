@@ -347,7 +347,7 @@ test('web review is ONE for the whole team: what A selects / moves / removes on 
   const s1 = b.locator('article').filter({ hasText: t1 });
   await expect(s1.getByLabel(/^Chọn bài/)).toBeChecked();
   await expect(s1.getByTestId('shared-by')).toContainText('Người duyệt G');
-  await expect(b.locator('article').filter({ hasText: t3 })).toContainText('từ Cần kiểm tra');
+  await expect(b.locator('article').filter({ hasText: t3 }).getByRole('button', { name: /Trả về Cần kiểm tra/ })).toBeVisible();
   await b.getByTestId('excluded-list').locator('summary').click();
   await expect(b.getByTestId('excluded-list')).toContainText(t2);
   await b.screenshot({ path: 'docs/screenshots/web-team-review.png' });

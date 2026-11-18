@@ -394,7 +394,7 @@ test('Bulk select / unselect all for the report; move stories from Cần kiểm 
   await expect(page.getByRole('button', { name: /^Bài sẵn sàng/ })).toHaveText(`Bài sẵn sàng (${ready0 + 1})`);
   await page.getByRole('button', { name: /^Bài sẵn sàng/ }).click();
   const moved = page.locator('article').filter({ hasText: title });
-  await expect(moved).toContainText('từ Cần kiểm tra');
+  await expect(moved.getByRole('button', { name: /Trả về Cần kiểm tra/ })).toBeVisible(); // moved by the editor (no extra chip)
   // persists after reload
   await page.reload();
   await expect(page.getByRole('button', { name: /^Bài sẵn sàng/ })).toHaveText(`Bài sẵn sàng (${ready0 + 1})`);

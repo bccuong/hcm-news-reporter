@@ -717,14 +717,14 @@ export function App() {
                   onClick={() => setTab(k)}
                   aria-current={tab === k ? 'page' : undefined}
                   aria-label={n !== null ? `${l} (${n})` : l}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === k ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'}`}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${tab === k ? 'bg-navy-700 text-white shadow-md' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
                 >
-                  <Icon className={`h-4 w-4 ${tab === k ? ic : 'text-slate-400'}`} />
+                  <Icon className={`h-4 w-4 ${tab === k ? 'text-white' : ic}`} />
                   {l}
                   {n !== null && (
                     <>
                       <span className="sr-only"> (</span>
-                      <span className={`min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-center text-xs font-bold tabular-nums ${badge}`}>{n}</span>
+                      <span className={`min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-center text-xs font-bold tabular-nums ${tab === k ? 'bg-white text-navy-800' : badge}`}>{n}</span>
                       <span className="sr-only">)</span>
                     </>
                   )}
@@ -1355,7 +1355,7 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
           return (
             <article key={a.id} className={`card animate-in flex gap-3 p-3 transition-shadow hover:shadow-md ${r?.included ? 'ring-2 ring-teal-500' : ''}`}>
               <label className="flex flex-col items-center gap-1 pt-1 text-[10px] text-slate-500">
-                <input type="checkbox" className="h-4 w-4 accent-teal-600" disabled={!!r?.groupId} title={r?.groupId ? 'Bài đã gộp làm nguồn phụ của tin khác' : ''} checked={!!r?.included && !r?.groupId} onChange={(e) => onPatch(a.id, { included: e.target.checked, order: r?.order ?? Date.now() % 1e6 })} aria-label={`Chọn bài ${a.title}`} />
+                <input type="checkbox" className="h-5 w-5" disabled={!!r?.groupId} title={r?.groupId ? 'Bài đã gộp làm nguồn phụ của tin khác' : ''} checked={!!r?.included && !r?.groupId} onChange={(e) => onPatch(a.id, { included: e.target.checked, order: r?.order ?? Date.now() % 1e6 })} aria-label={`Chọn bài ${a.title}`} />
                 chọn
               </label>
               {img ? (
@@ -1369,7 +1369,7 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                   <span className="text-slate-500">{a.publishedAt ? formatVn(a.publishedAt) : 'chưa rõ giờ đăng'}</span>
                   <span className="chip border-teal-200 bg-teal-50 text-teal-800">{catLabel(r?.primaryCategory ?? a.primaryCategory)}</span>
                   {asm && <span className={`chip ${ASSESS_COLOR[asm]}`}>{ASSESSMENT_LABEL[asm]}{!r?.assessment && ' (gợi ý)'}</span>}
-                  {c && <StateChip state={c.state} />}
+                  {c && !['ready_for_review', 'reviewed'].includes(c.state) && <StateChip state={c.state} />}
                   {r?.groupId ? (
                     <span className="chip border-purple-400 bg-purple-100 text-purple-900">
                       đã gộp làm nguồn phụ
@@ -1380,7 +1380,6 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                   ) : null}
                   {r && !r.groupId && secondariesOf(a.id, reviews).length > 0 && <span className="chip border-purple-300 bg-purple-50 text-purple-800">+{secondariesOf(a.id, reviews).length} nguồn</span>}
                   {a.extractionWarnings.length > 0 && <span className="chip border-amber-300 bg-amber-50 text-amber-800"><AlertTriangle className="h-3 w-3" /> {a.extractionWarnings.length} cảnh báo</span>}
-                  {!reviewMode && r?.promotedToReady && <span className="chip border-sky-300 bg-sky-50 text-sky-800" title="Biên tập viên đã chuyển bài này từ Cần kiểm tra">từ Cần kiểm tra</span>}
                 </div>
                 <h3 className="font-semibold leading-snug">
                   <a className="group hover:text-teal-700 hover:underline" href={a.canonicalUrl ?? a.originalUrl} target="_blank" rel="noreferrer" title={`Mở bài gốc (tab mới): ${a.canonicalUrl ?? a.originalUrl}`} data-testid="story-title-link">
