@@ -44,7 +44,7 @@ export interface Judged { relevant: boolean; why: 'label' | 'decision'; category
 export type Status = 'relevant' | 'review' | 'irrelevant';
 
 const STOP = new Set(
-  'của và ở tại cho với là được các những một trong người khi có không này đã sẽ về từ đến theo sau trên dưới ra vào lên nhiều hơn cũng như đang vẫn còn rất thì mà nên nếu do bị để vì gì nào đó đây ai sao hay hoặc cùng tới qua mới năm ngày tháng giờ lúc phút tp tphcm hcm lại thêm vừa hết rồi luôn nữa chỉ đều sắp từng mỗi bằng'.split(' '),
+  'của và ở tại cho với là được các những một trong người khi có không này đã sẽ về từ đến theo sau trên dưới ra vào lên nhiều hơn cũng như đang vẫn còn rất thì mà nên nếu do bị để vì gì nào đó đây ai sao hay hoặc cùng tới qua mới năm ngày tháng giờ lúc phút tp tphcm hcm lại thêm vừa hết rồi luôn nữa chỉ đều sắp từng mỗi bằng triệu tỷ tỉ nghìn ngàn đồng usd gần hơn khoảng hàng chục trăm'.split(' '), // amounts ("triệu đồng", 18/11/2026) are no topic
 );
 const CITY = /^(tp\.?|tphcm|hcm|thành phố|hồ chí minh|sài gòn)$/;
 

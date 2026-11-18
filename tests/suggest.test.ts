@@ -14,6 +14,7 @@ describe('daily filter suggestions (learned from the team review, applied by an 
     expect(p).toContain('kênh tham lương');
     expect(p.some((x) => /\d/.test(x))).toBe(false);
     expect(p.some((x) => x.startsWith('năm') || x.endsWith('của'))).toBe(false);
+    expect(phrasesOf('Chi gần 100 triệu đồng dựng giàn rau, 5 tỷ đồng làm cầu')).not.toContain('triệu đồng'); // an amount is no topic
   });
   it('include: a relevant story excluded for a missing word → that word, with no judged story broken', () => {
     const missed = art('Cử tri phường Bình Thạnh TP.HCM kiến nghị lát lại lối đi bộ', 'Người dân phường Bình Thạnh phản ánh lối đi bộ xuống cấp.');
