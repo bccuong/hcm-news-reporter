@@ -12,6 +12,7 @@
 - scripts/why-period.ts --key <period key>: replays the shared config on one period and shows why each story the team acted on landed where it did. eval-filter --national lists the stories the new rule promotes.
 - eval (225 labelled): Sẵn sàng 67→82 stories, precision 93%→90% (+12 correct, +3 wrong: công chứng toàn quốc, thuế bồi thường, Mr Pips), recall 88% (=). On 18/11 08:00: 7 of the 13 moved stories now ready by themselves, Huế no longer ready, none of the removed ones ready.
 - vitest 172/172, test:ui 13/13, build OK.
+- Later on 18/11: Word report without ☹/😐 symbols, I./II./III. coloured like their heading (numbering level colour removed); story cards without the address line; header button QR → web/src/QrTool.tsx (any URL → PNG 600/1200/2400 px, SVG, copy image; caption, colour, transparent; qrcode@1.5.4 in the browser). UI test decodes the PNG with jsqr. test:ui 14/14, vitest 172/172.
 - Next step: check the 16:30 period on 18/11 with why-period.ts against the team review.
 
 ## (history) Session 14o – "Tiếp:" moves to 16:30 once the 08:00 run is done; 2026-11-18)
