@@ -513,6 +513,8 @@ function LocationPanel({ s, up, advanced }: { s: Settings; up: Up; advanced: boo
           onChange={(n) => up('location', { noPlaceMinLeadScore: n })}
           help="Từ khóa có trong tiêu đề = 3 điểm, chỉ có trong sapo = 1 điểm. 4 = cần thêm bằng chứng ngoài một từ ở tiêu đề; 3 = một từ ở tiêu đề là đủ. Chính sách, pháp quy của ngành luôn được giữ."
         />}
+        <Toggle checked={s.location.nationalToReady} onChange={(v) => up('location', { nationalToReady: v })} label={`Tin chung (chính sách cả nước, hoặc chỉ nhắc ${R} trong thân bài) có từ khóa lĩnh vực ngay ở TIÊU ĐỀ → vào Bài sẵn sàng (tắt: Cần kiểm tra)`} />
+        {s.location.nationalToReady && <ChipEditor values={s.location.nationalBlockWords ?? []} onChange={(v) => up('location', { nationalBlockWords: v })} label="…trừ khi tiêu đề có các từ này (tin nước ngoài, chứng khoán, vụ án, tai nạn) – vẫn ở Cần kiểm tra" />}
         <ChipEditor values={s.location.otherProvinces} onChange={(v) => up('location', { otherProvinces: v })} label={`Địa phương / miền khác (nêu trong tiêu đề mà tiêu đề và sapo không có ${R} → loại kèm lý do)`} />
         <ChipEditor values={s.location.policyPhrases ?? []} onChange={(v) => up('location', { policyPhrases: v })} label={`Từ chỉ chính sách, pháp quy, chương trình toàn quốc (bài không có địa danh ${R}: có từ này + từ khóa lĩnh vực ở tiêu đề/sapo thì giữ lại)`} />
         <ChipEditor values={s.location.nationalSectorPhrases ?? []} onChange={(v) => up('location', { nationalSectorPhrases: v })} label={`Cụm từ tin toàn ngành (bài không có địa danh ${R} nhưng tiêu đề/sapo có cụm này vẫn vào Cần kiểm tra, ví dụ "Bộ Xây dựng")`} />

@@ -43,6 +43,14 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
 
   // national news of the sector itself (ministry events are mostly held in Hà Nội): never excluded for its place
   const nationalSector = (settings.location.nationalSectorPhrases ?? []).find((p) => p && (findWord(title, p) >= 0 || findWord(sapo, p) >= 0));
+  // sector words of the TITLE itself, not counting the name of the ministry ("Tuổi trẻ Bộ Xây dựng giành giải Ba")
+  const titleSectorScore = () => {
+    let t = title;
+    for (const p of settings.location.nationalSectorPhrases ?? []) for (let i = p ? findWord(t, p) : -1; i >= 0; i = findWord(t, p)) t = t.slice(0, i) + ' ' + t.slice(i + p.length);
+    if ((settings.location.nationalBlockWords ?? []).some((w) => w && findWord(title, w) >= 0)) return { best: 0, why: '' };
+    const c = classifyCategory(t, '', settings.categories);
+    return { best: Math.max(0, ...Object.values(c.scores).map((v) => v ?? 0)), why: c.evidence[0] ?? '' };
+  };
   if (location.status === 'other_province' && settings.location.requireHcmEvidence) {
     // Explicit evidence of another province and no HCM evidence -> excluded WITH reason (visible, overridable).
     // National sector news held elsewhere ("tại Hà Nội" in the sapo) stays reviewable – not when the TITLE is about
@@ -98,6 +106,10 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
     const policyWord = (settings.location.policyPhrases ?? []).find((p) => p && (findWord(title, p) >= 0 || findWord(sapo, p) >= 0) && findWord(title + ' ' + sapo, `${p} sư`) < 0);
     const policy = !!nationalSector || (titleSector.scores.POLICY ?? 0) >= 3 || (!!policyWord && best >= 3);
     const strong = policy || (settings.location.noPlaceKeep === 'strong_sector' && best >= 3 && best >= settings.location.noPlaceMinLeadScore);
+    const ts = titleSectorScore();
+    if (policy && settings.location.nationalToReady && ts.best >= 3) {
+      return { status: 'relevant', reasonCode: null, evidence: [...evidence, `Chính sách / tin toàn ngành, không gắn địa bàn, tiêu đề nêu rõ lĩnh vực (${ts.why}) – áp dụng cho cả ${settings.location.regionName}`], ruleTrace, location };
+    }
     if (strong) {
       const why = policy ? 'chính sách / pháp quy / tin toàn ngành' : `tiêu đề có từ khóa lĩnh vực (${titleSector.evidence[0] ?? ''})`;
       return { status: 'review', reasonCode: 'LOCATION_UNVERIFIED', evidence: [...evidence, ...location.evidence, `Không có địa danh ${settings.location.regionName} nhưng là ${why} – giữ lại để kiểm tra`], ruleTrace, location };
@@ -107,6 +119,11 @@ export function judgeRelevance(title: string, body: string, sourceId: string, se
   if (location.status === 'hcm') {
     // HCM named only in passing deep in the body → editor confirms
     if (!location.leadHit && (location.distinct ?? 0) < settings.location.minBodyAreasWithoutLead) {
+      // a national story naming the city in passing, with the sector in its TITLE ("Áp trần giá chuyển nhượng nhà ở xã hội?")
+      const ts = settings.location.nationalToReady ? titleSectorScore() : { best: 0, why: '' };
+      if (ts.best >= 3) {
+        return { status: 'relevant', reasonCode: null, evidence: [...evidence, ...location.evidence, `Tin chung có nhắc ${settings.location.regionName}, tiêu đề nêu rõ lĩnh vực (${ts.why})`], ruleTrace, location };
+      }
       return {
         status: 'review', reasonCode: 'HCM_ONLY_IN_BODY',
         evidence: [...evidence, ...location.evidence, `${settings.location.regionName} không có trong tiêu đề/sapo, chỉ ${location.distinct} địa danh trong thân bài`], ruleTrace, location,

@@ -40,7 +40,10 @@ function score(name: string, s: Settings) {
   let ready = 0, review = 0, out = 0;
   for (const a of arts.values()) {
     const art = { ...a, bodyText: (a.contentSections ?? []).filter((x: any) => x.type === 'paragraph' || x.type === 'heading').map((x: any) => x.text).join('\n'), imageCandidates: [] } as unknown as Article;
-    const st = annotateArticle(art, s).relevance.status;
+    const an = annotateArticle(art, s);
+    const st = an.relevance.status;
+    const nat = an.relevance.evidence.find((e) => e.startsWith('Tin chung') || e.startsWith('Chính sách / tin toàn ngành, không gắn'));
+    if (nat && process.argv.includes('--national')) console.log(`   [${truth.get(a.id) ? (truth.get(a.id)!.rel ? 'ĐÚNG' : 'SAI ') : '  ? '}] ${a.title}  ← ${nat}`);
     if (st === 'relevant') ready++;
     else if (st === 'review') review++;
     else out++;

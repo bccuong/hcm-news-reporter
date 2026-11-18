@@ -41,6 +41,7 @@ function detectLocationInner(rawTitle: string, rawBody: string, loc: Settings['l
   let connected = false;
   let leadHit = false;
   let cityLead = false;
+  let cityInTitle = false;
   let connectedLead = false;
   let distinct = 0;
   // ward names repeat across provinces since the 2025 mergers: "phường Xuân Hòa (tỉnh Phú Thọ)" is not the city's
@@ -71,6 +72,7 @@ function detectLocationInner(rawTitle: string, rawBody: string, loc: Settings['l
             if (findWord(leadText, f) >= 0) {
               leadHit = true;
               if (area.kind === 'city') cityLead = true;
+              if (area.kind === 'city' && findWord(title, f) >= 0) cityInTitle = true;
             }
           }
           score += weight;
@@ -96,6 +98,11 @@ function detectLocationInner(rawTitle: string, rawBody: string, loc: Settings['l
   // in the lead does not make it the city's story ("Phú Thọ: Khởi công … tại phường Xuân Hòa")
   if (othersInTitle.length && !cityLead) {
     return { status: 'other_province', evidence: [...evidence, `Tiêu đề nêu địa phương khác: ${othersInTitle.join(', ')} – tên ${loc.regionName ?? 'TP.HCM'} không có ở tiêu đề/sapo`], score, ...extra, leadHit: false };
+  }
+  // the title is about another province, the city is only named in the sapo (often a comparison: "như tại Hà Nội, TP.HCM hay
+  // Đà Lạt" in a Huế story, 18/11/2026) → another area; leadHit keeps it in "Cần kiểm tra" for the editor
+  if (othersInTitle.length && !cityInTitle) {
+    return { status: 'other_province', evidence: [...evidence, `Tiêu đề nêu địa phương khác: ${othersInTitle.join(', ')} – ${loc.regionName ?? 'TP.HCM'} chỉ có ở sapo`], score, ...extra, leadHit: true };
   }
   // the title is about another province/region and the city is not in the title/sapo → another area, even if the body mentions the city
   if (others.length && !leadHit) {

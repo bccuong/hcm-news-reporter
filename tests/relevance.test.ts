@@ -57,10 +57,13 @@ describe('relevance regression (live sample 15–16/11/2026)', () => {
     expect(v.status).toBe('irrelevant');
     expect(v.reasonCode).toBe(reason);
   });
-  it('HCM only mentioned once deep in the body → review, not ready', () => {
-    const v = judge('Đẩy nhanh giải ngân vốn đầu tư công các dự án giao thông', 'Nhiều địa phương đẩy nhanh giải ngân vốn đầu tư công.', 'Trong đó TP.HCM cũng đặt mục tiêu cao.');
+  it('HCM only mentioned once deep in the body → review, not ready (sector in the title → ready, 18/11/2026)', () => {
+    const off = structuredClone(s);
+    off.location.nationalToReady = false;
+    const v = judgeRelevance('Đẩy nhanh giải ngân vốn đầu tư công các dự án giao thông', 'Nhiều địa phương đẩy nhanh giải ngân vốn đầu tư công.\nTrong đó TP.HCM cũng đặt mục tiêu cao.', 'x', off, 'Nhiều địa phương đẩy nhanh giải ngân vốn đầu tư công.');
     expect(v.status).toBe('review');
     expect(v.reasonCode).toBe('HCM_ONLY_IN_BODY');
+    expect(judge('Đẩy nhanh giải ngân vốn đầu tư công các dự án giao thông', 'Nhiều địa phương đẩy nhanh giải ngân vốn đầu tư công.', 'Trong đó TP.HCM cũng đặt mục tiêu cao.').status).toBe('relevant');
   });
   it('rules are operator-adjustable (UI settings), e.g. disabling the lead-sector rule', () => {
     const off = { ...s, rules: { ...s.rules, requireSectorInLead: false } };
@@ -127,8 +130,8 @@ describe('saved keyword lists receive new default keywords once (user approved 1
     tr.keywords = ['giao thông', 'cầu', 'Đường bộ'];
     delete tr.keywordsRev;
     const up = SettingsSchema.parse(raw).categories.find((c) => c.code === 'TRAFFIC')!;
-    expect(up.keywords).toEqual(['giao thông', 'cầu', 'Đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển', 'CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội', 'an toàn giao thông']); // no duplicate; rev 2, 3 then 4
-    expect(up.keywordsRev).toBe(4);
+    expect(up.keywords).toEqual(['giao thông', 'cầu', 'Đường bộ', 'đường thủy', 'sân bay', 'bến xe', 'cảng biển', 'CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội', 'an toàn giao thông', 'đèn đỏ', 'Nghị định 168', 'xe máy', 'vận tải', 'giá cước']); // no duplicate; rev 2, 3, 4 then 5
+    expect(up.keywordsRev).toBe(5);
     const saved = JSON.parse(JSON.stringify({ ...raw, categories: raw.categories.map((c: { code: string }) => (c.code === 'TRAFFIC' ? { ...up, keywords: up.keywords.filter((k) => k !== 'sân bay') } : c)) }));
     expect(SettingsSchema.parse(saved).categories.find((c) => c.code === 'TRAFFIC')!.keywords).not.toContain('sân bay');
   });
@@ -191,7 +194,7 @@ describe('a story must be placed in the city, except sector-wide policy / law (u
     ['Phó Thủ tướng yêu cầu báo cáo về quy định bán lại nhà ở xã hội sau 5 năm', 'Bộ Xây dựng được giao rà soát.'],
     ['Bộ trưởng Trần Hồng Minh kiểm tra công tác tổng duyệt sự kiện KHCN ngành Xây dựng 2026', 'Chiều 15/11, tại Hà Nội, Bộ trưởng Bộ Xây dựng đã kiểm tra công tác tổng duyệt.'],
   ])('a general policy / law / national sector story is kept without a place: %s', (title, sapo) => {
-    expect(ex(title, sapo).status).toBe('review');
+    expect(ex(title, sapo).status).not.toBe('irrelevant');
   });
   it('the old rule (strong sector words are enough) is a setting', () => {
     const old = structuredClone(s);
@@ -210,5 +213,30 @@ describe('a city master plan is construction news (Hỏi nhanh found it excluded
     expect(plan.status).not.toBe('irrelevant');
     const staff = judgeRelevance('TP.HCM triển khai công tác quy hoạch cán bộ nhiệm kỳ mới', 'Thành ủy TP.HCM họp về công tác cán bộ.', 'x', s, 'Thành ủy TP.HCM họp về công tác cán bộ.');
     expect(staff.status).toBe('irrelevant');
+  });
+});
+
+describe('stories the team moved by hand on 18/11/2026', () => {
+  const ex = (title: string, sapo: string, body = '') => judgeRelevance(title, `${sapo}\n${body}`, 'x', s, sapo);
+  it('a national policy / sector story with the sector in its TITLE goes straight to "Bài sẵn sàng"', () => {
+    expect(ex('C08 nghiên cứu sửa Nghị định 168, chỉ cảnh cáo trường hợp vượt đèn đỏ lần đầu', 'Cục CSGT đề xuất sửa quy định xử phạt.').status).toBe('relevant');
+    expect(ex('Bộ Xây dựng lập đoàn công tác kiểm tra giá cước vận tải khi giá nhiên liệu giảm', 'Bộ Xây dựng thành lập đoàn kiểm tra.').status).toBe('relevant');
+    expect(ex('Áp trần giá chuyển nhượng nhà ở xã hội?', 'Dự thảo nghị định đề xuất áp trần giá.', 'Một doanh nghiệp làm nhà ở xã hội tại TP.HCM cho biết.').status).toBe('relevant');
+  });
+  it('…but the ministry name alone is not a sector ("Tuổi trẻ Bộ Xây dựng giành giải Ba") and foreign / stock / crime titles stay for review', () => {
+    expect(ex('Tuổi trẻ Bộ Xây dựng giành giải Ba tại Tuần lễ Tài năng Sinh viên Chính phủ 2026', 'Đoàn Bộ Xây dựng giành giải Ba.').status).toBe('review');
+    expect(ex('Các quỹ lớn gom cổ phiếu bất động sản sau nhịp giảm sâu', 'Khối ngoại mua ròng.', 'Nhà đầu tư tại TP.HCM.').status).toBe('review');
+    expect(ex('Bất động sản Trung Quốc: Đà giảm giá nhà chậm lại', 'Giá nhà mới giảm chậm lại, chính sách hỗ trợ.').status).not.toBe('relevant');
+  });
+  it('the title names another province, the city is only in the sapo (a comparison) → not ready', () => {
+    const v = ex('Những công trình kiến trúc Pháp trăm năm ở Huế tuyệt đẹp, hiếm nơi nào có', 'Dù quy mô không đồ sộ như tại Hà Nội, TP.HCM hay Đà Lạt, hệ thống các công trình kiến trúc Pháp ở Huế vẫn tạo nên diện mạo đặc trưng.');
+    expect(v.status).toBe('review');
+    expect(v.location.status).toBe('other_province');
+  });
+  it('Báo Xây dựng\'s daily digest "Tin mới nhất, hay nhất…" is excluded like "Điểm tin"', () => {
+    expect(ex('Tin mới nhất, hay nhất trên Báo Xây dựng ngày 18/11/2026', 'Cấp, thoát nước tại Hà Nội và TP.HCM.').reasonCode).toBe('EXCLUDED_PHRASE');
+  });
+  it('"sập bẫy" is not a collapse', () => {
+    expect(ex('Cựu nhân viên phòng gym tiết lộ chiêu bán thẻ tập khiến khách hàng sập bẫy', 'Khách hàng ở TP.HCM bị dụ ký hợp đồng.').status).not.toBe('relevant');
   });
 });

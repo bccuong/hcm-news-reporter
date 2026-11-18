@@ -146,7 +146,7 @@ export const CATEGORY_FIELD_DEFAULTS: Partial<Record<CategoryCode, { requiresCat
   INVEST: { requiresCategories: INDUSTRY_CODES },
   INFRA: { excludePhrases: INFRA_LOOKALIKES },
   TRAFFIC: { excludePhrases: ['yêu cầu', 'nhu cầu', 'cung cầu', 'toàn cầu', 'cầu nguyện', 'cầu thị', 'cầu lông', 'cầu cứu', 'cầu hôn', 'cầu mong', 'cầu môn', 'khẩn cầu', 'mưu cầu'] },
-  BUILD: { excludePhrases: ['xây dựng Đảng', 'xây dựng chính quyền', 'xây dựng hệ thống chính trị', 'xây dựng gia đình', 'xây dựng văn hóa', 'xây dựng lực lượng', 'xây dựng pháp luật', 'xây dựng nông thôn mới', 'xây dựng đội ngũ', 'xây dựng thương hiệu', 'an toàn giao thông'] },
+  BUILD: { excludePhrases: ['sập bẫy', 'xây dựng Đảng', 'xây dựng chính quyền', 'xây dựng hệ thống chính trị', 'xây dựng gia đình', 'xây dựng văn hóa', 'xây dựng lực lượng', 'xây dựng pháp luật', 'xây dựng nông thôn mới', 'xây dựng đội ngũ', 'xây dựng thương hiệu', 'an toàn giao thông'] },
 };
 /** default keywords added in each revision – applied once to saved lists of an older revision */
 export const KEYWORD_UPGRADES: Record<number, Partial<Record<CategoryCode, string[]>>> = {
@@ -160,6 +160,8 @@ export const KEYWORD_UPGRADES: Record<number, Partial<Record<CategoryCode, strin
   },
   // a city master plan ('Quy hoạch tổng thể TP.HCM … tầm nhìn 100 năm') was excluded: 'quy hoạch' alone is too broad ('quy hoạch cán bộ')
   4: { BUILD: ['quy hoạch tổng thể', 'quy hoạch kiến trúc'] },
+  // stories the team moved to "Sẵn sàng" on 18/11/2026 (Nghị định 168 / vượt đèn đỏ, xe máy xăng, giá cước vận tải)
+  5: { TRAFFIC: ['đèn đỏ', 'Nghị định 168', 'xe máy', 'vận tải', 'giá cước'] },
 };
 /** default keywords that proved too broad – removed once from saved lists of an older revision */
 export const KEYWORD_REMOVALS: Record<number, Partial<Record<CategoryCode, string[]>>> = {
@@ -168,8 +170,9 @@ export const KEYWORD_REMOVALS: Record<number, Partial<Record<CategoryCode, strin
 /** excluded look-alike phrases added once to saved categories */
 export const EXCLUDE_UPGRADES: Record<number, Partial<Record<CategoryCode, string[]>>> = {
   3: { INFRA: INFRA_LOOKALIKES },
+  5: { BUILD: ['sập bẫy'] },
 };
-export const KEYWORDS_REV = 4;
+export const KEYWORDS_REV = 5;
 /** "requiresCategories" revisions applied once to saved configurations (afterwards Cài đặt › Lĩnh vực decides) */
 export const REQUIRES_UPGRADES: Record<number, Partial<Record<CategoryCode, CategoryCode[]>>> = {
   2: { POLICY: INDUSTRY_CODES, INFRA: INDUSTRY_CODES, INVEST: INDUSTRY_CODES },
@@ -240,17 +243,22 @@ export type LocationArea = z.infer<typeof LocationAreaSchema>;
 export const TOPIC_ADDED_V2 = ['mưa', 'ngập lụt', 'sai phép', 'không phép', 'trái phép', 'chất lượng công trình', 'trật tự xây dựng', 'quy hoạch đô thị', 'chỉnh trang đô thị', 'nhà xã hội', 'CSGT', 'vi phạm giao thông', 'tai nạn giao thông', 'phạt nguội'];
 /** title phrases excluded since 17/11/2026: "Điểm tin 21h: …" digests mix unrelated topics */
 export const TITLE_EXCLUDE_ADDED_V2 = ['Điểm tin'];
+/** since 18/11/2026: Báo Xây dựng's daily digest "Tin mới nhất, hay nhất trên Báo Xây dựng ngày 18/11" */
+export const TITLE_EXCLUDE_ADDED_V3 = ['Tin mới nhất'];
 const addMissing = (list: string[], extra: string[]) => [...list, ...extra.filter((k) => !list.some((x) => x.toLowerCase() === k.toLowerCase()))];
 /** one-time upgrade of saved topic keywords / title exclusions (topicRev < 2) */
 function upgradeKeywords(v: unknown) {
   if (!v || typeof v !== 'object') return v;
   const o = v as Record<string, unknown>;
-  if (typeof o.topicRev === 'number' && o.topicRev >= 2) return o;
+  const rev = typeof o.topicRev === 'number' ? o.topicRev : 1;
+  if (rev >= 3) return o;
+  const topic = Array.isArray(o.topicKeywords) ? (o.topicKeywords as string[]) : [];
+  const ex = Array.isArray(o.excludePhrases) ? (o.excludePhrases as string[]) : [];
   return {
     ...o,
-    topicKeywords: addMissing(Array.isArray(o.topicKeywords) ? (o.topicKeywords as string[]) : [], TOPIC_ADDED_V2),
-    excludePhrases: addMissing(Array.isArray(o.excludePhrases) ? (o.excludePhrases as string[]) : [], TITLE_EXCLUDE_ADDED_V2),
-    topicRev: 2,
+    topicKeywords: rev < 2 ? addMissing(topic, TOPIC_ADDED_V2) : topic,
+    excludePhrases: addMissing(rev < 2 ? addMissing(ex, TITLE_EXCLUDE_ADDED_V2) : ex, TITLE_EXCLUDE_ADDED_V3),
+    topicRev: 3,
   };
 }
 /** one-time upgrade of the default rule ("Ngành xây dựng"): its first OR group receives the new topic words (presetRev < 2) */
@@ -320,7 +328,7 @@ export const SettingsSchema = z.object({
     .object({
       topicKeywords: z.array(z.string()).default([]),
       /** topic-keyword revision (see upgradeKeywords) */
-      topicRev: z.number().int().default(2),
+      topicRev: z.number().int().default(3),
       synonyms: z.array(z.object({ canonical: z.string().min(1), aliases: z.array(z.string()) })).default([]),
       excludePhrases: z.array(z.string()).default([]),
       excludeUrlSections: z.array(z.string()).default([]),
@@ -370,6 +378,13 @@ export const SettingsSchema = z.object({
       /** words of a general policy / law / national programme: with a clear sector word in the lead, a story without a place is kept */
       policyPhrases: z.array(z.string()).default(['luật', 'dự thảo', 'nghị định', 'thông tư', 'nghị quyết', 'quy định', 'chính sách', 'Chính phủ', 'Thủ tướng', 'Phó Thủ tướng', 'Quốc hội', 'cả nước', 'toàn quốc', 'đường sắt tốc độ cao']),
       /** national news of the sector itself (ministry events, sector-wide programmes): kept for review even without a place */
+      /**
+       * national stories (sector policy without a place, or naming the city only in passing in the body) whose TITLE has a
+       * sector keyword go to "Bài sẵn sàng" (off: "Cần kiểm tra"). The team moved them there by hand (18/11/2026).
+       */
+      nationalToReady: z.boolean().default(true),
+      /** …except when the title has one of these (foreign news, stock market, crime, accidents elsewhere): they stay in "Cần kiểm tra" */
+      nationalBlockWords: z.array(z.string()).default(['Trung Quốc', 'Nhật Bản', 'Hàn Quốc', 'Singapore', 'Thái Lan', 'châu Âu', 'quốc tế', 'nước ngoài', 'cổ phiếu', 'chứng khoán', 'khởi tố', 'lừa đảo', 'chiếm đoạt', 'tử vong', 'thương vong']),
       nationalSectorPhrases: z.array(z.string()).default(['ngành Xây dựng', 'Bộ Xây dựng', 'Bộ trưởng Bộ Xây dựng', 'Bộ trưởng Trần Hồng Minh', 'toàn ngành xây dựng']),
     })
     .default({}),

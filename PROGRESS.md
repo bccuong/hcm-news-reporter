@@ -7,11 +7,16 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14o – "Tiếp:" moves to 16:30 once the 08:00 run is done; 2026-11-18)
-- nextRun(state, now, doneToday): a slot already dispatched today is skipped (before: 08:00 stayed "next" until 10:00). Worker /status adds profiles[].scheduleDone (from sched:<pid>:<slot>:<day> keys); worker redeployed, live status shows done=["morning"]. tests/schedule.test.ts. vitest 167/167, build OK.
-- Next step: check the 08:02 period on 18/11 for stories outside HCM.
+## ▶ RESUME HERE (session 14p – filter learned from the team review of 18/11 08:00; 2026-11-18)
+- User moved 13 stories to Sẵn sàng and removed 1 (Huế). New: location.nationalToReady (default on) + nationalBlockWords (UI: Cài đặt › Địa bàn › Nâng cao): a national policy story without a place, or one naming the city only once in the body, goes to Sẵn sàng when its TITLE has a sector keyword (ministry name not counted; foreign/stock/crime/accident words block). Title names another province + city only in the sapo → other_province, review. TRAFFIC keywords rev 5: đèn đỏ, Nghị định 168, xe máy, vận tải, giá cước; BUILD exclude "sập bẫy"; title exclusion "Tin mới nhất" (topicRev 3).
+- scripts/why-period.ts --key <period key>: replays the shared config on one period and shows why each story the team acted on landed where it did. eval-filter --national lists the stories the new rule promotes.
+- eval (225 labelled): Sẵn sàng 67→82 stories, precision 93%→90% (+12 correct, +3 wrong: công chứng toàn quốc, thuế bồi thường, Mr Pips), recall 88% (=). On 18/11 08:00: 7 of the 13 moved stories now ready by themselves, Huế no longer ready, none of the removed ones ready.
+- vitest 172/172, test:ui 13/13, build OK.
+- Next step: check the 16:30 period on 18/11 with why-period.ts against the team review.
 
-## (history) Session 14n – story title = link to the original; 2026-11-18)
+## (history) Session 14o – "Tiếp:" moves to 16:30 once the 08:00 run is done; 2026-11-18)
+- nextRun(state, now, doneToday): a slot already dispatched today is skipped (before: 08:00 stayed "next" until 10:00). Worker /status adds profiles[].scheduleDone (from sched:<pid>:<slot>:<day> keys); worker redeployed, live status shows done=["morning"]. tests/schedule.test.ts. vitest 167/167, build OK.
+## (history) Session 14o – story title = link to the original; 2026-11-18)
 - Story cards and Hỏi nhanh: the title opens the original article (new tab, ↗ icon) with its short address (shortUrl: host + path) under it; the "Bài gốc" button and "Đọc bài gốc" link are gone. UI test checks the link. vitest 164/164, test:ui 13/13, test:ui:live 12/12.
 - Next step: check the 08:02 period on 18/11 for stories outside HCM.
 
