@@ -18,7 +18,7 @@ export function qrTarget(raw: string): { text: string; isUrl: boolean; fixed: bo
 }
 
 const QUIET = 4; // modules of white border required by the QR standard
-const SIZES: Array<[number, string]> = [[600, 'Nhỏ – 600 px (màn hình)'], [1200, 'Vừa – 1200 px (slide, khuyên dùng)'], [2400, 'Lớn – 2400 px (in khổ lớn)']];
+const SIZES: Array<[number, string]> = [[600, 'Nhỏ · 600 px'], [1200, 'Vừa · 1200 px (nên dùng)'], [2400, 'Lớn · 2400 px (in)']];
 
 function luminance(hex: string): number {
   const n = parseInt(hex.slice(1), 16);
@@ -154,10 +154,10 @@ export function QrDialog({ onClose, initial = '' }: { onClose: () => void; initi
                 </select>
               </label>
               <label className="block">
-                <span className="label">Độ bền mã</span>
+                <span className="label" title="Cao: vẫn quét được khi in mờ hoặc bị che một phần, nhưng mã dày hơn">Độ bền mã</span>
                 <select className="input" value={level} onChange={(e) => setLevel(e.target.value as Level)} aria-label="Độ bền mã">
-                  <option value="M">Thường (mã thưa, dễ quét)</option>
-                  <option value="H">Cao (vẫn quét được khi in mờ, bị che một phần)</option>
+                  <option value="M">Thường (dễ quét)</option>
+                  <option value="H">Cao (chịu in mờ)</option>
                 </select>
               </label>
             </div>
