@@ -345,3 +345,30 @@ describe('links without any date (deep listing pages)', () => {
     expect(cands.filter((c) => c.attempts > 0)).toHaveLength(30);
   });
 });
+
+describe('a feed that fails for a passing reason is tried once more at the end of discovery (18/11/2026)', () => {
+  it('RSS answers 503 twice (first try + quick retry), then works: links kept, route "ok (retried)", no failed route left', async () => {
+    const { stores, settings } = setup();
+    const feed = `${A}/rss/thoi-su.rss`;
+    const inner = fixtureTransport();
+    let fails = 2;
+    const http = new HttpClient({
+      transport: async (u, init) => (u === feed && fails-- > 0 ? { status: 503, headers: {}, body: '' } : inner(u, init)),
+      resolver: publicResolver, maxConcurrent: 4, perHost: 2, timeoutMs: 5000, maxRetries: 1, backoffBaseMs: 1, userAgent: 't', sleep: async () => {},
+    });
+    const src = fixtureSources()[0]!;
+    const m = await runCollection({ runId: 'run_late_retry', window: WINDOW, trigger: 'fixture', settings, sources: [src], stores, http });
+    const st = m.sources.find((x) => x.sourceId === src.id)!;
+    expect(st.routes.find((r) => r.url === feed)).toMatchObject({ status: 'ok', retried: true });
+    expect(st.routes.filter((r) => r.status === 'error')).toEqual([]); // no failed route left to mark the period incomplete
+    const cands = await stores.getCandidates('run_late_retry');
+    expect(cands.some((c) => c.discoveredVia.some((d) => d.method === 'rss' && d.listingUrl === feed))).toBe(true);
+  });
+  it('a feed that is really gone (404) is not tried again', async () => {
+    const log: string[] = [];
+    const { stores, settings } = setup(log);
+    const src = { ...fixtureSources()[0]!, rssUrls: [`${A}/rss/khong-co.rss`] };
+    await runCollection({ runId: 'run_404', window: WINDOW, trigger: 'fixture', settings, sources: [src], stores, http: new HttpClient({ transport: fixtureTransport({}, log), resolver: publicResolver, maxConcurrent: 4, perHost: 2, timeoutMs: 5000, maxRetries: 1, backoffBaseMs: 1, userAgent: 't', sleep: async () => {} }) });
+    expect(log.filter((u) => u.endsWith('/rss/khong-co.rss')).length).toBe(1);
+  });
+});

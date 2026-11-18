@@ -6,7 +6,8 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { SettingsSchema, type Article } from '../src/domain/schemas.js';
-import { suggestFilter, type Judged } from '../src/domain/suggest.js';
+import { suggestFilter, statusOf, type Judged } from '../src/domain/suggest.js';
+import { scoreStory, trainModel } from '../src/domain/learn.js';
 
 const arg = (k: string, d: string) => (process.argv.includes(k) ? process.argv[process.argv.indexOf(k) + 1]! : d);
 const SITE = arg('--site', 'https://bccuong.github.io/news-reporter/');
@@ -72,6 +73,16 @@ for (const prof of profiles) {
     judged.set(id, { relevant: v.yes > v.no, why: 'label', category: cat });
     voted++;
   }
+  // the self-learned second opinion (src/domain/learn.ts), used by Hỏi nhanh to ask where it disagrees with the rules
+  const model = trainModel([...judged].filter(([id]) => articles.has(id)).map(([id, j]) => ({ article: articles.get(id)!, relevant: j.relevant })));
+  console.log(`[${prof.id}] learned model: ${model.n.relevant} relevant / ${model.n.irrelevant} not, ${Object.keys(model.w).length} features, cross-validated accuracy ${model.accuracy === null ? '-' : Math.round(model.accuracy * 100) + '%'}, ${(JSON.stringify(model).length / 1024).toFixed(0)} KB`);
+  if (process.argv.includes('--disagree')) {
+    for (const a of articles.values()) {
+      if (judged.has(a.id)) continue;
+      const p = scoreStory(model, a), st = statusOf(a, settings);
+      if ((st === 'irrelevant' && p >= 0.8) || (st === 'relevant' && p <= 0.2)) console.log(`   ${st.padEnd(10)} p=${p.toFixed(2)}  ${a.title}`);
+    }
+  }
   const prev = await get<{ dismissed?: string[] }>(`${API}/suggestions?profile=${prof.id}`);
   const t0 = Date.now();
   const items = suggestFilter([...articles.values()], judged, settings, { dismissed: prev?.dismissed ?? [] });
@@ -93,4 +104,6 @@ for (const prof of profiles) {
     body: JSON.stringify({ profile: prof.id, generatedAt: new Date().toISOString(), articles: gold, judged: Object.fromEntries([...judged].filter(([id]) => articles.has(id)).map(([id, j]) => [id, j.relevant])) }),
   });
   console.log(`[${prof.id}] judged stories for the impact preview: ${gold.length} (HTTP ${g.status})`);
+  const mr = await fetch(`${API}/model`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify({ profile: prof.id, model }) });
+  console.log(`[${prof.id}] learned model published: HTTP ${mr.status}`);
 }

@@ -105,3 +105,47 @@ describe('impact preview and "Hỏi nhanh"', async () => {
     expect(uncertainStories([other, hanoi], s, new Set())).toEqual([]);
   });
 });
+
+describe('learning from stories the team moved to "Sẵn sàng" by hand (18/11/2026)', () => {
+  it('setting: national stories with the sector in the title, kept in "Cần kiểm tra" while the team moves them up → suggest the rule, with its counts', () => {
+    const off = structuredClone(s);
+    off.location.nationalToReady = false;
+    const st = [
+      art('Áp trần giá chuyển nhượng nhà ở xã hội?', 'Dự thảo nghị định đề xuất áp trần giá.', 'Một doanh nghiệp làm nhà ở xã hội tại TP.HCM cho biết.'),
+      art('Đề xuất mới về nhà ở xã hội, chuyên gia lo người mua khó vay vốn', 'Bộ Xây dựng đề xuất sửa quy định.', 'Nhiều dự án ở TP.HCM.'),
+      art('Sửa Luật Đất đai: quy định rõ thủ tục bồi thường, tái định cư', 'Quốc hội thảo luận dự thảo luật.', 'Các đại biểu góp ý.'),
+    ];
+    for (const a of st) expect(statusOf(a, off)).toBe('review');
+    const judged = new Map<string, Judged>(st.map((a) => [a.id, { relevant: true, why: 'decision' }]));
+    const sug = suggestFilter(st, judged, off).find((x) => x.kind === 'setting');
+    expect(sug).toMatchObject({ id: 'setting:location.nationalToReady=true', fixes: 3, harms: 0 });
+    const next = applySuggestion(off, sug!);
+    expect(next.location.nationalToReady).toBe(true);
+    for (const a of st) expect(statusOf(a, next)).toBe('relevant');
+    // dismissed → not proposed again
+    expect(suggestFilter(st, judged, off, { dismissed: [sug!.id] }).find((x) => x.id === sug!.id)).toBeUndefined();
+  });
+  it('setting: not proposed when it would put judged stories wrong as often as right', () => {
+    const off = structuredClone(s);
+    off.location.nationalToReady = false;
+    const good = art('Áp trần giá chuyển nhượng nhà ở xã hội?', 'Dự thảo nghị định đề xuất áp trần giá.', 'Một doanh nghiệp tại TP.HCM.');
+    const bad1 = art('Nhà ở xã hội ở Singapore được bán thế nào?', 'Chính sách nhà ở của Singapore.', 'Người dân TP.HCM quan tâm.');
+    const bad2 = art('Giá nhà ở xã hội tăng mạnh', 'Dự thảo nghị định mới.', 'Khảo sát ở TP.HCM.');
+    const bad3 = art('Nhà ở xã hội: người mua than khó', 'Quy định mới gây khó.', 'Một người ở TP.HCM kể.');
+    const judged = new Map<string, Judged>([[good.id, { relevant: true, why: 'decision' }], [bad1.id, { relevant: false, why: 'label' }], [bad2.id, { relevant: false, why: 'label' }], [bad3.id, { relevant: false, why: 'label' }]]);
+    expect(suggestFilter([good, bad1, bad2, bad3], judged, off).find((x) => x.id === 'setting:location.nationalToReady=true')).toBeUndefined();
+  });
+  it('sector: a title word shared by stuck relevant stories (weak sector evidence, in Cần kiểm tra) becomes a sector keyword', () => {
+    const a1 = art('Đại đô thị định hình diện mạo Đông Bắc TP.HCM', 'Các công trình mới ở TP.HCM.', 'Người dân rất quan tâm.');
+    const a2 = art('Vì sao đại đô thị phía Tây TP.HCM hút dân?', 'Nhiều công trình mọc lên ở TP.HCM.', 'Người dân rất quan tâm.');
+    for (const a of [a1, a2]) expect(statusOf(a, s)).toBe('review');
+    const judged = new Map<string, Judged>([[a1.id, { relevant: true, why: 'decision', category: 'BUILD' }], [a2.id, { relevant: true, why: 'decision', category: 'BUILD' }]]);
+    const sug = suggestFilter([a1, a2], judged, s).find((x) => x.kind === 'sector');
+    expect(sug).toMatchObject({ id: 'sector:đại đô thị', phrase: 'đại đô thị', category: 'BUILD', fixes: 2 });
+    const next = applySuggestion(s, sug!);
+    expect(next.categories.find((c) => c.code === 'BUILD')!.keywords).toContain('đại đô thị');
+    expect(statusOf(a1, next)).toBe('relevant');
+    expect(statusOf(a2, next)).toBe('relevant');
+  });
+
+});

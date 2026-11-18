@@ -552,7 +552,7 @@ export function App() {
         pick(e.data.items.flatMap((x) => (byId.has(x.articleId) ? [{ article: byId.get(x.articleId)!, status: x.status as UncertainStory['status'], why: x.why, weight: x.weight }] : [])));
       };
       w.addEventListener('message', onMsg);
-      w.postMessage({ id, arts, settings } satisfies AskRequest);
+      void (api.learnedModel?.() ?? Promise.resolve(null)).then((model) => alive && w.postMessage({ id, arts, settings, model } satisfies AskRequest));
     }, 300);
     return () => {
       alive = false;
@@ -1908,7 +1908,7 @@ function Coverage({ run, cands, onRetry, onOpenSettings, reviewsKey, ledger }: {
                   <tr key={i}>
                     <td className="td text-xs">{r.method}</td>
                     <td className="td max-w-md truncate font-mono text-xs" title={r.url}>{r.url}</td>
-                    <td className={`td text-xs ${r.status === 'ok' ? 'text-green-700' : r.status === 'limit' ? 'text-amber-700' : 'text-red-700'}`}>{r.status === 'ok' ? `OK (HTTP ${r.httpStatus})` : r.status === 'limit' ? r.error : `Lỗi ${r.httpStatus ?? ''} ${r.error ?? ''}`}</td>
+                    <td className={`td text-xs ${r.status === 'ok' ? 'text-green-700' : r.status === 'limit' ? 'text-amber-700' : 'text-red-700'}`}>{r.status === 'ok' ? `OK (HTTP ${r.httpStatus})${r.retried ? ' · lỗi tạm thời, thử lại cuối lượt thành công' : ''}` : r.status === 'limit' ? r.error : `Lỗi ${r.httpStatus ?? ''} ${r.error ?? ''}`}</td>
                     <td className="td text-xs">{r.found}</td>
                   </tr>
                 ))}

@@ -7,16 +7,28 @@
  * stories it touches; a suggestion is kept only when it fixes at least one judged story and breaks none.
  *   include       – add the phrase to the words of the active rule: keeps relevant stories that were excluded
  *   exclude_title – drop stories whose title contains the phrase: removes off-topic stories from "Bài sẵn sàng"
+ *   place         – a place of the city the filter does not know yet
+ *   sector        – a sector keyword: relevant stories stuck in "Cần kiểm tra" for weak sector evidence go to "Sẵn sàng"
+ *   setting       – a rule setting (e.g. national stories with the sector in the title → Sẵn sàng), tried on every judged
+ *                   story; kept when it puts clearly more stories right than wrong (the editor sees both counts)
+ * Stories the team moved to "Sẵn sàng" by hand while the filter left them in "Cần kiểm tra" are lessons too (18/11/2026).
  */
 import { classifyCategory } from './classify.js';
 import { annotateArticle } from './relevance.js';
 import type { Article, CategoryCode, RuleGroup, RuleNode, RuleTerm, Settings } from './schemas.js';
 import { findWord, normText } from './text.js';
+import { scoreStory, type LearnedModel } from './learn.js';
 
 export interface FilterSuggestion {
   id: string;
-  kind: 'include' | 'exclude_title' | 'place';
+  kind: 'include' | 'exclude_title' | 'place' | 'sector' | 'setting';
+  /** the word / place / title phrase; for a setting, a short text of the change */
   phrase: string;
+  /** setting: which value it changes, from what to what */
+  setting?: { path: string; value: string | number | boolean; from: string | number | boolean; label: string };
+  /** setting: judged stories it would put wrong (shown to the editor) */
+  harms?: number;
+  harmExamples?: string[];
   /** include: the sector the word is added to as well (a story needs a sector word in its title/sapo) */
   category?: CategoryCode;
   /** judged stories it puts right */
@@ -90,11 +102,36 @@ export function withCategoryKeyword(s: Settings, code: CategoryCode, word: strin
   return { ...s, categories: s.categories.map((c) => (c.code === code && !c.keywords.some((k) => normText(k) === normText(word)) ? { ...c, keywords: [...c.keywords, word] } : c)) };
 }
 /** what applying a suggestion changes */
-export function applySuggestion(s: Settings, x: Pick<FilterSuggestion, 'kind' | 'phrase' | 'category'>): Settings {
+export function applySuggestion(s: Settings, x: Pick<FilterSuggestion, 'kind' | 'phrase' | 'category' | 'setting'>): Settings {
   if (x.kind === 'exclude_title') return withTitleExclusion(s, x.phrase);
   if (x.kind === 'place') return withPlace(s, x.phrase);
+  if (x.kind === 'sector') return withCategoryKeyword(s, x.category ?? 'BUILD', x.phrase);
+  if (x.kind === 'setting') return x.setting ? withSetting(s, x.setting.path, x.setting.value) : s;
   const r = withIncludeWord(s, x.phrase);
   return x.category ? withCategoryKeyword(r, x.category, x.phrase) : r;
+}
+/** settings with one value changed: "location.nationalToReady" = true */
+export function withSetting(s: Settings, path: string, value: string | number | boolean): Settings {
+  const [group, key] = path.split('.') as [keyof Settings, string];
+  const g = s[group] as unknown as Record<string, unknown> | undefined;
+  if (!g || typeof g !== 'object' || !(key in g)) return s;
+  return { ...s, [group]: { ...g, [key]: value } } as Settings;
+}
+/** rule settings worth trying on the judged stories (only those that differ from the current configuration) */
+function settingTries(s: Settings): Array<{ path: string; value: string | number | boolean; from: string | number | boolean; label: string }> {
+  const R = s.location.regionName;
+  const out: Array<{ path: string; value: string | number | boolean; from: string | number | boolean; label: string }> = [];
+  const add = (path: string, from: string | number | boolean | undefined, value: string | number | boolean, label: string) => {
+    if (from !== undefined && from !== value) out.push({ path, value, from, label });
+  };
+  add('location.nationalToReady', s.location.nationalToReady, true, `Tin chung (chính sách cả nước, hoặc chỉ nhắc ${R} trong thân bài) có từ khóa lĩnh vực ở tiêu đề → Bài sẵn sàng`);
+  add('location.nationalToReady', s.location.nationalToReady, false, `Tin chung có từ khóa lĩnh vực ở tiêu đề → để ở Cần kiểm tra (không tự vào Bài sẵn sàng)`);
+  if (s.location.minBodyAreasWithoutLead > 1) add('location.minBodyAreasWithoutLead', s.location.minBodyAreasWithoutLead, s.location.minBodyAreasWithoutLead - 1, `${R} không có ở tiêu đề/sapo: chỉ cần ${s.location.minBodyAreasWithoutLead - 1} địa danh trong thân bài để vào Bài sẵn sàng`);
+  add('location.minBodyAreasWithoutLead', s.location.minBodyAreasWithoutLead, s.location.minBodyAreasWithoutLead + 1, `${R} không có ở tiêu đề/sapo: cần ${s.location.minBodyAreasWithoutLead + 1} địa danh trong thân bài để vào Bài sẵn sàng`);
+  add('location.noPlaceKeep', s.location.noPlaceKeep, s.location.noPlaceKeep === 'policy_only' ? 'strong_sector' : 'policy_only', s.location.noPlaceKeep === 'policy_only' ? `Bài không có địa danh ${R} nhưng tiêu đề + sapo có từ khóa lĩnh vực mạnh → giữ lại (Cần kiểm tra)` : `Bài không có địa danh ${R}: chỉ giữ chính sách, pháp quy chung của ngành`);
+  add('location.connectedNeedsLead', s.location.connectedNeedsLead, !s.location.connectedNeedsLead, s.location.connectedNeedsLead ? 'Dự án liên vùng chỉ có trong thân bài → giữ lại (không loại)' : 'Dự án liên vùng chỉ có trong thân bài (không có địa danh thành phố) → loại kèm lý do');
+  if (s.rules.bodySectorScoreForReview > 3) add('rules.bodySectorScoreForReview', s.rules.bodySectorScoreForReview, s.rules.bodySectorScoreForReview - 1, `Tiêu đề/sapo không nêu lĩnh vực: giữ lại (Cần kiểm tra) khi thân bài đạt ${s.rules.bodySectorScoreForReview - 1} điểm lĩnh vực`);
+  return out;
 }
 /** settings with a place of the city (e.g. "khu đô thị Vạn Phúc") added to Địa điểm */
 export function withPlace(s: Settings, name: string): Settings {
@@ -193,12 +230,70 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
   };
 
   out.push(...consider('include', missed, lead));
+  // relevant stories the team moved to "Sẵn sàng" by hand while the filter left them in "Cần kiểm tra": a sector word in
+  // their title is often all that is missing (weak sector evidence / national story)
+  const stuck = articles.filter((a) => judged.get(a.id)?.relevant && base.get(a.id) === 'review');
+  out.push(...considerUp('sector', stuck));
+  out.push(...settingSuggestions());
   out.push(...consider('exclude_title', wrong, (a) => a.title));
   // places the filter does not know: relevant stories held back because no place of the city was recognised
   const placeless = articles.filter((a) => judged.get(a.id)?.relevant && base.get(a.id) !== 'relevant' && annotateArticle(a, s)._verdict.location.status !== 'hcm');
   const knownPlaces = new Set(s.location.areas.flatMap((x) => [x.name, ...x.aliases]).map(normText));
   out.push(...consider('place', placeless, (a) => `${a.title}\n${a.sapo ?? ''}\n${a.bodyText ?? ''}`, (x) => placesOf(x).filter((pl) => !knownPlaces.has(normText(pl)) && !knownPlaces.has(normText(pl.replace(/^\S+(?:\s(?:đô thị|dân cư|công nghiệp|chế xuất|viên|xe|phà|giao|xoay|cư))?\s/, ''))))));
   return out.slice(0, opts.max ?? 12);
+
+  /** a change judged on every judged story it moves: up for a relevant one / down for an off-topic one is right */
+  function judgeChange(next: Settings, touch: (a: Article) => boolean) {
+    const rank = (x: Status) => (x === 'relevant' ? 2 : x === 'review' ? 1 : 0);
+    let fixes = 0, harms = 0, side = 0;
+    const examples: string[] = [], harmExamples: string[] = [], sideExamples: string[] = [];
+    for (const a of articles) {
+      if (!touch(a)) continue;
+      const before = base.get(a.id)!;
+      const after = statusOf(a, next);
+      if (after === before) continue;
+      const j = judged.get(a.id);
+      if (j) {
+        const right = j.relevant ? rank(after) > rank(before) : rank(after) < rank(before);
+        if (right) (fixes++, examples.push(a.title));
+        else (harms++, harmExamples.push(a.title));
+      } else if (after === 'relevant' || before === 'relevant') {
+        side++;
+        if (sideExamples.length < 3) sideExamples.push(a.title);
+      }
+    }
+    return { fixes, harms, side, examples, harmExamples, sideExamples };
+  }
+  /** sector keywords from the titles of stuck relevant stories (no judged story may get worse) */
+  function considerUp(kind: 'sector', targets: Article[]): FilterSuggestion[] {
+    const support = new Map<string, number>();
+    const inSector = new Set(s.categories.flatMap((c) => c.keywords.map(normText)));
+    for (const a of targets) for (const p of phrasesOf(a.title, pairs)) if (!inSector.has(normText(p)) && !known.has(normText(p))) support.set(p, (support.get(p) ?? 0) + 1);
+    const tried: FilterSuggestion[] = [];
+    for (const [phrase] of [...support].sort((x, y) => y[1] - x[1] || y[0].length - x[0].length).slice(0, 30)) {
+      const id = `${kind}:${phrase}`;
+      if (dismissed.has(id)) continue;
+      const category = sectorFor(targets.filter((a) => findWord(a.title, phrase) >= 0));
+      const r = judgeChange(withCategoryKeyword(s, category, phrase), (a) => findWord(`${a.title}\n${a.sapo ?? ''}\n${a.bodyText ?? ''}`, phrase) >= 0);
+      if (r.fixes < minFixes || r.harms > 0) continue;
+      tried.push({ id, kind, phrase, category, fixes: r.fixes, sideEffects: r.side, examples: r.examples.slice(0, 3), sideExamples: r.sideExamples });
+    }
+    tried.sort((a, b) => b.fixes - a.fixes || a.sideEffects - b.sideEffects || b.phrase.length - a.phrase.length);
+    const covered = new Set<string>();
+    return tried.filter((x) => (x.examples.every((e) => covered.has(e)) ? false : (x.examples.forEach((e) => covered.add(e)), true)));
+  }
+  /** rule settings: kept when they put at least minFixes judged stories right and at most a quarter as many wrong */
+  function settingSuggestions(): FilterSuggestion[] {
+    const found: FilterSuggestion[] = [];
+    for (const t of settingTries(s)) {
+      const id = `setting:${t.path}=${t.value}`;
+      if (dismissed.has(id)) continue;
+      const r = judgeChange(withSetting(s, t.path, t.value), () => true);
+      if (r.fixes < Math.max(minFixes, 3) || r.harms * 4 > r.fixes) continue;
+      found.push({ id, kind: 'setting', phrase: t.label.slice(0, 80), setting: t, fixes: r.fixes, harms: r.harms, harmExamples: r.harmExamples.slice(0, 3), sideEffects: r.side, examples: r.examples.slice(0, 3), sideExamples: r.sideExamples });
+    }
+    return found.sort((a, b) => b.fixes - (b.harms ?? 0) - (a.fixes - (a.harms ?? 0)));
+  }
 }
 
 /* ---------- impact preview of a settings change on the judged stories ("bộ bài chuẩn") ---------- */
@@ -234,13 +329,26 @@ export function impactOf(articles: Article[], judged: Map<string, Judged>, befor
 }
 
 /* ---------- "Hỏi nhanh": the stories the filter is least sure about (one vote on these teaches the most) ---------- */
-export interface UncertainStory { article: Article; status: Status; why: string; weight: number }
-export function uncertainStories(articles: Article[], s: Settings, skip: Set<string>, max = 8): UncertainStory[] {
+export interface UncertainStory { article: Article; status: Status; why: string; weight: number; /** self-learned probability of relevant */ learned?: number }
+export function uncertainStories(articles: Article[], s: Settings, skip: Set<string>, max = 8, model?: Pick<LearnedModel, 'prior' | 'w'> | null): UncertainStory[] {
   const out: UncertainStory[] = [];
   for (const a of articles) {
     if (skip.has(a.id)) continue;
     const r = annotateArticle(a, s);
     const v = r._verdict;
+    // the self-learned model knows the TOPIC the team wants, not the place: its disagreement with a topic decision of the
+    // rules is the most useful question (excluded for the place → never asked)
+    const p = model ? scoreStory(model, a) : null;
+    const pct = p === null ? '' : `${Math.round(p * 100)}%`;
+    const placeReason = ['NOT_GEOGRAPHICALLY_RELEVANT', 'NO_HCM_EVIDENCE'].includes(v.reasonCode ?? '');
+    if (p !== null && v.status === 'irrelevant' && !placeReason && v.reasonCode !== 'EXCLUDED_PHRASE' && p >= 0.8) {
+      out.push({ article: a, status: 'irrelevant', why: `Máy tự học chấm ${pct} là bài liên quan, nhưng bộ lọc đã loại (${v.reasonCode === 'NO_SECTOR_IN_LEAD' ? 'tiêu đề/sapo không có từ của ngành' : 'không khớp quy tắc'})`, weight: 1 + p / 10, learned: p });
+      continue;
+    }
+    if (p !== null && v.status === 'relevant' && p <= 0.2) {
+      out.push({ article: a, status: 'relevant', why: `Đang ở Bài sẵn sàng nhưng máy tự học chỉ chấm ${pct} là bài liên quan`, weight: 0.95 + (1 - p) / 20, learned: p });
+      continue;
+    }
     const body = `${a.sapo ?? ''}\n${a.bodyText ?? ''}`;
     const best = Math.max(0, ...Object.values(classifyCategory(a.title, body, s.categories, a.sapo ?? '').scores).map((x) => x ?? 0));
     const st = v.status as Status;
@@ -258,10 +366,11 @@ export function uncertainStories(articles: Article[], s: Settings, skip: Set<str
     } else if (st === 'review') {
       // the filter could not decide: exactly what a reviewer's answer teaches
       // (stories excluded because the title / sapo names another province are NOT asked: clear without a person, 17/11/2026)
-      why = 'Máy chưa quyết được – đang ở Cần kiểm tra';
-      weight = 0.5 + Math.min(best, 10) / 100;
+      why = `Máy chưa quyết được – đang ở Cần kiểm tra${p !== null ? ` (máy tự học: ${pct} liên quan)` : ''}`;
+      // the model unsure too (near 50 %) → asked a little earlier
+      weight = 0.5 + Math.min(best, 10) / 100 + (p !== null ? (0.5 - Math.abs(p - 0.5)) / 10 : 0);
     }
-    if (weight) out.push({ article: a, status: st, why, weight });
+    if (weight) out.push({ article: a, status: st, why, weight, ...(p !== null ? { learned: p } : {}) });
   }
   return out.sort((x, y) => y.weight - x.weight).slice(0, max);
 }

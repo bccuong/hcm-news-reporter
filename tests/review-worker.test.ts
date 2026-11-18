@@ -474,3 +474,17 @@ describe('shared review worker', () => {
     expect(reviewerId('  Lê Đình Ánh ')).toBe('le-dinh-anh');
   });
 });
+
+describe('self-learned model store (nightly publish, public read)', () => {
+  it('only the nightly job (token) publishes; anyone reads; bad shapes are refused', async () => {
+    const e = env();
+    const pub = (body: unknown, token = 'export-secret') => handle(new Request('https://w.example/model', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);
+    const read = async () => (await handle(new Request('https://w.example/model?profile=hcm', { headers: { origin: ORIGIN } }), e)).json();
+    expect(await read()).toBeNull();
+    const model = { v: 1, trainedAt: '2026-11-18T16:30:00Z', n: { relevant: 2, irrelevant: 3 }, prior: -0.3, w: { 'giải phóng': 1.2 }, accuracy: null };
+    expect((await pub({ profile: 'hcm', model }, 'wrong')).status).toBe(401);
+    expect((await pub({ profile: 'hcm', model: { v: 2 } })).status).toBe(400);
+    expect((await pub({ profile: 'hcm', model })).status).toBe(200);
+    expect(await read()).toMatchObject({ v: 1, prior: -0.3, w: { 'giải phóng': 1.2 } });
+  });
+});

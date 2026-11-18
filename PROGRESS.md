@@ -7,7 +7,13 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14p – filter learned from the team review of 18/11 08:00; 2026-11-18)
+## ▶ RESUME HERE (session 14q – learning: rule/sector suggestions from hand moves, self-learned model for Hỏi nhanh, late retry of failed feeds; 2026-11-18)
+- suggest.ts: new kinds "sector" (title word of relevant stories stuck in Cần kiểm tra → sector keyword) and "setting" (catalogue of rule settings tried on every judged story; kept when fixes ≥ 3 and harms ≤ fixes/4; editor sees both counts and the stories). UI in Cài đặt › Gợi ý cải thiện; worker accepts the kinds.
+- learn.ts: naive Bayes over title (x2), sapo, first 800 body chars (words + pairs), trained nightly by scripts/suggest-filter.ts on labels + team decisions; 5-fold CV accuracy (first run: 244 judged, 73%); published to worker /model (KV model:<pid>, public GET). Hỏi nhanh (askWorker) asks first where it disagrees with a TOPIC decision of the rules (p ≥ 0.8 excluded / p ≤ 0.2 ready); never place exclusions. suggest-filter --disagree lists disagreements.
+- run.ts discoverSource: RSS / section pages that failed for a passing reason (TIMEOUT, NETWORK, 5xx, 429) are tried once more at the end of discovery; route.retried shown in Độ phủ.
+- vitest 182, test:ui 14, test:ui:live 14. Worker redeployed.
+
+## (history) Session 14p – filter learned from the team review of 18/11 08:00; 2026-11-18)
 - User moved 13 stories to Sẵn sàng and removed 1 (Huế). New: location.nationalToReady (default on) + nationalBlockWords (UI: Cài đặt › Địa bàn › Nâng cao): a national policy story without a place, or one naming the city only once in the body, goes to Sẵn sàng when its TITLE has a sector keyword (ministry name not counted; foreign/stock/crime/accident words block). Title names another province + city only in the sapo → other_province, review. TRAFFIC keywords rev 5: đèn đỏ, Nghị định 168, xe máy, vận tải, giá cước; BUILD exclude "sập bẫy"; title exclusion "Tin mới nhất" (topicRev 3).
 - scripts/why-period.ts --key <period key>: replays the shared config on one period and shows why each story the team acted on landed where it did. eval-filter --national lists the stories the new rule promotes.
 - eval (225 labelled): Sẵn sàng 67→82 stories, precision 93%→90% (+12 correct, +3 wrong: công chứng toàn quốc, thuế bồi thường, Mr Pips), recall 88% (=). On 18/11 08:00: 7 of the 13 moved stories now ready by themselves, Huế no longer ready, none of the removed ones ready.

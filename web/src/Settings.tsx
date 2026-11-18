@@ -1,4 +1,4 @@
-import { CheckCircle, ChevronDown, ChevronRight, Download, FileUp, History, Info, MapPin, Minus, Plus, Sparkles, RotateCcw, Save, Search, SlidersHorizontal, Trash2, Users, X } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, Download, FileUp, History, Info, MapPin, Minus, Plus, Sparkles, RotateCcw, Save, Search, SlidersHorizontal, Tag, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings } from '../../src/domain/defaults';
 import { detectLocation } from '../../src/domain/location';
@@ -856,6 +856,8 @@ function ImpactLine({ impact }: { impact: ReturnType<typeof impactOf> }) {
 }
 
 /* ---------------- Daily filter suggestions ---------------- */
+/** suggestion kinds: include (teal) · place (sky) · sector keyword (amber) · rule setting (violet) · title exclusion (rose) */
+const KIND_COLOR: Record<string, string> = { include: 'bg-teal-600', place: 'bg-sky-600', sector: 'bg-amber-500', setting: 'bg-violet-600', exclude_title: 'bg-rose-500' };
 function SuggestPanel({ s, setS, onCount }: { s: Settings; setS: (fn: (p: Settings | null) => Settings | null) => void; onCount: (n: number) => void }) {
   const toast = useToast();
   const [st, setSt] = useState<SuggestionsState | null>(null);
@@ -869,9 +871,9 @@ function SuggestPanel({ s, setS, onCount }: { s: Settings; setS: (fn: (p: Settin
   const open = (st?.items ?? []).filter((x) => !done[x.id]);
   useEffect(() => onCount(open.length), [open.length, onCount]);
   const apply = (x: FilterSuggestion) => {
-    setS((p) => (p ? applySuggestion(p, { ...x, category: x.kind === 'include' ? (cat[x.id] ?? x.category) : undefined }) : p));
+    setS((p) => (p ? applySuggestion(p, { ...x, category: x.kind === 'include' || x.kind === 'sector' ? (cat[x.id] ?? x.category) : undefined }) : p));
     setDone((d) => ({ ...d, [x.id]: 'applied' }));
-    toast('ok', `Đã áp dụng "${x.phrase}" – bấm Lưu để dùng từ lượt thu thập sau`);
+    toast('ok', `Đã áp dụng "${x.kind === 'setting' ? x.setting?.label ?? x.phrase : x.phrase}" – bấm Lưu để dùng từ lượt thu thập sau`);
   };
   const dismiss = async (x: FilterSuggestion) => {
     try {
@@ -900,26 +902,41 @@ function SuggestPanel({ s, setS, onCount }: { s: Settings; setS: (fn: (p: Settin
         <div className="card flex flex-col items-center gap-2 p-8 text-center" data-testid="suggest-empty">
           <CheckCircle className="h-8 w-8 text-green-500" />
           <p className="font-medium text-slate-700">Chưa có gợi ý mới</p>
-          <p className="max-w-md text-xs text-slate-500">Bộ lọc đang khớp với các bài nhóm đã chấm. Gợi ý chỉ xuất hiện khi một thay đổi sửa được ít nhất 2 bài và không làm sai bài nào đã chấm.</p>
+          <p className="max-w-md text-xs text-slate-500">Bộ lọc đang khớp với các bài nhóm đã chấm (cả phiếu ✓/✗ lẫn bài nhóm tự chuyển lên Sẵn sàng hay Loại). Gợi ý chỉ xuất hiện khi một thay đổi sửa được ít nhất 2 bài và không làm sai bài đã chấm (đổi quy tắc: đúng ít nhất gấp 4 lần sai).</p>
         </div>
       )}
       <div className="grid gap-2">
         {open.map((x) => (
           <div key={x.id} className="card animate-in p-4" data-testid="suggestion">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`flex h-8 w-8 items-center justify-center rounded-full text-white ${x.kind === 'include' ? 'bg-teal-600' : x.kind === 'place' ? 'bg-sky-600' : 'bg-rose-500'}`} aria-hidden="true">
-                {x.kind === 'include' ? <Plus className="h-4 w-4" /> : x.kind === 'place' ? <MapPin className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full text-white ${KIND_COLOR[x.kind] ?? 'bg-slate-500'}`} aria-hidden="true">
+                {x.kind === 'include' ? <Plus className="h-4 w-4" /> : x.kind === 'place' ? <MapPin className="h-4 w-4" /> : x.kind === 'sector' ? <Tag className="h-4 w-4" /> : x.kind === 'setting' ? <SlidersHorizontal className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
                 <div className="font-semibold text-slate-800">
-                  {x.kind === 'include' ? 'Lấy thêm bài có' : x.kind === 'place' ? `Nhận là địa bàn ${s.location.regionName}:` : 'Bỏ bài có tiêu đề chứa'} <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-sm">{x.phrase}</span>
+                  {x.kind === 'setting' ? (
+                    <>Đổi quy tắc: <span className="font-normal">{x.setting?.label ?? x.phrase}</span></>
+                  ) : (
+                    <>
+                      {x.kind === 'include' ? 'Lấy thêm bài có' : x.kind === 'place' ? `Nhận là địa bàn ${s.location.regionName}:` : x.kind === 'sector' ? 'Thêm từ khóa lĩnh vực' : 'Bỏ bài có tiêu đề chứa'} <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-sm">{x.phrase}</span>
+                    </>
+                  )}
                 </div>
                 <div className="text-xs text-slate-600">
-                  {x.kind === 'include' ? `Giữ lại ${x.fixes} bài nhóm đánh giá liên quan nhưng đang bị loại` : x.kind === 'place' ? `Đưa ${x.fixes} bài liên quan chưa nhận ra địa bàn lên (thêm vào mục Địa điểm)` : `Loại ${x.fixes} bài lạc đề đang lọt vào Bài sẵn sàng`}
+                  {x.kind === 'include'
+                    ? `Giữ lại ${x.fixes} bài nhóm đánh giá liên quan nhưng đang bị loại`
+                    : x.kind === 'place'
+                      ? `Đưa ${x.fixes} bài liên quan chưa nhận ra địa bàn lên (thêm vào mục Địa điểm)`
+                      : x.kind === 'sector'
+                        ? `Đưa ${x.fixes} bài nhóm đã chuyển tay lên Sẵn sàng (máy để ở Cần kiểm tra) vào thẳng Bài sẵn sàng`
+                        : x.kind === 'setting'
+                          ? `Đúng thêm ${x.fixes} bài đã chấm`
+                          : `Loại ${x.fixes} bài lạc đề đang lọt vào Bài sẵn sàng`}
+                  {x.kind === 'setting' && (x.harms ? <b className="text-amber-700">{` · sai ${x.harms} bài đã chấm`}</b> : ' · không làm sai bài đã chấm nào')}
                   {x.sideEffects > 0 ? ` · ảnh hưởng thêm ${x.sideEffects} bài chưa chấm` : ' · không ảnh hưởng bài nào khác'}
                 </div>
               </div>
-              {x.kind === 'include' && (
+              {(x.kind === 'include' || x.kind === 'sector') && (
                 <select className="input w-44 text-xs" value={cat[x.id] ?? x.category ?? 'BUILD'} onChange={(e) => setCat((c) => ({ ...c, [x.id]: e.target.value as CategoryCode }))} aria-label={`Lĩnh vực cho "${x.phrase}"`} title="Từ này cũng được thêm vào lĩnh vực đã chọn">
                   {s.categories.filter((c) => c.enabled).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
                 </select>
@@ -932,6 +949,12 @@ function SuggestPanel({ s, setS, onCount }: { s: Settings; setS: (fn: (p: Settin
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
                 {x.examples.map((t) => <li key={t}>{t}</li>)}
               </ul>
+              {(x.harmExamples?.length ?? 0) > 0 && (
+                <>
+                  <div className="mt-1 text-amber-800">Bài đã chấm sẽ bị xếp sai:</div>
+                  <ul className="list-disc space-y-0.5 pl-5 text-amber-800">{x.harmExamples!.map((t) => <li key={t}>{t}</li>)}</ul>
+                </>
+              )}
               {x.sideExamples.length > 0 && (
                 <>
                   <div className="mt-1 text-slate-500">Bài chưa chấm bị ảnh hưởng:</div>

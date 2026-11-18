@@ -198,6 +198,35 @@ export async function discoverSource(ctx: RunContext, src: Source, ledger: Ledge
       stats.routes.push({ method: 'section', url: pending[0]!.url, status: 'limit', found: 0, error: `PAGINATION_LIMIT: còn ${pending.length} trang chuyên mục chưa duyệt (giới hạn ${src.crawlLimits.maxListingPages})` });
     }
   }
+
+  // A feed / listing page that failed for a passing reason (timeout, network, server error, too many requests) gets one
+  // more try at the end, after the other routes – the RSS "Thời sự" of Thanh Niên timed out on 18/11/2026 while the rest
+  // of the site answered, and the period was marked "Một phần" for it.
+  const passing = (x: SourceRunStats['routes'][number]) =>
+    x.status === 'error' && (x.method === 'rss' || x.method === 'section') && (/TIMEOUT|NETWORK/.test(x.error ?? '') || (x.httpStatus ?? 0) >= 500 || x.httpStatus === 429);
+  for (const route of stats.routes.filter(passing)) {
+    if (ctx.signal?.aborted) return;
+    const r = await ctx.http.get(route.url, ctx.signal);
+    if (r.status !== 200) {
+      route.error = `${route.error} · thử lại cuối lượt: ${r.errorCode ?? `HTTP ${r.status}`}`;
+      continue;
+    }
+    try {
+      let found = 0;
+      if (route.method === 'rss') {
+        const items = parseFeed(r.body, route.url);
+        for (const it of items) add(it.url, { method: 'rss', listingUrl: route.url, at, feedPublishedAt: it.publishedAt, feedTitle: it.title });
+        found = items.length;
+      } else {
+        const res = parseListing(r.body, r.finalUrl, src);
+        for (const l of res.articleLinks) add(l, { method: 'section', listingUrl: route.url, at });
+        found = res.articleLinks.length;
+      }
+      Object.assign(route, { status: 'ok', httpStatus: 200, found, error: undefined, retried: true });
+    } catch (e) {
+      route.error = `${route.error} · thử lại cuối lượt: ${(e as Error).message}`;
+    }
+  }
 }
 
 /**

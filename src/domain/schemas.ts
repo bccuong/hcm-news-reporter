@@ -673,7 +673,8 @@ export interface SourceRunStats {
   sourceId: string;
   sourceName: string;
   status: 'pending' | 'running' | 'ok' | 'partial' | 'failed' | 'skipped_disabled' | 'manual_only' | 'cancelled';
-  routes: Array<{ method: DiscoveryMethod; url: string; status: 'ok' | 'error' | 'limit'; httpStatus?: number | null; found: number; error?: string }>;
+  /** retried: failed first (timeout / network / server error), answered when tried again at the end of discovery */
+  routes: Array<{ method: DiscoveryMethod; url: string; status: 'ok' | 'error' | 'limit'; httpStatus?: number | null; found: number; error?: string; retried?: boolean }>;
   listingPagesVisited: number;
   listingPageLimit: number;
   limitReached: boolean;

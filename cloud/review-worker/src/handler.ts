@@ -656,7 +656,7 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     const b = (await req.json().catch(() => null)) as { profile?: string; generatedAt?: string; basis?: unknown; items?: unknown } | null;
     const pid = String(b?.profile ?? DEFAULT_PROFILE);
     if (!PROFILE_ID.test(pid) || !Array.isArray(b?.items)) return json({ error: 'INVALID' }, 400, {});
-    const items = (b!.items as Array<Record<string, unknown>>).slice(0, 30).filter((x) => typeof x.id === 'string' && (x.kind === 'include' || x.kind === 'exclude_title' || x.kind === 'place') && typeof x.phrase === 'string' && x.phrase.length <= 80);
+    const items = (b!.items as Array<Record<string, unknown>>).slice(0, 30).filter((x) => typeof x.id === 'string' && ['include', 'exclude_title', 'place', 'sector', 'setting'].includes(String(x.kind)) && typeof x.phrase === 'string' && x.phrase.length <= 80);
     const prev = await readSuggestions(env, pid);
     await env.REVIEWS.put(`sug:${pid}`, JSON.stringify({ generatedAt: String(b!.generatedAt ?? new Date().toISOString()), basis: b!.basis ?? null, items, dismissed: prev.dismissed }));
     return json({ ok: true, count: items.length }, 200, {});
@@ -678,6 +678,23 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     if (!PROFILE_ID.test(pid) || !Array.isArray(b?.articles) || !b?.judged || typeof b.judged !== 'object') return json({ error: 'INVALID' }, 400, {});
     await env.REVIEWS.put(`gold:${pid}`, JSON.stringify({ generatedAt: b.generatedAt ?? new Date().toISOString(), articles: b.articles, judged: b.judged }));
     return json({ ok: true, count: (b.articles as unknown[]).length }, 200, {});
+  }
+
+  // the self-learned second opinion (src/domain/learn.ts): published nightly, public read (word statistics only, no names)
+  if (url.pathname === '/model' && req.method === 'GET') {
+    const pid = url.searchParams.get('profile') ?? DEFAULT_PROFILE;
+    if (!PROFILE_ID.test(pid)) return json({ error: 'INVALID_PROFILE' }, 400, h);
+    const v = await env.REVIEWS.get(`model:${pid}`);
+    return new Response(v ?? 'null', { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', ...h } });
+  }
+  if (url.pathname === '/model' && req.method === 'POST') {
+    if (!safeEqual((req.headers.get('authorization') ?? '').trim(), `Bearer ${(env.EXPORT_TOKEN ?? '').trim()}`)) return json({ error: 'UNAUTHORIZED' }, 401, {});
+    if (Number(req.headers.get('content-length') ?? 0) > 2_000_000) return json({ error: 'TOO_LARGE' }, 413, {});
+    const b = (await req.json().catch(() => null)) as { profile?: string; model?: { v?: number; w?: unknown; prior?: unknown } } | null;
+    const pid = String(b?.profile ?? DEFAULT_PROFILE);
+    if (!PROFILE_ID.test(pid) || b?.model?.v !== 1 || typeof b.model.prior !== 'number' || !b.model.w || typeof b.model.w !== 'object') return json({ error: 'INVALID' }, 400, {});
+    await env.REVIEWS.put(`model:${pid}`, JSON.stringify(b.model));
+    return json({ ok: true }, 200, {});
   }
 
   // nightly export for the GitHub Action (bearer token, never sent to browsers)

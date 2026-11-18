@@ -1,5 +1,6 @@
 import { defaultSettings, defaultSources, parseWebsitesTxt, settingsForNewRegion } from '../../src/domain/defaults';
 import type { FilterSuggestion } from '../../src/domain/suggest';
+import type { LearnedModel } from '../../src/domain/learn';
 import type { ScheduleSlot, ScheduleState } from '../../src/domain/schedule';
 import { evaluateRule, validateRule } from '../../src/domain/rules';
 import { judgeRelevance } from '../../src/domain/relevance';
@@ -53,6 +54,8 @@ export interface Api {
   dismissSuggestion?(id: string): Promise<void>;
   /** the judged stories ("bộ bài chuẩn") for the impact preview of a settings change */
   golden?(): Promise<GoldenSet>;
+  /** web: the self-learned model of the active profile (null before the first nightly training) */
+  learnedModel?(): Promise<LearnedModel | null>;
   /** "Lượt đã lưu" › Xoá – local: deletes the saved run; web: hides it for the whole team (reviewer login, can be restored) */
   deleteRun?(id: string): Promise<void>;
   /** web only: runs removed by a reviewer, newest removal first, to restore them */
@@ -616,6 +619,14 @@ class DemoApi implements Api {
     const r = await fetch(`${this.reviewApi}/suggestions?profile=${encodeURIComponent(this.pid)}`, { cache: 'no-cache' });
     if (!r.ok) throw new ApiError(`Không tải được gợi ý (HTTP ${r.status})`);
     return (await r.json()) as SuggestionsState;
+  }
+  private modelP: Promise<LearnedModel | null> | null = null;
+  learnedModel(): Promise<LearnedModel | null> {
+    if (!this.reviewApi || this.mode !== 'live') return Promise.resolve(null);
+    this.modelP ??= fetch(`${this.reviewApi}/model?profile=${encodeURIComponent(this.pid)}`, { cache: 'no-cache' })
+      .then((r) => (r.ok ? (r.json() as Promise<LearnedModel | null>) : null))
+      .catch(() => null);
+    return this.modelP;
   }
   async golden(): Promise<GoldenSet> {
     if (!this.reviewApi || this.mode !== 'live') return { articles: [], judged: {} };
