@@ -10,6 +10,19 @@ import { uncertainStories, type UncertainStory } from '../../src/domain/suggest'
 import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { QrDialog } from './QrTool';
+import type { AskReply, AskRequest } from './askWorker';
+
+/** one background thread for "Hỏi nhanh" (created on first use; null when the browser has no workers) */
+let askWorkerInst: Worker | null | undefined;
+function askWorker(): Worker | null {
+  if (askWorkerInst !== undefined) return askWorkerInst;
+  try {
+    askWorkerInst = typeof Worker === 'undefined' ? null : new Worker(new URL('./askWorker.ts', import.meta.url), { type: 'module' });
+  } catch {
+    askWorkerInst = null;
+  }
+  return askWorkerInst;
+}
 import { catStyle, STATE_LABEL, StateChip, useEscape, useToast } from './ui';
 
 type Tab = 'articles' | 'review' | 'coverage' | 'export';
@@ -507,6 +520,7 @@ export function App() {
   // A period asks ONE round of at most 8 stories, fixed when computed: answering them does not bring the next 8 (the card
   // would never close). When the round is done the card says so for a few seconds, then hides (user, 17/11/2026).
   const [uncertain, setUncertain] = useState<UncertainStory[] | null>(null);
+  const askSeq = useRef(0);
   const [askSkipped, setAskSkipped] = useState<Set<string>>(new Set());
   const [askHidden, setAskHidden] = useState(false);
   const judgedRef = useRef<(id: string) => boolean>(() => false);
@@ -516,14 +530,34 @@ export function App() {
     setAskSkipped(new Set());
     setAskHidden(false);
     if (!settings || !arts.length || !bodiesReady) return;
+    let alive = true;
+    const pick = (list: UncertainStory[]) => alive && setUncertain(list.filter((x) => !judgedRef.current(x.article.id)).slice(0, 8));
     const timer = setTimeout(() => {
-      try {
-        setUncertain(uncertainStories(arts, settings, new Set(), 40).filter((x) => !judgedRef.current(x.article.id)).slice(0, 8));
-      } catch {
-        setUncertain([]);
+      const w = askWorker();
+      if (!w) {
+        // no worker (old browser): same work on the page
+        try {
+          pick(uncertainStories(arts, settings, new Set(), 40));
+        } catch {
+          if (alive) setUncertain([]);
+        }
+        return;
       }
+      const id = ++askSeq.current;
+      const byId = new Map(arts.map((a) => [a.id, a]));
+      const onMsg = (e: MessageEvent<AskReply>) => {
+        if (e.data.id !== id) return;
+        w.removeEventListener('message', onMsg);
+        if (!e.data.ok) return alive && setUncertain([]);
+        pick(e.data.items.flatMap((x) => (byId.has(x.articleId) ? [{ article: byId.get(x.articleId)!, status: x.status as UncertainStory['status'], why: x.why, weight: x.weight }] : [])));
+      };
+      w.addEventListener('message', onMsg);
+      w.postMessage({ id, arts, settings } satisfies AskRequest);
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
   }, [arts, settings, bodiesReady]);
   const askable = useMemo(() => (uncertain ?? []).filter((x) => !judgedRef.current(x.article.id) && !askSkipped.has(x.article.id)), [uncertain, reviews, votes, askSkipped]);
   // nothing (left) to ask: show "done" briefly, then hide the card
@@ -650,6 +684,11 @@ export function App() {
               </button>
             )}
             </div>
+            {api.shared && server && (
+              <div className="w-full border-t border-slate-100 pt-2 lg:ml-auto lg:w-auto lg:border-0 lg:pt-0">
+                <ServerStrip server={server} profileId={profiles?.activeId ?? 'hcm'} remote={!!remote} onToggle={toggleAuto} />
+              </div>
+            )}
           </div>
           {/* exact date/time: shown on demand */}
           <div className={editWindow ? 'animate-in mt-3 flex flex-wrap items-end gap-4 border-t border-slate-100 pt-3' : 'hidden'}>
@@ -660,7 +699,6 @@ export function App() {
         </section>
         )}
 
-        {api.shared && server && <ServerStrip server={server} profileId={profiles?.activeId ?? 'hcm'} remote={!!remote} onToggle={toggleAuto} />}
 
         {remote && (
           <section className="card animate-in flex flex-wrap items-center gap-3 border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="remote-collect">
@@ -2228,7 +2266,7 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
   const run = server.running[0];
   const who = run?.kind === 'request' ? personName(/\((.*)\)(?:\s*\[[^\]]*\])?\s*$/.exec(run.title)?.[1] ?? '') || undefined : undefined;
   return (
-    <section className="card animate-in flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2.5 text-sm" data-testid="server-status">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm" data-testid="server-status">
       <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700" title="Tự động thu thập theo giờ cố định cho địa bàn đang chọn">
         <AlarmClock className="h-4 w-4 text-teal-600" /> Tự động
       </span>
@@ -2240,7 +2278,6 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
       <span className="text-xs text-slate-500" data-testid="auto-info" title={next ? 'Dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại' : 'Chỉ thu thập khi có người bấm Thu thập'}>
         {next ? <>Tiếp: <b className="text-slate-700">{next.slot.at} {next.at.slice(8, 10)}/{next.at.slice(5, 7)}/{next.at.slice(0, 4)}</b></> : 'Đang tắt'}
       </span>
-      <span className="flex-1" />
       {run ? (
         <span className="inline-flex items-center gap-2 text-xs font-medium text-amber-800" data-testid="server-busy" title={!remote ? 'Nút Thu thập mở lại khi xong' : undefined}>
           <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -2252,7 +2289,7 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
           <span className="h-2 w-2 rounded-full bg-green-500" /> Máy chủ rảnh
         </span>
       )}
-    </section>
+    </div>
   );
 }
 
