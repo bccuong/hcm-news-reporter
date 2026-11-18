@@ -246,3 +246,19 @@ export const STATE_COLOR: Record<string, string> = {
 export function StateChip({ state }: { state: string }) {
   return <span className={`chip ${STATE_COLOR[state] ?? 'border-blue-300 bg-blue-50 text-blue-800'}`}>{STATE_LABEL[state] ?? state}</span>;
 }
+
+/**
+ * One colour per sector, the same on the filter chips and on each story's label (user, 18/11/2026).
+ * Full class strings (Tailwind keeps only classes written out). The label text always comes with the colour.
+ */
+export const CAT_STYLE: Record<string, { dot: string; soft: string; solid: string }> = {
+  LAND: { dot: 'bg-amber-500', soft: 'border-amber-300 bg-amber-50 text-amber-900', solid: 'border-amber-600 bg-amber-600 text-white' },
+  BUILD: { dot: 'bg-orange-500', soft: 'border-orange-300 bg-orange-50 text-orange-900', solid: 'border-orange-600 bg-orange-600 text-white' },
+  INFRA: { dot: 'bg-emerald-500', soft: 'border-emerald-300 bg-emerald-50 text-emerald-900', solid: 'border-emerald-600 bg-emerald-600 text-white' },
+  TRAFFIC: { dot: 'bg-blue-500', soft: 'border-blue-300 bg-blue-50 text-blue-900', solid: 'border-blue-600 bg-blue-600 text-white' },
+  REALESTATE: { dot: 'bg-fuchsia-500', soft: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900', solid: 'border-fuchsia-600 bg-fuchsia-600 text-white' },
+  FLOOD: { dot: 'bg-cyan-500', soft: 'border-cyan-300 bg-cyan-50 text-cyan-900', solid: 'border-cyan-600 bg-cyan-600 text-white' },
+  INVEST: { dot: 'bg-lime-600', soft: 'border-lime-300 bg-lime-50 text-lime-900', solid: 'border-lime-700 bg-lime-700 text-white' },
+  POLICY: { dot: 'bg-slate-500', soft: 'border-slate-300 bg-slate-100 text-slate-800', solid: 'border-slate-700 bg-slate-700 text-white' },
+};
+export const catStyle = (code: string | null | undefined) => (code && CAT_STYLE[code]) || { dot: 'bg-slate-300', soft: 'border-slate-300 bg-white text-slate-600', solid: 'border-slate-600 bg-slate-600 text-white' };

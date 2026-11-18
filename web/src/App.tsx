@@ -10,7 +10,7 @@ import { uncertainStories, type UncertainStory } from '../../src/domain/suggest'
 import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { QrDialog } from './QrTool';
-import { STATE_LABEL, StateChip, useEscape, useToast } from './ui';
+import { catStyle, STATE_LABEL, StateChip, useEscape, useToast } from './ui';
 
 type Tab = 'articles' | 'review' | 'coverage' | 'export';
 const ASSESS: EditorialAssessment[] = ['needs_attention', 'positive', 'neutral'];
@@ -1264,6 +1264,15 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
       if (Number.isNaN(a) || Number.isNaN(b)) return Number.isNaN(a) ? (Number.isNaN(b) ? 0 : 1) : -1;
       return newestFirst ? b - a : a - b;
     });
+  // stories per sector in this list (shown on the filter chips)
+  const catCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of list) {
+      const k = (reviews[a.id]?.primaryCategory ?? a.primaryCategory) as string | null;
+      if (k) m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return m;
+  }, [list, reviews]);
   const catLabel = (c: string | null | undefined) => settings?.categories.find((x) => x.code === c)?.label ?? 'Chưa phân loại';
   // bulk actions apply to the stories SHOWN (search + sector filter); stories merged into another one are skipped
   const selectable = shown.filter((a) => !reviews[a.id]?.groupId);
@@ -1286,7 +1295,11 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
         </div>
         <button className={`chip ${cat === 'all' ? 'border-navy-700 bg-navy-700 text-white' : 'border-slate-300 bg-white'}`} onClick={() => setCat('all')}>Tất cả</button>
         {settings?.categories.filter((c) => c.enabled).map((c) => (
-          <button key={c.code} className={`chip ${cat === c.code ? 'border-navy-700 bg-navy-700 text-white' : 'border-slate-300 bg-white'}`} onClick={() => setCat(c.code)}>{c.label}</button>
+          <button key={c.code} className={`chip ${cat === c.code ? catStyle(c.code).solid + ' shadow-sm' : 'border-slate-300 bg-white hover:bg-slate-50'}`} onClick={() => setCat(cat === c.code ? 'all' : c.code)} aria-pressed={cat === c.code} data-testid={`cat-filter-${c.code}`}>
+            <span className={`h-2 w-2 rounded-full ${cat === c.code ? 'bg-white' : catStyle(c.code).dot}`} aria-hidden="true" />
+            {c.label}
+            {catCount.get(c.code) ? <span className="tabular-nums opacity-70">{catCount.get(c.code)}</span> : null}
+          </button>
         ))}
         <button className="btn-ghost btn-xs ml-auto" onClick={() => setNewestFirst((v) => !v)} title="Đổi thứ tự theo giờ đăng" data-testid="sort-toggle">
           {newestFirst ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />} {newestFirst ? 'Mới nhất trước' : 'Cũ nhất trước'}
@@ -1374,7 +1387,7 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
                 <div className="mb-1 flex flex-wrap items-center gap-1 text-xs">
                   <span className="font-semibold text-navy-700">{a.sourceName}</span>
                   <span className="text-slate-500">{a.publishedAt ? formatVn(a.publishedAt) : 'chưa rõ giờ đăng'}</span>
-                  <span className="chip border-teal-200 bg-teal-50 text-teal-800">{catLabel(r?.primaryCategory ?? a.primaryCategory)}</span>
+                  <span className={`chip font-medium ${catStyle(r?.primaryCategory ?? a.primaryCategory).soft}`} data-testid="story-cat"><span className={`h-1.5 w-1.5 rounded-full ${catStyle(r?.primaryCategory ?? a.primaryCategory).dot}`} aria-hidden="true" />{catLabel(r?.primaryCategory ?? a.primaryCategory)}</span>
                   {asm && <span className={`chip ${ASSESS_COLOR[asm]}`}>{ASSESSMENT_LABEL[asm]}{!r?.assessment && ' (gợi ý)'}</span>}
                   {c && !['ready_for_review', 'reviewed'].includes(c.state) && <StateChip state={c.state} />}
                   {r?.groupId ? (
