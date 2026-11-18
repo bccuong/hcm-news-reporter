@@ -265,7 +265,7 @@ describe('shared review worker', () => {
       /** KV like Cloudflare: a read returns the copy cached by the first read for 60 s */
       class StaleKV extends MemKV {
         cache = new Map<string, string | null>();
-        async get(k: string) {
+        override async get(k: string) {
           if (!this.cache.has(k)) this.cache.set(k, await super.get(k));
           return this.cache.get(k)!;
         }

@@ -1350,7 +1350,8 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
           const r = reviews[a.id];
           const c = cands.get(a.id);
           const asm = r?.assessment ?? a.suggestedAssessment;
-          const img = a.imageCandidates[0];
+          // the photo chosen in Biên tập (null = "Không dùng ảnh"), else the article's first photo
+          const img = r?.primaryImageUrl === null ? undefined : r?.primaryImageUrl ? { url: r.primaryImageUrl } : a.imageCandidates[0];
           return (
             <article key={a.id} className={`card animate-in flex gap-3 p-3 transition-shadow hover:shadow-md ${r?.included ? 'ring-2 ring-teal-500' : ''}`}>
               <label className="flex flex-col items-center gap-1 pt-1 text-[10px] text-slate-500">
@@ -1360,7 +1361,7 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
               {img ? (
                 <img src={img.url} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-20 w-28 shrink-0 rounded bg-slate-100 object-cover" onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
               ) : (
-                <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded bg-slate-100 text-[10px] text-slate-400">không có ảnh</div>
+                <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded bg-slate-100 text-[10px] text-slate-400">{r?.primaryImageUrl === null ? 'không dùng ảnh' : 'không có ảnh'}</div>
               )}
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex flex-wrap items-center gap-1 text-xs">
@@ -1827,10 +1828,45 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
   const srcText = `${a.title} ${a.sapo} ${a.bodyText}`;
   const missingNums = (summary.match(/\d[\d.,]*/g) ?? []).filter((x) => !srcText.includes(x));
   const toast = useToast();
-  const save = () => onPatch({ title, summary, shortLabel: short, proposal });
-  // the button confirms (the fields also save when leaving them)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'nochange' | 'error'>('idle');
+  /** only the fields that differ from the saved review (leaving an unchanged field saves nothing, no history entry) */
+  const changed = () => {
+    const cur = { title: r?.title ?? a.title, summary: r?.summary ?? a.sapo, shortLabel: r?.shortLabel ?? a.title.slice(0, 42), proposal: r?.proposal ?? '' };
+    const next = { title, summary, shortLabel: short, proposal };
+    return Object.fromEntries(Object.entries(next).filter(([k, v]) => v !== cur[k as keyof typeof cur])) as Partial<ReviewDecision>;
+  };
+  // a field saves itself when left; the button then reports that save instead of "no change"
+  const editedRef = useRef(false);
+  const lastSaveRef = useRef<Promise<unknown>>(Promise.resolve());
+  const save = () => {
+    const p = changed();
+    if (!Object.keys(p).length) return undefined;
+    editedRef.current = true;
+    const run = Promise.resolve(onPatch(p));
+    lastSaveRef.current = run;
+    return run;
+  };
+  const [photoSaved, setPhotoSaved] = useState(false);
+  const pickPhoto = async (url: string | null) => {
+    setPhotoSaved(false);
+    if ((await onPatch({ primaryImageUrl: url })) !== false) {
+      setPhotoSaved(true);
+      setTimeout(() => setPhotoSaved(false), 3000);
+    }
+  };
+  // the button confirms next to itself (the fields also save when leaving them)
   const saveNow = async () => {
-    if ((await save()) !== false) toast('ok', 'Đã lưu biên tập');
+    setSaveState('saving');
+    const before = await lastSaveRef.current.catch(() => false); // a field that was just left is still saving
+    const p = changed();
+    const ok = Object.keys(p).length ? await onPatch(p) : before;
+    if (ok === false) setSaveState('error');
+    else if (Object.keys(p).length || editedRef.current) {
+      setSaveState('saved');
+      toast('ok', 'Đã lưu biên tập');
+    } else setSaveState('nochange');
+    editedRef.current = false;
+    setTimeout(() => setSaveState((s) => (s === 'saving' ? s : 'idle')), 3000);
   };
   // "Tồn tại cần khắc phục": unit suggested from the topic (Cài đặt › Báo cáo & mẫu › Đề xuất giao đơn vị)
   const suggested = suggestAssignment({ title, sapo: a.sapo }, settings);
@@ -1959,16 +1995,22 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
                 {a.imageCandidates.map((im) => {
                   const chosen = (r?.primaryImageUrl === undefined ? a.imageCandidates[0]?.url : r.primaryImageUrl) === im.url;
                   return (
-                    <button key={im.url} className={`overflow-hidden rounded border text-left text-[10px] ${chosen ? 'ring-2 ring-teal-500' : ''}`} onClick={() => onPatch({ primaryImageUrl: im.url })}>
+                    <button key={im.url} className={`overflow-hidden rounded border text-left text-[10px] ${chosen ? 'ring-2 ring-teal-500' : ''}`} onClick={() => pickPhoto(im.url)}>
                       <img src={im.url} alt={im.caption ?? ''} referrerPolicy="no-referrer" className="h-20 w-full bg-slate-100 object-cover" onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
                       <div className="p-1">{im.origin} · quyền: {im.rightsStatus === 'review' ? 'cần xem' : im.rightsStatus}{im.credit && ` · ${im.credit}`}</div>
                     </button>
                   );
                 })}
-                <button className={`rounded border p-2 text-xs ${r?.primaryImageUrl === null ? 'ring-2 ring-teal-500' : ''}`} onClick={() => onPatch({ primaryImageUrl: null })}>Không dùng ảnh (bố cục chữ)</button>
+                <button className={`rounded border p-2 text-xs ${r?.primaryImageUrl === null ? 'ring-2 ring-teal-500' : ''}`} onClick={() => pickPhoto(null)}>Không dùng ảnh (bố cục chữ)</button>
+                {photoSaved && <span className="self-center text-sm font-medium text-green-700" data-testid="photo-saved">✓ Đã đổi ảnh (thẻ tin và báo cáo dùng ảnh này)</span>}
               </div>
             </div>
-            <button className="btn-primary" onClick={saveNow}>Lưu biên tập</button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button className="btn-primary" onClick={saveNow} disabled={saveState === 'saving'}>{saveState === 'saving' ? 'Đang lưu…' : 'Lưu biên tập'}</button>
+              {saveState === 'saved' && <span className="text-sm font-medium text-green-700" data-testid="edit-saved">✓ Đã lưu cho cả nhóm</span>}
+              {saveState === 'nochange' && <span className="text-sm text-slate-500" data-testid="edit-saved">✓ Đã lưu – không có thay đổi mới</span>}
+              {saveState === 'error' && <span className="text-sm text-red-700">Chưa lưu được – thử lại</span>}
+            </div>
             <div className="rounded border border-slate-200 bg-slate-50 p-2">
               <span className="label">Góp ý cho bộ lọc (vì sao bài này nên/không nên được thu thập, lĩnh vực đúng là gì…)</span>
               <div className="mb-1 flex gap-1">
