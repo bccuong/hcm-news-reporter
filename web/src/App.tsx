@@ -840,7 +840,7 @@ function SourceStrip({ run, arts, ready, sources, onOpen }: { run: RunInfo; arts
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <h2 className="text-sm font-semibold text-navy-800">Nguồn tin trong kỳ</h2>
         <span className="text-xs text-slate-400" data-testid="source-strip-caption" title={`${formatVn(run.window.from)} → ${formatVn(run.window.to)}${run.finishedAt ? ` · lượt cuối ${formatVn(run.finishedAt)}` : ''}`}>
-          {run.finishedAt ? `cập nhật ${shortVn(run.finishedAt)}` : ''}
+          {run.finishedAt ? `cập nhật ${formatVn(run.finishedAt)}` : ''}
         </span>
         {run.active ? (
           <span className="chip border-blue-300 bg-blue-50 text-blue-800"><RefreshCw className="h-3 w-3 animate-spin" /> đang chạy</span>
@@ -2115,7 +2115,7 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
         ))}
       </div>
       <span className="text-xs text-slate-500" data-testid="auto-info" title={next ? 'Dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại' : 'Chỉ thu thập khi có người bấm Thu thập'}>
-        {next ? <>Tiếp: <b className="text-slate-700">{next.slot.at} {next.at.slice(8, 10)}/{next.at.slice(5, 7)}</b></> : 'Đang tắt'}
+        {next ? <>Tiếp: <b className="text-slate-700">{next.slot.at} {next.at.slice(8, 10)}/{next.at.slice(5, 7)}/{next.at.slice(0, 4)}</b></> : 'Đang tắt'}
       </span>
       <span className="flex-1" />
       {run ? (
