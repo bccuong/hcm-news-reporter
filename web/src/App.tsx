@@ -546,7 +546,7 @@ export function App() {
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-navy-700 to-teal-600 text-sm font-bold text-white shadow-sm">ĐT</div>
+          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" aria-hidden="true" className="h-9 w-9 shrink-0 rounded-xl shadow-sm" data-testid="app-logo" />
           <h1 className="hidden max-w-[22rem] truncate text-[15px] font-bold text-navy-800 md:block" data-testid="app-subtitle" title={settings?.report.subtitle ?? ''}>
             {settings?.report.subtitle || 'Điểm tin báo chí'}
           </h1>

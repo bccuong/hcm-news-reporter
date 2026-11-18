@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- News Reporter: a tower crane lifting a newspaper with a city skyline (construction news) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f3a68"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- tower crane: mast, jib, apex ties, hook line -->
+  <g stroke="#fff" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M52 56V12" stroke-width="3"/>
+    <path d="M18 14h40" stroke-width="2.6"/>
+    <path d="M52 7L30 14M52 7l6 7" stroke-width="1.6" opacity=".85"/>
+    <path d="M26 14v7" stroke-width="1.8"/>
+  </g>
+  <rect x="54.5" y="15.5" width="4.5" height="4" rx="1" fill="#fbbf24"/>
+  <!-- newspaper -->
+  <rect x="7" y="21" width="38" height="33" rx="4" fill="#fff"/>
+  <rect x="11" y="25" width="30" height="5" rx="1.5" fill="#1f3a68"/>
+  <rect x="11" y="34" width="13" height="2.8" rx="1.4" fill="#94a3b8"/>
+  <rect x="11" y="39.5" width="13" height="2.8" rx="1.4" fill="#94a3b8"/>
+  <rect x="11" y="45" width="9" height="2.8" rx="1.4" fill="#94a3b8"/>
+  <!-- skyline -->
+  <path d="M27 50V41h4v-6h4v15z" fill="#0d9488"/>
+  <path d="M36 50V37h5v13z" fill="#1f3a68"/>
+</svg>
