@@ -528,6 +528,8 @@ test('"Tạo mã QR": any address → preview, the PNG decodes back to that addr
     };
   });
   await dlg.getByTestId('qr-download-png').click();
+  // the PNG is drawn asynchronously before the (caught) download: wait for it on slow machines (CI)
+  await page.waitForFunction(() => !!(window as unknown as { __saved?: unknown }).__saved);
   const px = await page.evaluate(async () => {
     const saved = await (window as unknown as { __saved: Promise<{ name: string; src: string }> }).__saved;
     const img = new Image();
