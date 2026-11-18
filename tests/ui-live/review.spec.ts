@@ -48,7 +48,7 @@ test('shared review: login gate, votes from two reviewers, team quality, export'
   await b.getByRole('button', { name: FLOOD }).click();
   await expect(b.getByText(/Nhóm duyệt: ✓2 ✗0/).first()).toBeVisible();
   // team quality card uses the majority vote
-  await b.getByRole('button', { name: /Độ phủ/ }).click();
+  await b.getByTestId('open-coverage').click();
   await expect(b.getByTestId('quality-card')).toContainText('Độ chính xác tab Sẵn sàng: 50%');
   await b.screenshot({ path: 'docs/screenshots/shared-review.png', fullPage: false });
 

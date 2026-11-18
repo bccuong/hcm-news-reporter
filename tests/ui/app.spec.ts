@@ -162,14 +162,18 @@ test('UI-06 + E2E: custom window [from,to), collect fixtures, ledger reasons, se
   await expect(page.getByText(/Mưa lớn tối 8.11 khiến/)).toBeVisible({ timeout: 30_000 });
   // custom window persisted (preset) after reload
   await page.reload();
-  // 4 tabs (no separate "Sổ ứng viên"); every discovered link is still listed with its reason, folded at the end of "Độ phủ & nguồn"
-  await expect(page.getByRole('navigation', { name: 'Các mục' }).getByRole('button')).toHaveText([/^Bài sẵn sàng/, /^Cần kiểm tra/, 'Độ phủ & nguồn', /^Xuất báo cáo/]);
-  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  // 3 main tabs; "Độ phủ & nguồn" opens from "Nguồn tin trong kỳ" as a drawer (18/11/2026); every discovered link is still
+  // listed with its reason, folded at the end of it
+  await expect(page.getByRole('navigation', { name: 'Các mục' }).getByRole('button')).toHaveText([/^Bài sẵn sàng/, /^Cần kiểm tra/, /^Xuất báo cáo/]);
+  await page.getByTestId('open-coverage').click();
+  await expect(page.getByRole('dialog', { name: 'Độ phủ & nguồn' })).toBeVisible();
   await expect(page.getByText(/Đối soát link: 12 \/ 12/)).toBeVisible();
   await page.getByTestId('all-links').locator('summary').click();
   await expect(page.getByText('OUTSIDE_DATE_WINDOW').first()).toBeVisible();
   await expect(page.getByText('FETCH_403').first()).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/coverage.png', fullPage: true });
+  await page.keyboard.press('Escape'); // closes like Cài đặt
+  await expect(page.getByRole('dialog', { name: 'Độ phủ & nguồn' })).toBeHidden();
   // select and export
   await page.getByRole('button', { name: /Bài sẵn sàng/ }).click();
   await page.getByLabel(/Chọn bài \[Mẫu thử\] Mưa lớn tối 8.11 khiến/).check();
@@ -231,12 +235,11 @@ test('Editor feedback: label ready / excluded stories → filter quality card (p
   await expect(page.getByTestId('excluded-list')).toContainText('Khánh thành nhà ga metro');
   await expect(page.getByTestId('excluded-list')).toContainText('không liên quan');
   // a story the filter excluded, rescued by the editor from the list of all links
-  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  await page.getByTestId('open-coverage').click();
   await page.getByTestId('all-links').locator('summary').click();
   const row = page.locator('tr', { hasText: 'mau-thu-ha-noi-mo-rong-duong-vanh-dai' });
   await row.getByRole('button', { name: 'Thực ra liên quan?' }).click();
   await expect(row.getByRole('button', { name: /Liên quan \(bị loại nhầm\)/ })).toBeVisible();
-  await page.getByRole('button', { name: /Độ phủ/ }).click();
   const card = page.getByTestId('quality-card');
   await expect(card).toContainText('Đã đánh giá: 3');
   await expect(card).toContainText('Độ chính xác tab Sẵn sàng: 50%');
@@ -245,27 +248,29 @@ test('Editor feedback: label ready / excluded stories → filter quality card (p
   await page.screenshot({ path: 'docs/screenshots/filter-quality.png', fullPage: false });
   // labels persist (stored with the review)
   await page.reload();
-  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  await page.getByTestId('open-coverage').click();
   await expect(page.getByTestId('quality-card')).toContainText('Đã đánh giá: 3');
 });
 
 test('DIS-08: publisher redesign → coverage tab shows degraded adapter, articles move to review queue', async ({ page, request }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  await page.getByTestId('open-coverage').click();
   await expect(page.getByTestId('adapter-health').first()).toContainText('Bộ bóc tách: ổn định');
+  await page.getByRole('button', { name: 'Đóng độ phủ' }).click();
   await request.post('/__e2e/redesign', { data: { mode: 'new_container' } });
   await page.getByRole('button', { name: 'Tùy chỉnh' }).click();
   await setWindowField(page, 'Từ', '2026-11-08T17:00');
   await setWindowField(page, 'Đến', '2026-11-09T08:00');
   await page.getByRole('button', { name: 'Thu thập' }).click();
   await expect(page.getByText('bóc tách suy giảm')).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: /Độ phủ/ }).click();
+  await page.getByTestId('open-coverage').click();
   const card = page.getByTestId('adapter-health').first();
   await expect(card).toContainText('Bộ bóc tách: SUY GIẢM');
   await expect(card).toContainText('Khung nội dung bài đổi từ ".detail-content"');
   await expect(card.getByRole('button', { name: 'Quét lại nguồn này' })).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/adapter-degraded.png', fullPage: true });
   // the publisher's articles are no longer "ready": they sit in the review queue with the reason
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /Cần kiểm tra/ }).click();
   await expect(page.getByText(/Bộ bóc tách nguồn này suy giảm/).first()).toBeVisible();
   await request.post('/__e2e/redesign', { data: { mode: 'none' } });
@@ -488,6 +493,12 @@ test('ESC closes "Xem chi tiết" / "Biên tập", Cài đặt and dialogs like 
     await remove.click();
     await page.keyboard.press('Escape');
   }
+  // Độ phủ & nguồn (a drawer opened from Nguồn tin trong kỳ): ESC closes it
+  await page.getByTestId('open-coverage').click();
+  const cov = page.getByRole('dialog', { name: 'Độ phủ & nguồn' });
+  await expect(cov).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(cov).toBeHidden();
   // Cài đặt: ESC closes it
   await page.getByRole('button', { name: 'Cài đặt' }).click();
   const dlg = page.getByRole('dialog', { name: 'Cài đặt' });

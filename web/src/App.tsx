@@ -25,7 +25,7 @@ function askWorker(): Worker | null {
 }
 import { catStyle, STATE_LABEL, StateChip, useEscape, useToast } from './ui';
 
-type Tab = 'articles' | 'review' | 'coverage' | 'export';
+type Tab = 'articles' | 'review' | 'export';
 const ASSESS: EditorialAssessment[] = ['needs_attention', 'positive', 'neutral'];
 const ASSESS_COLOR: Record<EditorialAssessment, string> = { needs_attention: 'text-red-700 border-red-300 bg-red-50', positive: 'text-green-700 border-green-300 bg-green-50', neutral: 'text-slate-700 border-slate-300 bg-slate-50' };
 
@@ -52,6 +52,8 @@ export function App() {
   const [arts, setArts] = useState<Article[]>([]);
   const [reviews, setReviews] = useState<Record<string, ReviewDecision>>({});
   const [tab, setTab] = useState<Tab>('articles');
+  /** "Độ phủ & nguồn" of the viewed period: a drawer opened from "Nguồn tin trong kỳ" (user, 18/11/2026) */
+  const [coverageOpen, setCoverageOpen] = useState(false);
   const [inspect, setInspect] = useState<string | null>(null);
   const [preset, setPreset] = useState<'last_completed' | 'today' | 'yesterday' | 'custom'>('last_completed');
   const [from, setFrom] = useState('');
@@ -740,7 +742,7 @@ export function App() {
         {asking && <QuickAsk items={asking} onAnswer={answerAsk} onSkip={(x) => setAskSkipped((s) => new Set(s).add(x.article.id))} onClose={() => setAsking(null)} />}
 
         {/* sources of the viewed period: one tile per publisher */}
-        {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')}
+        {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setCoverageOpen(true)}
           picker={runs.length > 0 ? <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá' : undefined} onRestore={api.restoreRun && canDeleteRuns ? restoreRun : undefined} /> : null} canTest={() => (api.shared && !api.shared.session() ? (setLoginOpen(true), false) : true)} />}
 
         {!run ? (
@@ -756,7 +758,6 @@ export function App() {
                 [
                   ['articles', 'Bài sẵn sàng', ready.length, CheckCircle2, 'bg-green-600 text-white', 'text-green-700'],
                   ['review', 'Cần kiểm tra', reviewQueue.length, AlertTriangle, reviewQueue.length ? 'bg-amber-500 text-white' : 'bg-slate-300 text-slate-700', 'text-amber-600'],
-                  ['coverage', 'Độ phủ & nguồn', null, BarChart3, '', 'text-sky-700'],
                   ['export', 'Xuất báo cáo', selected, FileText, selected ? 'bg-navy-700 text-white' : 'bg-slate-300 text-slate-700', 'text-navy-700'],
                 ] as const
               ).map(([k, l, n, Icon, badge, ic]) => (
@@ -781,11 +782,15 @@ export function App() {
             </nav>
             {tab === 'articles' && <ArticleList list={ready} excluded={readyPool.filter(isOut)} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} votes={votes} />}
             {tab === 'review' && <ArticleList list={reviewQueue} excluded={reviewPool.filter(isOut)} reviews={reviews} cands={candByArticle} settings={settings} onInspect={setInspect} onPatch={guardedPatch} reviewMode votes={votes} />}
-            {tab === 'coverage' && <Coverage ledger={<Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} reviews={reviews} onPatch={patch} />} run={run} cands={cands} reviewsKey={`${saved}`} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />}
             {tab === 'export' && settings && <ExportPanel run={run} arts={artById} reviews={reviews} settings={settings} onPatch={patch} onInspect={setInspect} onMerge={merge} onSplit={split} />}
           </>
         )}
       </main>
+      {coverageOpen && run && (
+        <CoverageDrawer onClose={() => setCoverageOpen(false)} title={`Độ phủ & nguồn · ${runLabel(run)}`}>
+          <Coverage ledger={<Ledger cands={cands} sources={sources} onInspect={(aid) => setInspect(aid)} reviews={reviews} onPatch={patch} />} run={run} cands={cands} reviewsKey={`${saved}`} onOpenSettings={() => setSettingsOpen(true)} onRetry={async (body) => { try { const r = await api.retry(run.runId, body); setRunId(r.runId); toast('info', 'Đang chạy lại…'); } catch (e) { toast('err', (e as Error).message); } }} />
+        </CoverageDrawer>
+      )}
       {inspect && artById.get(inspect) && settings && (
         <Inspector a={artById.get(inspect)!} c={candByArticle.get(inspect)} r={reviews[inspect]} settings={settings} onClose={() => setInspect(null)} onPatch={(p) => guardedPatch(inspect, p)}
           arts={artById} reviews={reviews} onMerge={merge} onSplit={split} onOpen={setInspect} />
@@ -892,6 +897,23 @@ function summarizeProbe(r: any): QuickCheck {
   if (bad.length || (sample && !sampleOk)) return { at, tone: 'warn', text: `${okR.length}/${routes.length} đường OK`, detail };
   return { at, tone: 'ok', text: `hoạt động · ${links} link`, detail };
 }
+/** right-side drawer like Cài đặt; ESC / X / the backdrop close it */
+function CoverageDrawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  useEscape(onClose);
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/30" role="dialog" aria-modal="true" aria-label="Độ phủ & nguồn" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="flex h-full w-full max-w-[1100px] flex-col bg-slate-50 shadow-2xl">
+        <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
+          <BarChart3 className="h-5 w-5 text-teal-600" />
+          <h2 className="min-w-0 flex-1 truncate text-lg font-bold text-navy-800">{title}</h2>
+          <button className="btn-ghost rounded-full px-2" onClick={onClose} aria-label="Đóng độ phủ" title="Đóng (Esc)"><X className="h-4 w-4" /></button>
+        </header>
+        <div className="flex-1 overflow-y-auto p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function SourceStrip({ run, arts, ready, sources, onOpen, canTest, picker }: { run: RunInfo; arts: Article[]; ready: Article[]; sources: Source[]; onOpen: () => void; canTest: () => boolean; picker?: ReactNode }) {
   const [checks, setChecks] = useState<Record<string, QuickCheck>>({});
   const quickCheck = async (id: string) => {
@@ -928,7 +950,9 @@ function SourceStrip({ run, arts, ready, sources, onOpen, canTest, picker }: { r
         ) : api.mode === 'live' ? (
           <span className="chip border-slate-300 bg-slate-50 text-slate-600">kỳ đã chốt</span>
         ) : null}
-        <button className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline" onClick={onOpen}>Chi tiết <ArrowRight className="h-3 w-3" /></button>
+        <button className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 transition hover:bg-teal-100" onClick={onOpen} data-testid="open-coverage" title="Độ phủ từng báo, chất lượng bộ lọc, mọi link đã phát hiện và lý do bị loại">
+          <BarChart3 className="h-3.5 w-3.5" /> Độ phủ & nguồn <ArrowRight className="h-3 w-3" />
+        </button>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {shown.map((s) => {
