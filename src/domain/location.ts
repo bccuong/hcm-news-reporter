@@ -1,5 +1,5 @@
 import type { Settings } from './schemas.js';
-import { findWord, normText, snippet, blankPhrases } from './text.js';
+import { findWord, normText, normTextCached, snippet, blankPhrases } from './text.js';
 
 export interface LocationResult {
   status: 'hcm' | 'connected' | 'other_province' | 'unknown';
@@ -46,7 +46,7 @@ function detectLocationInner(rawTitle: string, rawBody: string, loc: Settings['l
   let distinct = 0;
   // ward names repeat across provinces since the 2025 mergers: "phường Xuân Hòa (tỉnh Phú Thọ)" is not the city's
   const othersNorm = loc.otherProvinces.filter(Boolean).map((p) => normText(p));
-  const ntext = normText(text);
+  const ntext = normTextCached(text);
   const belongsElsewhere = (at: number, len: number) => {
     const after = ntext.slice(at + len, at + len + 40).replace(/^[\s,(–-]+/, '').replace(/^(tỉnh|thành phố|tp\.?)\s+/, '');
     return othersNorm.some((p) => after.startsWith(p));

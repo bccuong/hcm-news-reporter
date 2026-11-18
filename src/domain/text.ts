@@ -9,12 +9,42 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * normText of the texts being searched and the compiled phrase patterns are cached: the filter looks for hundreds of
+ * places / keywords in every story, and normalising the whole article + building a RegExp on every call made
+ * "Hỏi nhanh" take ~15 s for one period (18/11/2026). Bounded so a long session cannot grow them without limit.
+ */
+const phraseNorm = new Map<string, string>(); // keywords, place names (few thousand, reused for every story)
+const textNorm = new Map<string, string>(); // the texts being searched (a few per story, stories go one after another)
+const wordRe = new Map<string, RegExp>();
+const wordReG = new Map<string, RegExp>();
+function cached(m: Map<string, string>, max: number, s: string): string {
+  let v = m.get(s);
+  if (v === undefined) {
+    if (m.size > max) m.clear();
+    v = normText(s);
+    m.set(s, v);
+  }
+  return v;
+}
+const normPhrase = (s: string) => cached(phraseNorm, 20000, s);
+export const normTextCached = (s: string) => cached(textNorm, 256, s);
+const boundaryRe = (n: string, flags: string) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(n).replace(/ /g, '\\s+')}(?![\\p{L}\\p{N}])`, flags);
+
 /** Whole-word / whole-phrase match using Unicode letter boundaries. */
 export function findWord(haystack: string, needle: string): number {
-  const n = normText(needle);
+  const n = normPhrase(needle);
   if (!n) return -1;
-  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(n).replace(/ /g, '\\s+')}(?![\\p{L}\\p{N}])`, 'u');
-  const m = re.exec(normText(haystack));
+  const h = normTextCached(haystack);
+  // both are normalised to single spaces: the phrase must occur as a substring before the word-boundary check
+  if (!h.includes(n)) return -1;
+  let re = wordRe.get(n);
+  if (!re) {
+    if (wordRe.size > 20000) wordRe.clear();
+    re = boundaryRe(n, 'u');
+    wordRe.set(n, re);
+  }
+  const m = re.exec(h);
   return m ? m.index : -1;
 }
 
@@ -37,11 +67,18 @@ export function findPhraseNotName(haystack: string, needle: string): number {
 
 /** Blanks out every whole-phrase occurrence of `phrases` (same matching as findWord); returns normalised text. */
 export function blankPhrases(haystack: string, phrases: string[]): string {
-  let t = normText(haystack);
+  let t = normTextCached(haystack);
   for (const p of phrases) {
-    const n = normText(p);
-    if (!n) continue;
-    t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(n).replace(/ /g, '\\s+')}(?![\\p{L}\\p{N}])`, 'gu'), (m) => ' '.repeat(m.length));
+    const n = normPhrase(p);
+    if (!n || !t.includes(n)) continue;
+    let re = wordReG.get(n);
+    if (!re) {
+      if (wordReG.size > 20000) wordReG.clear();
+      re = boundaryRe(n, 'gu');
+      wordReG.set(n, re);
+    }
+    re.lastIndex = 0;
+    t = t.replace(re, (m) => ' '.repeat(m.length));
   }
   return t;
 }
@@ -53,7 +90,7 @@ export function findSubstring(haystack: string, needle: string): number {
 
 /** Short context snippet around a match for explanation badges. */
 export function snippet(text: string, index: number, len: number, pad = 40): string {
-  const t = normText(text);
+  const t = normTextCached(text);
   const a = Math.max(0, index - pad);
   const b = Math.min(t.length, index + len + pad);
   return `${a > 0 ? '…' : ''}${t.slice(a, b)}${b < t.length ? '…' : ''}`;
