@@ -510,7 +510,7 @@ test('Hỏi nhanh: an answer moves on at once (save in the background), every vo
   await login(page, 'Người duyệt Q', 'HCM-TEST-CODE');
   const card = page.getByTestId('quick-ask');
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await card.getByRole('button', { name: 'Bắt đầu' }).click();
+  await card.getByRole('button', { name: /Bắt đầu Hỏi nhanh/ }).click(); // a pill in the header (18/11/2026)
   const dlg = page.getByRole('dialog', { name: 'Hỏi nhanh' });
   const total = Number(/\/ (\d+)/.exec(await dlg.innerText())![1]);
   const titles: string[] = [];
@@ -531,7 +531,7 @@ test('Hỏi nhanh: an answer moves on at once (save in the background), every vo
   await dlg.getByRole('button', { name: 'Xong' }).click();
   // the round is over: the card says so (no next 8 stories), then closes by itself
   await expect(card).toHaveAttribute('data-state', 'done');
-  await expect(card).toContainText('đã chấm xong');
+  await expect(card).toContainText(/đã chấm xong/i);
   await expect(card).toBeHidden({ timeout: 8000 });
   // all votes reach the worker (sent one after another in the background)
   await expect.poll(async () => {
