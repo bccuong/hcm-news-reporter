@@ -624,3 +624,24 @@ test('Biên tập in "Xem chi tiết": edited title / summary are saved for the 
   await page.locator('article').filter({ hasText: 'Tiêu đề đã biên tập H' }).getByRole('button', { name: 'Xem chi tiết' }).click();
   await expect(page.getByRole('dialog', { name: 'Chi tiết bài' }).getByLabel(/Tóm tắt/)).toHaveValue('Tóm tắt đã biên tập H.');
 });
+
+test('source tile "Kiểm tra nhanh": checks the publisher now (1 listing page + 1 sample) and shows the result under the period status', async ({ page, request }) => {
+  // the shared configuration lists the fixture publishers (the button needs the source's settings)
+  const cur = ((await (await request.get('http://127.0.0.1:5181/config?profile=hcm')).json()) as { config: { settings: unknown } | null }).config;
+  const A = 'https://fixture-a.example.vn';
+  const saved = await request.post('http://127.0.0.1:5181/config', { headers: { 'x-review-code': 'HCM-TEST-CODE', 'content-type': 'application/json' }, data: { profile: 'hcm', reviewer: 'Người duyệt K', settings: cur?.settings ?? {}, sources: [{ id: 'fixture-a', name: 'Báo mẫu thử A', baseUrl: A, rssUrls: [`${A}/rss/thoi-su.rss`], sectionUrls: [`${A}/thoi-su.htm`] }] } });
+  expect(saved.status()).toBe(200);
+  await page.goto('');
+  const btn = page.getByTestId('source-check-fixture-a');
+  await expect(btn).toBeVisible();
+  await btn.click(); // not logged in → the login dialog
+  await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await login(page, 'Người duyệt K', 'HCM-TEST-CODE');
+  const id = (await btn.getAttribute('data-testid'))!.replace('source-check-', '');
+  await btn.click();
+  const res = page.getByTestId(`source-check-result-${id}`);
+  await expect(res).toContainText(/Bây giờ \(\d\d:\d\d\): /, { timeout: 30_000 });
+  await expect(res).toContainText(/hoạt động · \d+ link|đường OK|không lấy được tin/);
+  await expect(page.getByTestId(`source-tile-${id}`)).toContainText(/✓ OK|Một phần|lỗi/); // the period's own status stays
+});

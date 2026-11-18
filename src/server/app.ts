@@ -173,7 +173,7 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
   app.post('/api/sources/test', async (req) => {
     const src = SourceSchema.parse((req.body as { source: unknown }).source);
     const s = await stores.getSettings();
-    return probeSource(src, s, makeHttp(s, [src]));
+    return (req.body as { quick?: boolean }).quick ? probeSource(src, s, makeHttp(s, [src]), 1, 1) : probeSource(src, s, makeHttp(s, [src]));
   });
 
   /* ---------- rules preview ---------- */

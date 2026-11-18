@@ -39,7 +39,8 @@ export interface Api {
   saveSources(list: Source[], summary: string): Promise<Source[]>;
   importSkill(text: string): Promise<{ sources: Source[]; comments: string[]; errors: string[] }>;
   detect(url: string): Promise<{ name: string; rss: string[]; sitemaps: string[]; sections: string[]; sampleArticles: string[]; errors: string[] }>;
-  testSource(src: Source): Promise<any>;
+  /** quick: one listing page and one sample article (the "kiểm tra nhanh" button on a source tile) */
+  testSource(src: Source, opts?: { quick?: boolean }): Promise<any>;
   previewRule(root: RuleNode, settings: Settings, sample?: { title: string; body: string }, runId?: string): Promise<PreviewResult>;
   history(): Promise<HistoryEntry[]>;
   rollback(id: string): Promise<void>;
@@ -155,7 +156,7 @@ class LocalApi implements Api {
   saveSources = (sources: Source[], summary: string) => this.req<Source[]>('PUT', '/api/sources', { sources, summary });
   importSkill = (text: string) => this.req<any>('POST', '/api/sources/import-skill', { text });
   detect = (url: string) => this.req<any>('POST', '/api/sources/detect', { url });
-  testSource = (source: Source) => this.req<any>('POST', '/api/sources/test', { source });
+  testSource = (source: Source, opts?: { quick?: boolean }) => this.req<any>('POST', '/api/sources/test', { source, quick: !!opts?.quick });
   previewRule = (root: RuleNode, settings: Settings, sample?: { title: string; body: string }, runId?: string) =>
     this.req<PreviewResult>('POST', '/api/rules/preview', { root, settings, sample, runId });
   history = () => this.req<HistoryEntry[]>('GET', '/api/settings/history');
@@ -536,10 +537,10 @@ class DemoApi implements Api {
     const { detectStructure } = await import('../../src/collector/probe');
     return detectStructure(url, http);
   }
-  async testSource(src: Source) {
+  async testSource(src: Source, opts?: { quick?: boolean }) {
     const http = this.proxyHttp();
     const { probeSource } = await import('../../src/collector/probe');
-    return probeSource(src, await this.getSettings(), http);
+    return opts?.quick ? probeSource(src, await this.getSettings(), http, 1, 1) : probeSource(src, await this.getSettings(), http);
   }
   async previewRule(root: RuleNode, settings: Settings, sample?: { title: string; body: string }) {
     const results: PreviewResult['results'] = [];

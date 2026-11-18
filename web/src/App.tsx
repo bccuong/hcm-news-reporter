@@ -1,4 +1,4 @@
-import { AlarmClock, AlertTriangle, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, QrCode, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
+import { Activity, AlarmClock, AlertTriangle, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, QrCode, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
@@ -700,7 +700,7 @@ export function App() {
         {asking && <QuickAsk items={asking} onAnswer={answerAsk} onSkip={(x) => setAskSkipped((s) => new Set(s).add(x.article.id))} onClose={() => setAsking(null)} />}
 
         {/* sources of the viewed period: one tile per publisher */}
-        {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')} />}
+        {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setTab('coverage')} canTest={() => (api.shared && !api.shared.session() ? (setLoginOpen(true), false) : true)} />}
 
         {!run ? (
           <div className="card animate-in flex flex-col items-center gap-2 p-10 text-center text-slate-500">
@@ -834,7 +834,36 @@ function homeOf(sources: Source[], id: string): string | null {
   }
 }
 
-function SourceStrip({ run, arts, ready, sources, onOpen }: { run: RunInfo; arts: Article[]; ready: Article[]; sources: Source[]; onOpen: () => void }) {
+/** "Kiểm tra nhanh" result of one source, now (not the period's status, which stays as collected) */
+interface QuickCheck { busy?: boolean; at?: string; tone?: 'ok' | 'warn' | 'bad'; text?: string; detail?: string }
+function summarizeProbe(r: any): QuickCheck {
+  const routes: Array<{ method: string; url: string; status: string; error?: string; found: number }> = r?.stats?.routes ?? [];
+  const okR = routes.filter((x) => x.status !== 'error');
+  const bad = routes.filter((x) => x.status === 'error');
+  const sample = r?.samples?.[0];
+  const sampleOk = !!sample && !sample.error && sample.completeness !== 'failed';
+  const links = r?.stats?.candidates ?? 0;
+  const at = new Date().toISOString();
+  const badText = bad.map((x) => `${x.method === 'rss' ? 'RSS' : x.method === 'sitemap' ? 'Sitemap' : 'Chuyên mục'} ${x.url.replace(/^https?:\/\/(www\.)?[^/]+/, '') || '/'}: ${x.error ?? 'lỗi'}`);
+  const sampleText = sample ? (sampleOk ? `bài mẫu đọc được (${sample.paragraphs} đoạn)` : `bài mẫu lỗi: ${sample.error ?? 'không bóc tách được'}`) : 'chưa có bài mẫu';
+  const detail = [`${links} link mới`, sampleText, ...badText].join('\n');
+  if (!okR.length || !links) return { at, tone: 'bad', text: 'không lấy được tin', detail };
+  if (bad.length || (sample && !sampleOk)) return { at, tone: 'warn', text: `${okR.length}/${routes.length} đường OK`, detail };
+  return { at, tone: 'ok', text: `hoạt động · ${links} link`, detail };
+}
+function SourceStrip({ run, arts, ready, sources, onOpen, canTest }: { run: RunInfo; arts: Article[]; ready: Article[]; sources: Source[]; onOpen: () => void; canTest: () => boolean }) {
+  const [checks, setChecks] = useState<Record<string, QuickCheck>>({});
+  const quickCheck = async (id: string) => {
+    const src = sources.find((x) => x.id === id);
+    if (!src || !canTest()) return;
+    setChecks((c) => ({ ...c, [id]: { busy: true } }));
+    try {
+      const r = await api.testSource(src, { quick: true });
+      setChecks((c) => ({ ...c, [id]: summarizeProbe(r) }));
+    } catch (e) {
+      setChecks((c) => ({ ...c, [id]: { at: new Date().toISOString(), tone: 'bad', text: 'lỗi kiểm tra', detail: (e as Error).message } }));
+    }
+  };
   const live = run.notes?.some((x) => x.startsWith('Kỳ đang diễn ra'));
   const extracted = new Map<string, number>();
   for (const a of arts) extracted.set(a.sourceId, (extracted.get(a.sourceId) ?? 0) + 1);
@@ -883,6 +912,19 @@ function SourceStrip({ run, arts, ready, sources, onOpen }: { run: RunInfo; arts
                 ) : (
                   <span className="truncate text-sm font-semibold text-slate-800">{s.sourceName}</span>
                 )}
+                {sources.some((x) => x.id === s.sourceId) && (
+                  <button
+                    type="button"
+                    className="ml-auto shrink-0 rounded-full p-1 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 disabled:opacity-60"
+                    onClick={() => void quickCheck(s.sourceId)}
+                    disabled={checks[s.sourceId]?.busy}
+                    title={`Kiểm tra nhanh ${s.sourceName} ngay bây giờ (đọc trang mục lục và 1 bài mẫu, khoảng 5–20 giây)`}
+                    aria-label={`Kiểm tra nhanh ${s.sourceName}`}
+                    data-testid={`source-check-${s.sourceId}`}
+                  >
+                    {checks[s.sourceId]?.busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                  </button>
+                )}
               </div>
               <button
                 onClick={onOpen}
@@ -903,6 +945,17 @@ function SourceStrip({ run, arts, ready, sources, onOpen }: { run: RunInfo; arts
                   <span className={s.status === 'partial' ? 'text-amber-700' : 'text-slate-600'}>{SRC_STATUS[s.status] ?? s.status}</span>
                 )}
               </div>
+              {(() => {
+                const q = checks[s.sourceId];
+                if (!q || q.busy) return q?.busy ? <div className="mt-1 border-t border-slate-100 pt-1 text-[11px] text-slate-500" data-testid={`source-check-result-${s.sourceId}`}>Đang kiểm tra…</div> : null;
+                const tone = q.tone === 'ok' ? 'text-green-700' : q.tone === 'warn' ? 'text-amber-700' : 'text-red-700';
+                return (
+                  <div className={`mt-1 border-t border-slate-100 pt-1 text-[11px] font-medium ${tone}`} title={q.detail} data-testid={`source-check-result-${s.sourceId}`}>
+                    {q.tone === 'ok' ? '✓' : q.tone === 'warn' ? '⚠' : '✗'} Bây giờ ({hhmm(q.at!)}): {q.text}
+                    {q.tone !== 'ok' && q.detail && <div className="mt-0.5 whitespace-pre-line break-words font-normal text-slate-500">{q.detail.split('\n').slice(1, 4).join('\n')}</div>}
+                  </div>
+                );
+              })()}
               </button>
             </div>
           );

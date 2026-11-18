@@ -38,13 +38,13 @@ export async function detectStructure(baseUrl: string, http: HttpClient) {
 }
 
 /** "Thử thu thập": run discovery on the (unsaved) source and extract a few samples. */
-export async function probeSource(src: Source, settings: Settings, http: HttpClient, sampleCount = 3) {
+export async function probeSource(src: Source, settings: Settings, http: HttpClient, sampleCount = 3, maxPages = 5) {
   const ledger = new Ledger('run_probe');
   const stats: SourceRunStats = {
     sourceId: src.id, sourceName: src.name, status: 'running', routes: [], listingPagesVisited: 0,
-    listingPageLimit: Math.min(src.crawlLimits.maxListingPages, 5), limitReached: false, candidates: 0,
+    listingPageLimit: Math.min(src.crawlLimits.maxListingPages, maxPages), limitReached: false, candidates: 0,
   };
-  const limited: Source = { ...src, crawlLimits: { ...src.crawlLimits, maxListingPages: Math.min(src.crawlLimits.maxListingPages, 5), maxDepth: Math.min(src.crawlLimits.maxDepth, 1) } };
+  const limited: Source = { ...src, crawlLimits: { ...src.crawlLimits, maxListingPages: Math.min(src.crawlLimits.maxListingPages, maxPages), maxDepth: Math.min(src.crawlLimits.maxDepth, 1) } };
   const window = { from: new Date(Date.now() - 36 * 3600_000).toISOString(), to: new Date().toISOString() };
   await discoverSource({ runId: 'run_probe', window, trigger: 'manual', settings, sources: [limited], stores: null as never, http }, limited, ledger, stats);
   const cands = ledger.all();
