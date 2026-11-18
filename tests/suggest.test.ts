@@ -149,3 +149,12 @@ describe('learning from stories the team moved to "Sẵn sàng" by hand (18/11/2
   });
 
 });
+
+describe('never a suggestion to look for another province (18/11/2026)', () => {
+  it('"hà nội" is not proposed as a word to include, even when two judged stories would be kept by it', () => {
+    const a1 = art('Công ty Hà Nội huy động vốn làm khu nhà ở', 'Doanh nghiệp tại Hà Nội làm dự án ở TP.HCM.', 'Dự án tại phường An Khánh, TP.HCM.');
+    const a2 = art('Nhà đầu tư Hà Nội mua quỹ đất', 'Một nhà đầu tư Hà Nội mua đất ở TP.HCM.', 'Khu đất ở phường Bình Trưng, TP.HCM.');
+    const judged = new Map<string, Judged>([[a1.id, { relevant: true, why: 'decision' }], [a2.id, { relevant: true, why: 'decision' }]]);
+    expect(suggestFilter([a1, a2], judged, s).filter((x) => /hà nội/i.test(x.phrase))).toEqual([]);
+  });
+});

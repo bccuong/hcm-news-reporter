@@ -163,6 +163,9 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
   const dismissed = new Set(opts.dismissed ?? []);
   const base = new Map(articles.map((a) => [a.id, statusOf(a, s)]));
   const lead = (a: Article) => `${a.title}\n${a.sapo ?? ''}`;
+  // another province's / region's name is never a word to look for ("hà nội" was proposed on 18/11/2026)
+  const elsewhere = s.location.otherProvinces.filter(Boolean).map(normText);
+  const placeWord = (p: string) => elsewhere.some((o) => findWord(p, o) >= 0);
   const known = new Set([...(includeGroup(s)?.group.children ?? []).filter((c): c is RuleTerm => c.kind === 'term').map((c) => normText(c.value)), ...s.keywords.excludePhrases.map(normText)]);
   const missed = articles.filter((a) => judged.get(a.id)?.relevant && base.get(a.id) === 'irrelevant');
   const wrong = articles.filter((a) => judged.get(a.id)?.relevant === false && base.get(a.id) === 'relevant');
@@ -206,7 +209,7 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
   const consider = (kind: FilterSuggestion['kind'], targets: Article[], source: (a: Article) => string, candidates: (text: string) => string[] = (x) => phrasesOf(x, pairs)) => {
     // candidate phrases ranked by how many target stories contain them
     const support = new Map<string, number>();
-    for (const a of targets) for (const p of candidates(source(a))) if (!known.has(normText(p))) support.set(p, (support.get(p) ?? 0) + 1);
+    for (const a of targets) for (const p of candidates(source(a))) if (!known.has(normText(p)) && (kind === 'place' || !placeWord(p))) support.set(p, (support.get(p) ?? 0) + 1);
     const ranked = [...support].sort((x, y) => y[1] - x[1] || y[0].length - x[0].length).slice(0, 40); // same support: the longer (more specific) phrase first
     const tried: FilterSuggestion[] = [];
     for (const [phrase] of ranked) {
@@ -268,7 +271,7 @@ export function suggestFilter(articles: Article[], judged: Map<string, Judged>, 
   function considerUp(kind: 'sector', targets: Article[]): FilterSuggestion[] {
     const support = new Map<string, number>();
     const inSector = new Set(s.categories.flatMap((c) => c.keywords.map(normText)));
-    for (const a of targets) for (const p of phrasesOf(a.title, pairs)) if (!inSector.has(normText(p)) && !known.has(normText(p))) support.set(p, (support.get(p) ?? 0) + 1);
+    for (const a of targets) for (const p of phrasesOf(a.title, pairs)) if (!inSector.has(normText(p)) && !known.has(normText(p)) && !placeWord(p)) support.set(p, (support.get(p) ?? 0) + 1);
     const tried: FilterSuggestion[] = [];
     for (const [phrase] of [...support].sort((x, y) => y[1] - x[1] || y[0].length - x[0].length).slice(0, 30)) {
       const id = `${kind}:${phrase}`;
