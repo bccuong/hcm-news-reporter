@@ -296,6 +296,19 @@ class DemoApi implements Api {
     const runId = `run_live_${String(newest.key ?? newest.reportDate).replace(/[^0-9a-z]/gi, '')}`;
     this.runMeta.set(runId, { file: newest.file ?? `${newest.reportDate}.json`, reportDate: newest.reportDate, v: newest.generatedAt });
     this.load(runId).catch(() => this.bundles.delete(runId));
+    // the team's review of that period too (the list waits for it)
+    if (this.teamReview) {
+      const p = this.fetchTeamReview(runId);
+      p.catch(() => undefined); // not used → no unhandled rejection
+      this.reviewPrefetch = { id: runId, at: Date.now(), p };
+    }
+  }
+  private reviewPrefetch: { id: string; at: number; p: Promise<Record<string, any>> } | null = null;
+  private fetchTeamReview(id: string): Promise<Record<string, any>> {
+    return fetch(`${this.reviewApi}/review?profile=${encodeURIComponent(this.pid)}&period=${encodeURIComponent(id)}`, { cache: 'no-cache' }).then(async (r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      return ((await r.json()) as { reviews: Record<string, any> }).reviews;
+    });
   }
   /* ---- profiles: the active one is chosen per browser; each has its own published data live/<id>/ ---- */
   private get pid() {
@@ -655,9 +668,10 @@ class DemoApi implements Api {
     if (!this.teamReview) return local;
     let team: Record<string, Partial<ReviewDecision> & { by?: string; at?: string }>;
     try {
-      const r = await fetch(`${this.reviewApi}/review?profile=${encodeURIComponent(this.pid)}&period=${encodeURIComponent(id)}`, { cache: 'no-cache' });
-      if (!r.ok) throw new Error(String(r.status));
-      team = ((await r.json()) as { reviews: typeof team }).reviews;
+      // the copy fetched at page start is used once, within 15 s (later reads fetch again: other reviewers' changes)
+      const pre = this.reviewPrefetch;
+      this.reviewPrefetch = null;
+      team = pre && pre.id === id && Date.now() - pre.at < 15_000 ? await pre.p : await this.fetchTeamReview(id);
     } catch {
       return local; // offline: last copy seen in this browser
     }
