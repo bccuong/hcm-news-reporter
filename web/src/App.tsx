@@ -76,6 +76,8 @@ export function App() {
   // several loads can be in flight (startup, run picker, live refresh): only the most recently requested run is shown,
   // otherwise a slow earlier load could display one period while the review is saved to another
   const lastLoad = useRef<string | null>(null);
+  /** web: the full text of excluded stories arrives after the first paint (api.bodies) */
+  const [bodiesReady, setBodiesReady] = useState(true);
   const shownWindowOf = useRef<string | null>(null);
   useEffect(() => {
     const r = runs.find((x) => x.runId === runId);
@@ -143,6 +145,11 @@ export function App() {
     setCands(c);
     setArts(a);
     setReviews(rv);
+    setBodiesReady(false);
+    void (api.bodies?.(id) ?? Promise.resolve())
+      .then(() => lastLoad.current === id && setArts((x) => [...x]))
+      .catch(() => undefined)
+      .finally(() => lastLoad.current === id && setBodiesReady(true));
   }, []);
 
   // after an automatic reload for a new version (main.tsx, vite:preloadError): say why, once
@@ -508,7 +515,7 @@ export function App() {
     setUncertain(null);
     setAskSkipped(new Set());
     setAskHidden(false);
-    if (!settings || !arts.length) return;
+    if (!settings || !arts.length || !bodiesReady) return;
     const timer = setTimeout(() => {
       try {
         setUncertain(uncertainStories(arts, settings, new Set(), 40).filter((x) => !judgedRef.current(x.article.id)).slice(0, 8));
@@ -517,7 +524,7 @@ export function App() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [arts, settings]);
+  }, [arts, settings, bodiesReady]);
   const askable = useMemo(() => (uncertain ?? []).filter((x) => !judgedRef.current(x.article.id) && !askSkipped.has(x.article.id)), [uncertain, reviews, votes, askSkipped]);
   // nothing (left) to ask: show "done" briefly, then hide the card
   const askDone = uncertain !== null && askable.length === 0;
@@ -1900,6 +1907,7 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
                 return (
                   <div className="mt-1">
                     Bộ bóc tách: {a.extractionAdapterVersion} · {k.paragraphs} đoạn · {k.headings} tiêu đề phụ · {k.tables} bảng · {k.figures} ảnh
+                    {(a as Article & { bodyDeferred?: boolean }).bodyDeferred && <div className="mt-1 text-slate-600" data-testid="body-loading">Đang tải toàn văn bài…</div>}
                     {pub && <div className="mt-1 text-slate-600">Kỳ này được đăng trước khi web có toàn văn bài – bấm "Mở bài gốc" để đọc đầy đủ (các lượt thu thập mới có đủ nội dung).</div>}
                   </div>
                 );

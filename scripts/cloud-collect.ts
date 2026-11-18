@@ -52,10 +52,14 @@ export interface PublicDay {
 }
 export interface PublicIndex {
   kind: 'hcm-live-index'; generatedAt: string; schedule: string;
-  days: Array<{ reportDate: string; key?: string; file?: string; custom?: boolean; requestedBy?: string; scheduled?: string; window: { from: string; to: string }; provisional: boolean; generatedAt: string; counts: Record<string, number>; completeness: RunManifest['completeness'] }>;
+  days: Array<{ reportDate: string; key?: string; file?: string; lite?: string; custom?: boolean; requestedBy?: string; scheduled?: string; window: { from: string; to: string }; provisional: boolean; generatedAt: string; counts: Record<string, number>; completeness: RunManifest['completeness'] }>;
 }
 const KEEP_CUSTOM = 10;
 const keyOf = (d: { key?: string; reportDate: string }) => d.key ?? d.reportDate;
+/** the period without the full text of excluded stories (marked bodyDeferred) */
+export function liteDay<T extends { articles: Array<{ relevance?: { status?: string }; contentSections?: unknown[] }> }>(d: T): T {
+  return { ...d, articles: d.articles.map((a) => (a.relevance?.status === 'irrelevant' && a.contentSections?.length ? { ...a, contentSections: [], bodyDeferred: true } : a)) };
+}
 const stamp = (iso: string) => iso.slice(0, 16).replace(/[-:T]/g, '');
 const VN_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?\+07:00$/;
 
@@ -279,11 +283,16 @@ async function collectProfile(profile: PublicProfile, collect: boolean, now: Dat
   const daily = all.filter((d) => !d.custom).sort((a, b) => b.reportDate.localeCompare(a.reportDate)).slice(0, KEEP_DAYS);
   const customs = all.filter((d) => d.custom).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)).slice(0, KEEP_CUSTOM);
   const days = [...customs, ...daily].sort((a, b) => b.manifest.window.to.localeCompare(a.manifest.window.to) || (a.custom ? -1 : 1));
-  for (const d of days) writeFileSync(path.join(out, `${keyOf(d)}.json`), JSON.stringify(d));
+  for (const d of days) {
+    writeFileSync(path.join(out, `${keyOf(d)}.json`), JSON.stringify(d));
+    // light copy for the web's first paint (F5 on a phone, 18/11/2026): the full text of excluded stories (~60 % of the
+    // file) is left out and loaded afterwards from the full file, which every other reader keeps using
+    writeFileSync(path.join(out, `${keyOf(d)}.lite.json`), JSON.stringify(liteDay(d)));
+  }
   const index: PublicIndex = {
     kind: 'hcm-live-index', generatedAt: toVnIso(new Date()), schedule: 'Mỗi giờ (nếu bật tự động) + theo yêu cầu (nút "Thu thập" trên web)',
     days: days.map((d) => ({
-      reportDate: d.reportDate, key: keyOf(d), file: `${keyOf(d)}.json`, custom: d.custom, requestedBy: d.requestedBy, scheduled: d.scheduled, window: d.manifest.window,
+      reportDate: d.reportDate, key: keyOf(d), file: `${keyOf(d)}.json`, lite: `${keyOf(d)}.lite.json`, custom: d.custom, requestedBy: d.requestedBy, scheduled: d.scheduled, window: d.manifest.window,
       provisional: d.provisional, generatedAt: d.generatedAt, counts: d.manifest.counts, completeness: d.manifest.completeness,
     })),
   };

@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { deflateSync } from 'node:zlib';
 import path from 'node:path';
 import { AUTO_TITLE, handle, scheduledCollect, type KVLike } from '../cloud/review-worker/src/handler.js';
+import { liteDay } from './cloud-collect.js';
 import { A as SITE_A, siteARoutes } from '../tests/fixtures/siteA.js';
 const SITE_A_ROUTES = siteARoutes();
 
@@ -34,8 +35,10 @@ function publishCustom(from: string, to: string, by: string, scheduled?: string)
   const base = JSON.parse(readFileSync(path.join(LIVE, '2026-11-09.json'), 'utf8'));
   const key = `custom-${stamp(from)}-${stamp(to)}`;
   const window = { from: from.replace('+07:00', ':00+07:00'), to: to.replace('+07:00', ':00+07:00') };
-  writeFileSync(path.join(LIVE, `${key}.json`), JSON.stringify({ ...base, key, custom: true, requestedBy: by, scheduled, manifest: { ...base.manifest, window } }));
-  index.days.unshift({ ...index.days[0], key, file: `${key}.json`, custom: true, requestedBy: scheduled ? undefined : by, scheduled, window, generatedAt: new Date().toISOString() });
+  const day = { ...base, key, custom: true, requestedBy: by, scheduled, manifest: { ...base.manifest, window } };
+  writeFileSync(path.join(LIVE, `${key}.json`), JSON.stringify(day));
+  writeFileSync(path.join(LIVE, `${key}.lite.json`), JSON.stringify(liteDay(day)));
+  index.days.unshift({ ...index.days[0], key, file: `${key}.json`, lite: `${key}.lite.json`, custom: true, requestedBy: scheduled ? undefined : by, scheduled, window, generatedAt: new Date().toISOString() });
   index.generatedAt = new Date().toISOString(); // like the real publication: the site's "cập nhật lúc" moves
   writeFileSync(path.join(LIVE, 'index.json'), JSON.stringify(index));
 }

@@ -64,6 +64,8 @@ export interface Api {
   retry(id: string, body: { mode: 'failed' | 'source' | 'expand' | 'candidates'; sourceId?: string; candidateIds?: string[]; extraLookbackHours?: number }): Promise<{ runId: string }>;
   candidates(id: string): Promise<Candidate[]>;
   articles(id: string): Promise<Article[]>;
+  /** web: the full text of excluded stories arrives after the first paint (filled into the same articles) */
+  bodies?(id: string): Promise<void>;
   review(id: string): Promise<Record<string, ReviewDecision>>;
   patchReview(id: string, articleId: string, patch: Partial<ReviewDecision>): Promise<ReviewDecision>;
   capabilities(): Promise<{ pdf: boolean; soffice: string | null; templateFile: string | null; templateFidelity: boolean }>;
@@ -294,7 +296,7 @@ class DemoApi implements Api {
     const newest = days.reduce<any>((m, d) => (!m || String(d.window?.to ?? '') > String(m.window?.to ?? '') ? d : m), null);
     if (!newest) return;
     const runId = `run_live_${String(newest.key ?? newest.reportDate).replace(/[^0-9a-z]/gi, '')}`;
-    this.runMeta.set(runId, { file: newest.file ?? `${newest.reportDate}.json`, reportDate: newest.reportDate, v: newest.generatedAt });
+    this.runMeta.set(runId, { file: newest.file ?? `${newest.reportDate}.json`, lite: newest.lite, reportDate: newest.reportDate, v: newest.generatedAt });
     this.load(runId).catch(() => this.bundles.delete(runId));
     // the team's review of that period too (the list waits for it)
     if (this.teamReview) {
@@ -383,7 +385,7 @@ class DemoApi implements Api {
   }
   private latestId = '';
   /** runId → published file + report date (daily periods and on-demand "custom" windows) */
-  private runMeta = new Map<string, { file: string; reportDate: string; v?: string }>();
+  private runMeta = new Map<string, { file: string; reportDate: string; v?: string; lite?: string }>();
   private reportDateOf(runId: string) {
     return this.runMeta.get(runId)?.reportDate ?? runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
   }
@@ -394,19 +396,43 @@ class DemoApi implements Api {
     }
     const runId = id || this.latestId;
     if (!this.bundles.has(runId)) {
-      const file = this.runMeta.get(runId)?.file ?? `${runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')}.json`;
+      const meta = this.runMeta.get(runId);
+      const file = meta?.lite ?? meta?.file ?? `${runId.replace(/^run_live_(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')}.json`;
       this.bundles.set(
         runId,
         fetch(`${this.liveDir}${file}?v=${encodeURIComponent(this.runMeta.get(runId)?.v ?? '')}`, { cache: 'no-cache' })
           .then((r) => r.json())
-          .then((d: any) => ({ manifest: d.manifest, candidates: d.candidates.map((c: Candidate) => ({ ...c, history: [] })), articles: d.articles.map((a: any) => fromPublic(a, runId, d.generatedAt)) })),
+          .then((d: any) => ({ manifest: d.manifest, candidates: d.candidates.map((c: Candidate) => ({ ...c, history: [] })), articles: d.articles.map((a: any) => Object.assign(fromPublic(a, runId, d.generatedAt), a.bodyDeferred ? { bodyDeferred: true } : {})) })),
       );
     }
     return this.bundles.get(runId)!;
   }
+  private bodyLoads = new Map<string, Promise<void>>();
+  /** fills the full text of the stories the light copy left out (same article objects); no light copy → nothing to do */
+  bodies(id: string): Promise<void> {
+    const runId = id || this.latestId;
+    const meta = this.runMeta.get(runId);
+    if (this.mode !== 'live' || !meta?.lite) return Promise.resolve();
+    if (!this.bodyLoads.has(runId)) {
+      const p = Promise.all([this.load(runId), fetch(`${this.liveDir}${meta.file}?v=${encodeURIComponent(meta.v ?? '')}`, { cache: 'no-cache' }).then((r) => r.json())]).then(([b, full]: [DemoBundle, any]) => {
+        const byId = new Map<string, any>((full.articles ?? []).map((x: any) => [x.id, x]));
+        for (const a of b.articles as Array<Article & { bodyDeferred?: boolean }>) {
+          if (!a.bodyDeferred) continue;
+          const f = fromPublic(byId.get(a.id) ?? {}, runId, '');
+          a.contentSections = f.contentSections;
+          a.bodyText = f.bodyText;
+          delete a.bodyDeferred;
+        }
+      });
+      p.catch(() => this.bodyLoads.delete(runId));
+      this.bodyLoads.set(runId, p);
+    }
+    return this.bodyLoads.get(runId)!;
+  }
   refresh() {
     this.index = null;
     this.bundles.clear();
+    this.bodyLoads.clear();
   }
   async meta() {
     if (this.mode !== 'live') return null;
@@ -616,7 +642,7 @@ class DemoApi implements Api {
     const runs = days.map((d) => {
       const key: string = d.key ?? d.reportDate;
       const runId = `run_live_${key.replace(/[^0-9a-z]/gi, '')}`;
-      this.runMeta.set(runId, { file: d.file ?? `${d.reportDate}.json`, reportDate: d.reportDate, v: d.generatedAt });
+      this.runMeta.set(runId, { file: d.file ?? `${d.reportDate}.json`, lite: d.lite, reportDate: d.reportDate, v: d.generatedAt });
       const notes = [...(d.provisional ? ['Kỳ đang diễn ra – tạm thời'] : []), ...(d.scheduled ? [`Thu thập theo lịch ${d.scheduled}`] : d.custom ? [`Thu thập theo yêu cầu${d.requestedBy ? ` (${d.requestedBy})` : ''}`] : [])];
       return {
         runId, createdAt: d.generatedAt, finishedAt: d.generatedAt, window: d.window, trigger: (d.custom ? 'manual' : 'auto') as 'manual' | 'auto',
@@ -881,6 +907,7 @@ class DemoApi implements Api {
     };
   }
   async exportRun(id: string, formats: ExportFormat[], dryRun: boolean, templateId?: string): Promise<ExportResult> {
+    await this.bodies(id).catch(() => undefined);
     const { assembleStories } = await import('../../src/reports/assemble');
     const { checkFit } = await import('../../src/reports/pptx');
     const { buildFromTemplate, TemplateMismatchError } = await import('../../src/reports/templatePptx');

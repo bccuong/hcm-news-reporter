@@ -9,7 +9,7 @@ import { SourceSchema } from '../src/domain/schemas.js';
 import { toVnIso } from '../src/domain/timeWindow.js';
 import { makePaths, Stores } from '../src/storage/stores.js';
 import { A, D, WINDOW, fixtureTransport, publicResolver } from '../tests/fixtures/siteA.js';
-import { toPublicArticle } from './cloud-collect.js';
+import { liteDay, toPublicArticle } from './cloud-collect.js';
 
 const stores = new Stores(makePaths(mkdtempSync(path.join(tmpdir(), 'hcm-livefx-'))), '');
 const sources = [
@@ -27,8 +27,10 @@ const now = toVnIso(new Date());
 rmSync('web/public/live', { recursive: true, force: true });
 const out = 'web/public/live/hcm';
 mkdirSync(out, { recursive: true });
-writeFileSync(path.join(out, '2026-11-09.json'), JSON.stringify({ kind: 'hcm-live-day', reportDate: '2026-11-09', provisional: false, generatedAt: now, manifest: { ...m, reconciliation: reconcile(cands) }, candidates: cands.map(({ history: _h, ...c }) => c), articles: arts.filter((a) => keep.has(a.id)).map(toPublicArticle) }));
-writeFileSync(path.join(out, 'index.json'), JSON.stringify({ kind: 'hcm-live-index', generatedAt: now, schedule: 'fixture', days: [{ reportDate: '2026-11-09', window: m.window, provisional: false, generatedAt: now, counts: m.counts, completeness: m.completeness }] }));
+const day = { kind: 'hcm-live-day', reportDate: '2026-11-09', provisional: false, generatedAt: now, manifest: { ...m, reconciliation: reconcile(cands) }, candidates: cands.map(({ history: _h, ...c }) => c), articles: arts.filter((a) => keep.has(a.id)).map(toPublicArticle) };
+writeFileSync(path.join(out, '2026-11-09.json'), JSON.stringify(day));
+writeFileSync(path.join(out, '2026-11-09.lite.json'), JSON.stringify(liteDay(day))); // like cloud-collect: light copy for the first paint
+writeFileSync(path.join(out, 'index.json'), JSON.stringify({ kind: 'hcm-live-index', generatedAt: now, schedule: 'fixture', days: [{ reportDate: '2026-11-09', file: '2026-11-09.json', lite: '2026-11-09.lite.json', window: m.window, provisional: false, generatedAt: now, counts: m.counts, completeness: m.completeness }] }));
 writeFileSync('web/public/live/profiles.json', JSON.stringify({ kind: 'hcm-live-profiles', generatedAt: now, profiles: [
   { id: 'hcm', name: 'TP.HCM', description: 'Cấu hình mặc định', autoCollect: true, regionName: 'TP.HCM', periods: 1 },
 ] }));
