@@ -393,7 +393,7 @@ test('web: "Dò cấu trúc" and "Thử thu thập" run in the browser through t
   await page.screenshot({ path: 'docs/screenshots/web-source-test.png' });
 });
 
-test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; picking a saved run loads its window; reviewers remove / restore runs', async ({ page }) => {
+test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; picking a saved run loads its window; reviewers archive / bring back runs', async ({ page }) => {
   await page.goto('');
   await page.waitForLoadState('networkidle');
   const picker = page.getByTestId('run-picker');
@@ -422,22 +422,29 @@ test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; pic
   await picker.click();
   await expect(page.getByRole('button', { name: /^Xoá lượt/ })).toHaveCount(0);
   await page.keyboard.press('Escape');
-  // a reviewer removes the on-demand run: hidden for the team (another browser), the latest remaining run opens; restore brings it back
+  // a reviewer archives the on-demand run: it moves to "Lưu trữ" (collapsed, at the end) for the team, the latest
+  // remaining run opens; it can still be viewed, and brought back (18/11/2026)
   await login(page, 'Người duyệt E', 'HCM-TEST-CODE');
   await picker.click();
-  page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: 'Xoá lượt 08/11 18:00 → 09/11/2026 07:00' }).click();
+  await page.getByRole('button', { name: 'Lưu trữ lượt 08/11 18:00 → 09/11/2026 07:00' }).click();
   await expect(picker).not.toContainText('08/11 18:00 → 09/11/2026 07:00');
   const other = await page.context().browser()!.newPage();
   await other.goto(page.url());
   await other.waitForLoadState('networkidle');
   await other.getByTestId('run-picker').click();
-  await expect(other.getByRole('listbox', { name: 'Danh sách các lượt' })).not.toContainText('08/11 18:00 → 09/11/2026 07:00');
+  const archive = other.getByTestId('run-archive');
+  await expect(archive).toContainText('Lưu trữ (1)');
+  await archive.locator('summary').click();
+  await expect(archive).toContainText('08/11 18:00 → 09/11/2026 07:00');
   await other.close();
   await picker.click();
-  await page.getByText(/^Lượt đã xoá \(1\)/).click();
-  await page.getByRole('button', { name: 'Khôi phục' }).click(); // the list stays open
+  await page.getByTestId('run-archive').locator('summary').click();
+  await page.getByRole('button', { name: 'Bỏ lưu trữ lượt 08/11 18:00 → 09/11/2026 07:00' }).click();
+  await picker.click();
   await expect(rows.filter({ hasText: '08/11 18:00 → 09/11/2026 07:00' })).toHaveCount(1);
+  await expect(page.getByTestId('run-archive')).toHaveCount(0);
+  // "Xoá" is final: no list of deleted runs to restore from
+  await expect(page.getByText(/Lượt đã xoá/)).toHaveCount(0);
 });
 
 test('daily suggestions: published by the nightly job, applied (then saved) or dismissed for the whole team', async ({ page, request, browser }) => {

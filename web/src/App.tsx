@@ -1,4 +1,4 @@
-import { Activity, AlarmClock, AlertTriangle, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, QrCode, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
+import { Activity, AlarmClock, AlertTriangle, Archive, ArchiveRestore, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, QrCode, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
@@ -125,7 +125,7 @@ export function App() {
   /** "Lượt đã lưu" › Xoá (local: deleted; web: hidden for the team, restorable) */
   const removeRun = async (r: RunInfo) => {
     const local = api.mode === 'local';
-    const msg = `Xoá lượt ${runLabel(r)}?\n\n` + (local ? 'Dữ liệu thu thập và kết quả duyệt của lượt này sẽ bị xoá khỏi máy (các báo cáo đã xuất vẫn giữ).' : 'Lượt này sẽ ẩn với cả nhóm; có thể khôi phục ở cuối danh sách "Lượt đã lưu".');
+    const msg = `Xoá lượt ${runLabel(r)}?\n\n` + (local ? 'Dữ liệu thu thập và kết quả duyệt của lượt này sẽ bị xoá khỏi máy (các báo cáo đã xuất vẫn giữ).' : 'Lượt này bị xoá với cả nhóm và KHÔNG khôi phục được.\nMuốn cất đi để xem lại sau, hãy bấm Lưu trữ thay vì Xoá.');
     if (!window.confirm(msg)) return;
     try {
       await api.deleteRun!(r.runId);
@@ -151,6 +151,21 @@ export function App() {
     }
   };
   const canDeleteRuns = !!api.deleteRun && (api.mode === 'local' || !!api.shared?.session());
+  const archiveRun = async (r: RunInfo, on: boolean) => {
+    try {
+      await api.archiveRun!(r.runId, on);
+      const rs = await api.listRuns();
+      setRuns(rs);
+      // the viewed run put away: open the most recent one still in the list (like Xoá)
+      if (on && r.runId === runId) {
+        const l = latestRun(rs);
+        if (l) pickRun(l.runId);
+      }
+      toast('ok', on ? `Đã lưu trữ ${runLabel(r)} – xem lại ở mục "Lưu trữ" cuối danh sách` : `Đã đưa ${runLabel(r)} về danh sách`);
+    } catch (e) {
+      toast('err', (e as Error).message);
+    }
+  };
 
   const loadRun = useCallback(async (id: string) => {
     lastLoad.current = id;
@@ -743,7 +758,7 @@ export function App() {
 
         {/* sources of the viewed period: one tile per publisher */}
         {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setCoverageOpen(true)}
-          picker={runs.length > 0 ? <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá' : undefined} onRestore={api.restoreRun && canDeleteRuns ? restoreRun : undefined} /> : null} canTest={() => (api.shared && !api.shared.session() ? (setLoginOpen(true), false) : true)} />}
+          picker={runs.length > 0 ? <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá / lưu trữ' : undefined} onArchive={api.archiveRun && canDeleteRuns ? archiveRun : undefined} /> : null} canTest={() => (api.shared && !api.shared.session() ? (setLoginOpen(true), false) : true)} />}
 
         {!run ? (
           <div className="card animate-in flex flex-col items-center gap-2 p-10 text-center text-slate-500">
@@ -1278,9 +1293,8 @@ function runTag(r: RunInfo): { text: string; tone: string } {
 const STATUS_VN: Record<string, string> = { running: 'đang chạy', cancelled: 'đã dừng', failed: 'lỗi', partial: 'một phần', interrupted: 'bị ngắt' };
 
 /** "Lượt đã lưu": compact list, newest first, current one ticked; delete per run; removed runs (web) can be restored */
-function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { runs: RunInfo[]; runId: string | null; onPick: (id: string) => void; onDelete?: (r: RunInfo) => void; deleteHint?: string; onRestore?: (id: string) => void }) {
+function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onArchive }: { runs: RunInfo[]; runId: string | null; onPick: (id: string) => void; onDelete?: (r: RunInfo) => void; deleteHint?: string; onArchive?: (r: RunInfo, on: boolean) => void }) {
   const [open, setOpen] = useState(false);
-  const [removed, setRemoved] = useState<Array<{ run: RunInfo; by: string; at: string }> | null>(null);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -1294,11 +1308,10 @@ function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { r
     document.addEventListener('keydown', close);
     return () => (document.removeEventListener('mousedown', close), document.removeEventListener('keydown', close));
   }, [open]);
-  useEffect(() => {
-    if (open && onRestore && api.hiddenRuns) api.hiddenRuns().then(setRemoved).catch(() => setRemoved(null));
-  }, [open, onRestore, runs]);
   const at = (r: RunInfo) => Date.parse(r.finishedAt ?? r.createdAt) || 0;
-  const sorted = [...runs].sort((a, b) => at(b) - at(a));
+  const all = [...runs].sort((a, b) => at(b) - at(a));
+  const sorted = all.filter((r) => !r.archived);
+  const archived = all.filter((r) => r.archived);
   const cur = runs.find((r) => r.runId === runId);
   const tag = cur && runTag(cur);
   return (
@@ -1321,6 +1334,11 @@ function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { r
                   <span className="truncate tabular-nums">{runLabel(r)}</span>
                   <span className={`chip ml-auto shrink-0 ${tg.tone}`}>{tg.text}</span>
                 </button>
+                {onArchive && (
+                  <button type="button" className="rounded p-1.5 text-slate-400 hover:bg-teal-50 hover:text-teal-700 disabled:opacity-30" disabled={r.active} title="Lưu trữ: cất xuống mục Lưu trữ cuối danh sách, xem lại khi cần" aria-label={`Lưu trữ lượt ${runLabel(r)}`} onClick={() => (setOpen(false), onArchive(r, true))}>
+                    <Archive className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 {onDelete ? (
                   <button type="button" className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-700 disabled:opacity-30" disabled={r.active} title={r.active ? 'Lượt đang chạy – dừng trước khi xoá' : 'Xoá lượt này'} aria-label={`Xoá lượt ${runLabel(r)}`} onClick={() => (setOpen(false), onDelete(r))}>
                     <Trash2 className="h-3.5 w-3.5" />
@@ -1332,16 +1350,27 @@ function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { r
             );
           })}
           {!sorted.length && <p className="px-3 py-2 text-sm text-slate-500">Chưa có lượt nào.</p>}
-          {onRestore && removed && removed.length > 0 && (
-            <details className="mt-1 border-t border-slate-100 px-3 py-1.5 text-xs text-slate-600">
-              <summary className="cursor-pointer select-none">Lượt đã xoá ({removed.length})</summary>
-              {removed.map((x) => (
-                <div key={x.run.runId} className="flex items-center gap-2 py-1">
-                  <span className="truncate tabular-nums">{runLabel(x.run)}</span>
-                  <span className="truncate text-slate-400">xoá bởi {x.by}</span>
-                  <button type="button" className="ml-auto shrink-0 text-blue-700 underline" onClick={() => onRestore(x.run.runId)}>Khôi phục</button>
-                </div>
-              ))}
+          {archived.length > 0 && (
+            <details className="mt-1 border-t border-slate-100 px-1 py-1 text-sm" data-testid="run-archive" open={archived.some((r) => r.runId === runId)}>
+              <summary className="flex cursor-pointer select-none items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-500">
+                <Archive className="h-3.5 w-3.5" /> Lưu trữ ({archived.length})
+              </summary>
+              {archived.map((r) => {
+                const sel = r.runId === runId;
+                return (
+                  <div key={r.runId} className={`flex items-center gap-1 ${sel ? 'bg-navy-50' : 'hover:bg-slate-50'}`}>
+                    <button type="button" role="option" aria-selected={sel} className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-xs text-slate-600" onClick={() => (onPick(r.runId), setOpen(false))}>
+                      <Check className={`h-3 w-3 shrink-0 ${sel ? 'text-navy-700' : 'invisible'}`} />
+                      <span className="truncate tabular-nums">{runLabel(r)}</span>
+                    </button>
+                    {onArchive && (
+                      <button type="button" className="rounded p-1.5 text-slate-400 hover:bg-teal-50 hover:text-teal-700" title="Đưa về danh sách chính" aria-label={`Bỏ lưu trữ lượt ${runLabel(r)}`} onClick={() => (setOpen(false), onArchive(r, false))}>
+                        <ArchiveRestore className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </details>
           )}
         </div>
@@ -1351,9 +1380,10 @@ function RunPicker({ runs, runId, onPick, onDelete, deleteHint, onRestore }: { r
 }
 
 /** the most recent collection: latest finish (or start) time */
-function latestRun<T extends { finishedAt: string | null; createdAt: string }>(rs: T[]): T | undefined {
+function latestRun<T extends { finishedAt: string | null; createdAt: string; archived?: boolean }>(rs: T[]): T | undefined {
   const at = (r: T) => Date.parse(r.finishedAt ?? r.createdAt) || 0;
-  return [...rs].sort((a, b) => at(b) - at(a))[0];
+  const live = rs.filter((r) => !r.archived);
+  return [...(live.length ? live : rs)].sort((a, b) => at(b) - at(a))[0];
 }
 
 /** window of a preset ("Kỳ gần nhất", "Hôm nay", "Hôm qua", saved custom) */

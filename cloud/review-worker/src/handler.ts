@@ -576,7 +576,8 @@ async function readSuggestions(env: Env, pid: string): Promise<Suggestions> {
   return v ? { generatedAt: null, basis: null, items: [], dismissed: [], ...(JSON.parse(v) as Partial<Suggestions>) } : { generatedAt: null, basis: null, items: [], dismissed: [] };
 }
 
-export interface HiddenRun { runId: string; by: string; at: string }
+/** a run removed for the team (deleted), or put away in "Lưu trữ" (archived: still listed there, collapsed) */
+export interface HiddenRun { runId: string; by: string; at: string; archived?: boolean }
 async function readHiddenRuns(env: Env, pid: string): Promise<HiddenRun[]> {
   const v = await env.REVIEWS.get(`hid:${pid}`);
   return v ? (JSON.parse(v) as HiddenRun[]) : [];
@@ -756,14 +757,19 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
   }
 
   if (url.pathname === '/runs/hide' && req.method === 'POST') {
-    const b = (await req.json().catch(() => null)) as { profile?: string; runId?: string; hidden?: unknown; reviewer?: string } | null;
+    const b = (await req.json().catch(() => null)) as { profile?: string; runId?: string; hidden?: unknown; archived?: unknown; reviewer?: string } | null;
     const pid = String(b?.profile ?? DEFAULT_PROFILE);
     const runId = String(b?.runId ?? '');
     const reviewer = String(b?.reviewer ?? '').trim().slice(0, 40);
-    if (!PROFILE_ID.test(pid) || !PERIOD_ID.test(runId) || typeof b?.hidden !== 'boolean') return json({ error: 'INVALID_RUN' }, 400, h);
+    if (!PROFILE_ID.test(pid) || !PERIOD_ID.test(runId) || (typeof b?.hidden !== 'boolean' && typeof b?.archived !== 'boolean')) return json({ error: 'INVALID_RUN' }, 400, h);
     if (!reviewer) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
+    const prev = (await readHiddenRuns(env, pid)).find((x) => x.runId === runId);
     const list = (await readHiddenRuns(env, pid)).filter((x) => x.runId !== runId);
-    if (b.hidden) list.push({ runId, by: reviewer, at: new Date().toISOString() });
+    if (typeof b.archived === 'boolean') {
+      // archive / unarchive; a deleted run stays deleted
+      if (prev && !prev.archived) list.push(prev);
+      else if (b.archived) list.push({ runId, by: reviewer, at: new Date().toISOString(), archived: true });
+    } else if (b.hidden) list.push({ runId, by: reviewer, at: new Date().toISOString() });
     await env.REVIEWS.put(`hid:${pid}`, JSON.stringify(list.slice(-500)));
     return json({ ok: true, hidden: list }, 200, h);
   }

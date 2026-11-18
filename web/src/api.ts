@@ -12,7 +12,7 @@ import { templateById, TEMPLATES, UPLOAD_TEMPLATE_ID } from '../../src/reports/t
 import skillWebsites from '../../src/domain/data/skill-websites.txt?raw';
 import { z } from 'zod';
 
-export type RunInfo = RunManifest & { active?: boolean; reconciliation?: { total: number; accounted: number; transient: number; balanced: boolean } };
+export type RunInfo = RunManifest & { active?: boolean; /** web: put away in "Lưu trữ" (listed there, collapsed) */ archived?: boolean; reconciliation?: { total: number; accounted: number; transient: number; balanced: boolean } };
 export type { RelevanceQuality };
 export interface PreviewResult { errors: string[]; results: Array<{ id: string; title: string; matched: boolean; lines: string[]; location?: string }> }
 export interface ExportResult { ok: boolean; dryRun?: boolean; blockers?: string[]; warnings?: string[]; files?: string[]; pdfStatus?: string; stories?: number }
@@ -61,6 +61,8 @@ export interface Api {
   /** web only: runs removed by a reviewer, newest removal first, to restore them */
   hiddenRuns?(): Promise<Array<{ run: RunInfo; by: string; at: string }>>;
   restoreRun?(id: string): Promise<void>;
+  /** web: put a run away in "Lưu trữ" for the team, or bring it back */
+  archiveRun?(id: string, archived: boolean): Promise<void>;
   /** local: starts a run; live: asks the server (GitHub Actions) to collect → { remote: true } */
   startRun(window: ReportWindow, trigger: 'manual' | 'auto'): Promise<{ runId?: string; skipped?: string; remote?: boolean }>;
   getRun(id: string): Promise<RunInfo>;
@@ -92,7 +94,7 @@ function pickShared(p: Partial<ReviewDecision>): Partial<ReviewDecision> {
   return out as Partial<ReviewDecision>;
 }
 
-type HiddenRunRef = { runId: string; by: string; at: string };
+type HiddenRunRef = { runId: string; by: string; at: string; archived?: boolean };
 export interface GoldenSet { articles: Array<Pick<Article, 'id' | 'sourceId' | 'sourceName' | 'title' | 'sapo' | 'bodyText'>>; judged: Record<string, boolean> }
 export interface SuggestionsState { generatedAt: string | null; basis: { stories: number; votes: number; decisions: number } | null; items: FilterSuggestion[] }
 export type ExportFormat = 'pptx' | 'docx' | 'pdf';
@@ -605,6 +607,12 @@ class DemoApi implements Api {
     }
     return this.hidden;
   }
+  async archiveRun(id: string, archived: boolean) {
+    const s = this.who(archived ? 'lưu trữ lượt' : 'bỏ lưu trữ lượt');
+    const r = await fetch(`${this.reviewApi}/runs/hide`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ profile: this.pid, runId: id, archived, reviewer: s.name }) });
+    if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không lưu được');
+    this.hidden = ((await r.json()) as { hidden: HiddenRunRef[] }).hidden;
+  }
   private async setHidden(id: string, hidden: boolean) {
     const s = this.who(hidden ? 'xoá lượt đã lưu' : 'khôi phục lượt đã lưu');
     const r = await fetch(`${this.reviewApi}/runs/hide`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ profile: this.pid, runId: id, hidden, reviewer: s.name }) });
@@ -662,9 +670,11 @@ class DemoApi implements Api {
       };
     });
     this.allRuns = runs;
-    const hidden = new Set((await hiddenP).map((x) => x.runId));
-    const shown = runs.filter((r) => !hidden.has(r.runId));
-    this.latestId = shown[0]?.runId ?? '';
+    const hid = await hiddenP;
+    const deleted = new Set(hid.filter((x) => !x.archived).map((x) => x.runId));
+    const archived = new Set(hid.filter((x) => x.archived).map((x) => x.runId));
+    const shown = runs.filter((r) => !deleted.has(r.runId)).map((r): typeof r & { archived?: boolean } => (archived.has(r.runId) ? { ...r, archived: true } : r));
+    this.latestId = shown.find((r) => !r.archived)?.runId ?? shown[0]?.runId ?? '';
     return shown;
   }
   async startRun(window: ReportWindow): Promise<{ remote: true }> {

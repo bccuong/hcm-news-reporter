@@ -488,3 +488,19 @@ describe('self-learned model store (nightly publish, public read)', () => {
     expect(await read()).toMatchObject({ v: 1, prior: -0.3, w: { 'giải phóng': 1.2 } });
   });
 });
+
+describe('saved runs: archive (listed in "Lưu trữ") vs delete (final), 18/11/2026', () => {
+  it('archive / unarchive; a deleted run stays deleted when someone archives it', async () => {
+    const e = env();
+    const hide = (body: Record<string, unknown>) => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234', 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'hcm', reviewer: 'A', ...body }) }), e);
+    const list = async () => ((await (await handle(new Request('https://w.example/runs/hidden?profile=hcm', { headers: { origin: ORIGIN } }), e)).json()) as { hidden: Array<{ runId: string; archived?: boolean }> }).hidden;
+    expect((await hide({ runId: 'run_live_20261117', archived: true })).status).toBe(200);
+    expect(await list()).toEqual([expect.objectContaining({ runId: 'run_live_20261117', archived: true })]);
+    await hide({ runId: 'run_live_20261117', archived: false });
+    expect(await list()).toEqual([]);
+    await hide({ runId: 'run_live_20261116', hidden: true });
+    await hide({ runId: 'run_live_20261116', archived: true });
+    expect(await list()).toEqual([expect.objectContaining({ runId: 'run_live_20261116' })]);
+    expect((await list())[0]!.archived).toBeUndefined();
+  });
+});
