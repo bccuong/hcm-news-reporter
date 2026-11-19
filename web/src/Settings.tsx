@@ -10,7 +10,7 @@ import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type Profil
 import { alreadyApplied, applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
 import { RuleBuilder } from './RuleBuilder';
 import { SourcesPanel } from './SourcesPanel';
-import { ChipEditor, Field, NumberField, Section, Select, Toggle, useEscape, useToast } from './ui';
+import { ChipEditor, Field, NumberField, Section, Select, Time24, Toggle, useEscape, useToast } from './ui';
 
 const NAV = [
   ['profiles', 'Tổng quan'],
@@ -636,9 +636,15 @@ function TimePanel({ s, up }: { s: Settings; up: Up }) {
     <div>
       <Section title="Khung giờ báo cáo mặc định">
         <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Giờ bắt đầu (hôm trước)"><input className="input" type="time" value={s.reportWindow.startClock} onChange={(e) => up('reportWindow', { startClock: e.target.value })} /></Field>
-          <Field label="Giờ kết thúc (ngày báo cáo)"><input className="input" type="time" value={s.reportWindow.endClock} onChange={(e) => up('reportWindow', { endClock: e.target.value })} /></Field>
-          <Select label="Khung mặc định khi chưa có lượt thu thập nào (có lượt rồi thì mở lượt gần nhất)" value={s.reportWindow.defaultPreset} onChange={(v) => up('reportWindow', { defaultPreset: v })} options={[['last_completed', 'Kỳ gần nhất (đã kết thúc)'], ['today', 'Hôm nay'], ['yesterday', 'Hôm qua'], ['custom', 'Tùy chỉnh đã lưu']]} />
+          <div>
+            <span className="label">Giờ bắt đầu (hôm trước)</span>
+            <Time24 label="Giờ bắt đầu (hôm trước)" value={s.reportWindow.startClock} onChange={(v) => up('reportWindow', { startClock: v })} />
+          </div>
+          <div>
+            <span className="label">Giờ kết thúc (ngày báo cáo)</span>
+            <Time24 label="Giờ kết thúc (ngày báo cáo)" value={s.reportWindow.endClock} onChange={(v) => up('reportWindow', { endClock: v })} />
+          </div>
+          <Select label="Khung mở mặc định" help="Dùng khi chưa có lượt thu thập nào; có lượt rồi thì mở lượt gần nhất." value={s.reportWindow.defaultPreset} onChange={(v) => up('reportWindow', { defaultPreset: v })} options={[['last_completed', 'Kỳ gần nhất (đã kết thúc)'], ['today', 'Hôm nay'], ['yesterday', 'Hôm qua'], ['custom', 'Tùy chỉnh đã lưu']]} />
         </div>
         <p className="rounded bg-teal-50 p-2 text-xs text-teal-900">{preview}</p>
         <NumberField label="Biên dò thêm quanh khung giờ" value={s.reportWindow.lookbackMarginHours} min={0} max={72} suffix="giờ" onChange={(n) => up('reportWindow', { lookbackMarginHours: n })} help="Bài có ngày RSS nằm ngoài khung ± biên này được ghi nhận Ngoài khung mà không tải. Bài trong biên vẫn được tải để xác minh giờ đăng thật." />
@@ -698,10 +704,10 @@ function ScheduleTimesSection() {
     setTimes({ ...times, [id]: k === 'at' && cur.to === cur.at ? { ...cur, at: v, to: v } : { ...cur, [k]: v } });
   };
   const timeField = (id: ScheduleSlotId, k: keyof T, label: string) => (
-    <label className="block min-w-0">
+    <div className="min-w-0">
       <span className="mb-1 block text-xs font-medium text-slate-600">{label}</span>
-      <input className="input w-full min-w-0 px-2 text-center" type="time" aria-label={`${SLOT_NAMES[id]} – ${label.toLowerCase()}`} value={times[id][k]} max={k === 'at' ? LATEST_RUN : undefined} onChange={(e) => set(id, k, e.target.value)} />
-    </label>
+      <Time24 label={`${SLOT_NAMES[id]} – ${label.toLowerCase()}`} value={times[id][k]} maxHour={k === 'at' ? Number(LATEST_RUN.slice(0, 2)) : 23} onChange={(v) => set(id, k, v)} />
+    </div>
   );
   return (
     <Section title="Giờ thu thập tự động" help="Máy chủ tự thu thập vào các giờ này cho cấu hình đang chọn (bật/tắt từng lượt bằng công tắc Tự động ở trang chính). Áp dụng cho cả nhóm.">
@@ -710,7 +716,7 @@ function ScheduleTimesSection() {
           <div key={d.id} className="min-w-0 rounded-lg border border-slate-200 bg-white p-3">
             <div className="mb-2 text-sm font-semibold text-navy-800">{SLOT_NAMES[d.id]}</div>
             {/* one row when there is room, one field per row on a phone */}
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-2">
               {timeField(d.id, 'at', 'Giờ chạy')}
               {timeField(d.id, 'from', 'Từ')}
               {timeField(d.id, 'to', 'Đến')}

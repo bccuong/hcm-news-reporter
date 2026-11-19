@@ -109,6 +109,26 @@ export function NumberField({ label, value, onChange, min, max, step = 1, help, 
   );
 }
 
+const two = (n: number) => String(n).padStart(2, '0');
+/**
+ * HH:mm in 24-hour form on every computer (the browser's type=time follows the OS locale, e.g. 04:05 PM).
+ * Two selects: "<label> – giờ" and "<label> – phút"; the group carries data-value="HH:mm".
+ */
+export function Time24({ label, value, onChange, maxHour = 23 }: { label: string; value: string; onChange: (v: string) => void; maxHour?: number }) {
+  const [h = '00', m = '00'] = (value || '00:00').slice(0, 5).split(':');
+  return (
+    <div role="group" aria-label={label} data-value={`${h}:${m}`} className="flex items-center gap-1">
+      <select className="input w-[3.75rem] min-w-0 px-1.5 text-center tabular-nums" aria-label={`${label} – giờ`} value={h} onChange={(e) => onChange(`${e.target.value}:${m}`)}>
+        {Array.from({ length: maxHour + 1 }, (_, i) => <option key={i} value={two(i)}>{two(i)}</option>)}
+      </select>
+      <span className="font-semibold text-slate-500">:</span>
+      <select className="input w-[3.75rem] min-w-0 px-1.5 text-center tabular-nums" aria-label={`${label} – phút`} value={m} onChange={(e) => onChange(`${h}:${e.target.value}`)}>
+        {Array.from({ length: 60 }, (_, i) => <option key={i} value={two(i)}>{two(i)}</option>)}
+      </select>
+    </div>
+  );
+}
+
 export function Select<T extends string>({ label, value, onChange, options, help }: { label: string; value: T; onChange: (v: T) => void; options: Array<[T, string]>; help?: string }) {
   return (
     <Field label={label} help={help}>
