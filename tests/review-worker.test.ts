@@ -414,6 +414,10 @@ describe('shared review worker', () => {
       const after = await read();
       expect(after.dismissed).toEqual(['exclude_title:giá vàng']);
       expect(after.items.map((i) => i.id)).toEqual(['include:lối đi bộ']);
+      // sector / setting suggestions can be dismissed too (were refused with 400 until 19/11/2026)
+      expect((await dis('sector:giảm tốc độ')).status).toBe(200);
+      expect((await dis('setting:location.nationalToReady=false')).status).toBe(200);
+      expect((await dis('other:x')).status).toBe(400);
     });
     it('judged stories for the impact preview: published by the nightly job (token), public read', async () => {
       const e = env();

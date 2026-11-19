@@ -190,6 +190,7 @@ describe('local API', () => {
     expect((await app.inject({ method: 'POST', url: '/api/suggestions/dismiss', headers: H, payload: { id: 'include:lối đi bộ' } })).statusCode).toBe(401);
     expect((await app.inject({ method: 'POST', url: '/api/suggestions/dismiss', headers: auth, payload: { id: 'include:lối đi bộ' } })).json().ok).toBe(true);
     expect((await app.inject({ method: 'POST', url: '/api/suggestions/dismiss', headers: auth, payload: { id: '../x' } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: '/api/suggestions/dismiss', headers: auth, payload: { id: 'sector:giảm tốc độ' } })).json().ok).toBe(true);
     // "Lượt đã lưu" › Xoá: token required, the run disappears, exported files stay
     expect((await app.inject({ method: 'DELETE', url: `/api/runs/${runId}`, headers: H, payload: {} })).statusCode).toBe(401);
     expect((await app.inject({ method: 'DELETE', url: '/api/runs/run_nope', headers: auth, payload: {} })).statusCode).toBe(404);

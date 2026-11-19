@@ -18,10 +18,11 @@ import { annotateArticle } from './relevance.js';
 import type { Article, CategoryCode, RuleGroup, RuleNode, RuleTerm, Settings } from './schemas.js';
 import { findWord, normText } from './text.js';
 import { scoreStory, type LearnedModel } from './learn.js';
+import type { SUGGESTION_KINDS } from './suggestId.js';
 
 export interface FilterSuggestion {
   id: string;
-  kind: 'include' | 'exclude_title' | 'place' | 'sector' | 'setting';
+  kind: (typeof SUGGESTION_KINDS)[number];
   /** the word / place / title phrase; for a setting, a short text of the change */
   phrase: string;
   /** setting: which value it changes, from what to what */

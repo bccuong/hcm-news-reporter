@@ -23,6 +23,7 @@ import { buildReportPptx, checkFit } from '../reports/pptx.js';
 import { buildStyledPptx } from '../reports/styles.js';
 import { buildReportPdf, PDF_FONT_FILES } from '../reports/pdf.js';
 import { suggestFilter, type Judged } from '../domain/suggest.js';
+import { SUGGESTION_ID } from '../domain/suggestId.js';
 import { templateById, TEMPLATES, UPLOAD_TEMPLATE_ID, DOCX_TEMPLATE_FILE } from '../reports/templates.js';
 import { fileURLToPath } from 'node:url';
 import { safeJoin, serialized, writeFileAtomic, writeJsonAtomic } from '../storage/files.js';
@@ -318,7 +319,7 @@ export async function createApp(o: AppOptions): Promise<{ app: FastifyInstance; 
     return { articles: list.map((x) => ({ id: x.id, sourceId: x.sourceId, sourceName: x.sourceName, title: x.title, sapo: x.sapo, bodyText: x.bodyText })), judged: Object.fromEntries(list.map((x) => [x.id, judged.get(x.id)!.relevant])) };
   });
   app.post('/api/suggestions/dismiss', async (req) => {
-    const b = z.object({ id: z.string().regex(/^(include|exclude_title|place):.{1,80}$/) }).parse(req.body);
+    const b = z.object({ id: z.string().regex(SUGGESTION_ID) }).parse(req.body);
     const pid = (await stores.getProfiles()).activeId;
     const list = await readDismissed(pid);
     if (!list.includes(b.id)) await writeJsonAtomic(dismissedFile(pid), [...list, b.id].slice(-500));

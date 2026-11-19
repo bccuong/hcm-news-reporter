@@ -9,6 +9,7 @@
  * KV key:   l:<reportDate>:<articleId>:<reviewerId>
  * metadata: compact label for fast listing (≤ 1 KB)   value: full record (title/url for export)
  */
+import { SUGGESTION_ID } from '../../../src/domain/suggestId';
 import { dueSlots, SCHEDULE_SLOTS, slotsFor, slotWindow, validateTimes, vnDay, type ScheduleSlot, type ScheduleState, type ScheduleTimes } from '../../../src/domain/schedule';
 
 export interface KVLike {
@@ -774,7 +775,7 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     const b = (await req.json().catch(() => null)) as { profile?: string; id?: string; reviewer?: string } | null;
     const pid = String(b?.profile ?? DEFAULT_PROFILE);
     const id = String(b?.id ?? '');
-    if (!PROFILE_ID.test(pid) || !/^(include|exclude_title|place):.{1,80}$/.test(id)) return json({ error: 'INVALID' }, 400, h);
+    if (!PROFILE_ID.test(pid) || !SUGGESTION_ID.test(id)) return json({ error: 'INVALID' }, 400, h);
     if (!String(b?.reviewer ?? '').trim()) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
     const s = await readSuggestions(env, pid);
     if (!s.dismissed.includes(id)) s.dismissed = [...s.dismissed, id].slice(-500);
