@@ -13,6 +13,7 @@
 - Worker: ProfileMeta.scheduleTimes; POST /auto/times (reviewer code; {} = defaults); cron and /status use slotsFor per profile (reads the profile list on every 5-min tick).
 - Web: Cài đặt › Thời gian › "Giờ thu thập tự động" (Lượt 1 / Lượt 2: Giờ chạy + Lấy tin từ, preview, Lưu giờ, Về mặc định); "Đổi giờ" link next to the switches opens it; strip/next run/banner use the custom times.
 - vitest 191/191 (new schedule + worker tests), typecheck OK, test:ui:live schedule tests 3/3 (new one writes docs/screenshots/web-schedule-times.png). Worker deployed 19/11 (version a881ca27); pushed to main as ddc884e/88a9890 (Pages rebuild queued).
+- Follow-up 19/11: own "Đến" per slot (ScheduleTimes.to, follows the run time until changed, must be ≤ run time; stored only when different), pill "Đổi giờ" button with icon, the 3 time fields wrap on a phone. Worker 05de8589, pushed ecd28b1. Saved on the live worker by Cường: 08:00 (16:05 → 08:00), 16:00 (08:05 → 16:00).
 - Next step: on the live site, change a time in Cài đặt › Thời gian and confirm the next scheduled run uses it (run title "Thu thập theo lịch HH:mm").
 
 ## (history) Session 14q – learning: rule/sector suggestions from hand moves, self-learned model for Hỏi nhanh, late retry of failed feeds; 2026-11-18)
