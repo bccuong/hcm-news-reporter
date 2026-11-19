@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { cutText, measureShape } from './textFit.js';
 import type { EditorialAssessment } from '../domain/schemas.js';
 import type { ReportStory } from './pptx.js';
 
@@ -247,12 +248,9 @@ function fitHeader(sp: string, g: EditorialAssessment): string {
 /** narrow column headers (cover, recommendations): the short form fits on one line like the old "TỒN TẠI CẦN KHẮC PHỤC" */
 const GROUP_LABEL: Record<EditorialAssessment, string> = { needs_attention: 'CẦN NGHIÊN CỨU, XỬ LÝ', positive: 'TÍCH CỰC', neutral: 'TIN TRUNG LẬP' };
 
-function fillSlot(ctx: SlideCtx, slot: Slot, st: ReportStory & { imageKey?: string | null }, num: number, images: Map<string, TemplateImage>) {
+function fillSlot(ctx: SlideCtx, slot: Slot, st: ReportStory & { imageKey?: string | null }, num: number, images: Map<string, TemplateImage>, notes: string[]) {
   ctx.xml = editShape(ctx.xml, slot.num, (sp) => setParagraphs(sp, lines(String(num))));
-  ctx.xml = editShape(ctx.xml, slot.title, (sp) => setParagraphs(sp, lines(st.title)));
-  ctx.xml = editShape(ctx.xml, slot.summary, (sp) => setParagraphs(sp, lines(st.summary)));
   ctx.xml = editShape(ctx.xml, slot.source, (sp) => setParagraphs(sp, sourceRuns(ctx, st)));
-  if (slot.prop) ctx.xml = editShape(ctx.xml, slot.prop, (sp) => setParagraphs(sp, lines(st.proposal || 'Đề xuất: đầu mối đề xuất, chờ rà soát.')));
   if (slot.pic) {
     const img = st.imageKey ? images.get(st.imageKey) : null;
     const used = ctx.picture(slot.pic, img);
@@ -265,6 +263,11 @@ function fillSlot(ctx: SlideCtx, slot: Slot, st: ReportStory & { imageKey?: stri
       });
     }
   }
+  // text measured in its final box (the summary is wider without a photo): smaller font, then "…" + a note
+  const where = `Tin "${st.shortLabel}"`;
+  ctx.xml = editShape(ctx.xml, slot.title, (sp) => fitShapeText(sp, lines(st.title), { minPt: Math.max(11, firstPt(sp) - 3), cut: true, where: `${where} – tiêu đề`, notes }));
+  ctx.xml = editShape(ctx.xml, slot.summary, (sp) => fitShapeText(sp, lines(st.summary), { minPt: Math.max(10, firstPt(sp) - 3), cut: true, where: `${where} – tóm tắt`, notes }));
+  if (slot.prop) ctx.xml = editShape(ctx.xml, slot.prop, (sp) => fitShapeText(sp, lines(st.proposal || 'Đề xuất: đầu mối đề xuất, chờ rà soát.'), { minPt: Math.max(10, firstPt(sp) - 3), cut: true, where: `${where} – đề xuất`, notes }));
 }
 
 function clearSlot(ctx: SlideCtx, slot: Slot) {
@@ -289,20 +292,63 @@ function fitWarn(xml: string, id: number, texts: string[], where: string, notes:
   const need = estimateLines(texts, cap.widthIn);
   if (need > cap.lines) notes.push(`${where}: cần ~${need} dòng, khung chứa ~${cap.lines} dòng – rút gọn "nhãn ngắn" để tránh tràn khung.`);
 }
+/** every font size of a shape × ratio (the template's sizes, made smaller to fit) */
+function scaleFont(sp: string, ratio: number): string {
+  return ratio === 1 ? sp : sp.replace(/ sz="(\d+)"/g, (_, v: string) => ` sz="${Math.max(800, Math.round((Number(v) * ratio) / 50) * 50)}"`);
+}
+const fits = (sp: string) => {
+  const m = measureShape(sp);
+  return m.needPt <= m.boxPt + 0.5;
+};
+const firstPt = (sp: string) => Number(/ sz="(\d+)"/.exec(sp)?.[1] ?? 1800) / 100;
+/**
+ * Fill a text shape and keep it inside its box (measured with real Arial widths, textFit.ts):
+ * the template's size → 1 pt smaller at a time down to `minPt` → with `cut`, the LAST paragraph shortened at a
+ * sentence / word end with "…" (noted for the editor; the story itself is not changed).
+ */
+function fitShapeText(sp: string, paras: Run[][], o: { minPt: number; cut?: boolean; where: string; notes?: string[]; pick?: (i: number, n: number) => number }): string {
+  const tplPt = firstPt(sp);
+  const build = (p: Run[][], pt: number) => scaleFont(setParagraphs(sp, p, o.pick), pt / tplPt);
+  let pt = tplPt;
+  for (; pt >= o.minPt; pt -= 1) {
+    const out = build(paras, pt);
+    if (fits(out)) return out;
+  }
+  pt = Math.min(tplPt, o.minPt);
+  const last = paras[paras.length - 1];
+  const text = last?.map((r) => r.text).join('') ?? '';
+  if (!o.cut || !last || last.length !== 1 || !text) {
+    o.notes?.push(`${o.where}: chữ có thể tràn khung – rút gọn nội dung để hiện đủ.`);
+    return build(paras, pt);
+  }
+  // longest cut that fits (binary search on the number of characters)
+  let lo = 1, hi = text.length, best = cutText(text, 1);
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const t = cutText(text, mid);
+    if (fits(build([...paras.slice(0, -1), [{ text: t }]], pt))) {
+      best = t;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  o.notes?.push(`${o.where}: nội dung dài hơn khung, đã rút gọn trên slide ("…") – sửa cho ngắn hơn để hiện đủ.`);
+  return build([...paras.slice(0, -1), [{ text: best }]], pt);
+}
 /**
  * Summary list (cover / recommendations) that never overflows its box: shows as many labels as fit and ends with
- * "… và N tin khác". Full stories are always on their own pages; font size is never changed.
+ * "… và N tin khác". Full stories are always on their own pages; measured with real widths.
  */
 function fittedList(xml: string, id: number, stories: ReportStory[], where: string, notes: string[]): Run[][] {
   if (!stories.length) return lines('(không có tin)');
-  const cap = boxCapacity(xml, id, 0.35);
+  const sp = getShape(xml, id)!;
+  const ok = (l: string[]) => fits(setParagraphs(sp, lines(...l), () => 0));
   const all = stories.map((s) => s.shortLabel);
-  if (estimateLines(all, cap.widthIn) <= cap.lines) return lines(...all);
+  if (ok(all)) return lines(...all);
   const shown: string[] = [];
   for (const l of all) {
     const rest = all.length - shown.length - 1;
     const tail = rest > 0 ? [`… và ${rest} tin khác`] : [];
-    if (estimateLines([...shown, l, ...tail], cap.widthIn) > cap.lines) break;
+    if (!ok([...shown, l, ...tail])) break;
     shown.push(l);
   }
   const hidden = all.length - shown.length;
@@ -313,11 +359,11 @@ function fittedList(xml: string, id: number, stories: ReportStory[], where: stri
 /**
  * Recommendation slide, "đầu mối" box: like the Department's template, ONE entry per unit (proposal) –
  * a bold line (the story's short label, or "Nhóm <lĩnh vực> (N tin)" when several stories go to the same unit)
- * then the proposal once. Always fits the box (19/11/2026: 6 stories overflowed it): 14 pt, down to 11 pt,
- * then the last groups become "… và N tin khác" (every story stays on its own page).
+ * then the proposal once. Always fits the box (19/11/2026: 6 stories overflowed it), measured with real widths:
+ * 14 pt, down to 11 pt, then the last groups become "… và N tin khác" (every story stays on its own page).
  */
-function recoGroups(xml: string, id: number, tt: ReportStory[], notes: string[]): { paras: Run[][]; style: number[]; pt: number } {
-  if (!tt.length) return { paras: lines('Không có tin Cần nghiên cứu, xử lý trong khung giờ này.'), style: [1], pt: 14 };
+function recoBox(sp: string, tt: ReportStory[], notes: string[]): string {
+  if (!tt.length) return setParagraphs(sp, lines('Không có tin Cần nghiên cứu, xử lý trong khung giờ này.'), () => 1);
   const byUnit = new Map<string, ReportStory[]>();
   for (const s of tt) {
     const p = (s.proposal || 'Đầu mối đề xuất, chờ rà soát.').replace(/^Đề xuất:\s*/, '').trim();
@@ -328,33 +374,26 @@ function recoGroups(xml: string, id: number, tt: ReportStory[], notes: string[])
     const sectors = [...new Set(list.map((s) => s.sector.toLocaleLowerCase('vi')).filter(Boolean))].join(', ');
     return { head: list.length === 1 ? list[0]!.shortLabel : `Nhóm ${sectors || 'tin'} (${list.length} tin)`, prop, n: list.length };
   });
-  const f = xfrm(getShape(xml, id)!);
-  const boxPt = (f.cy / EMU) * 72, widthIn = f.cx / EMU;
-  const height = (texts: string[], pt: number) => {
-    const perLine = Math.max(8, Math.floor((widthIn * 72) / (pt * 0.55))); // Arial, bold heads: ~0.55 em per glyph
-    return texts.reduce((h, t) => h + Math.max(1, Math.ceil(t.length / perLine)) * pt * 1.2 + 4, 0); // + 4 pt after each paragraph
-  };
-  const build = (k: number) => {
+  const tplPt = firstPt(sp);
+  const build = (k: number, pt: number) => {
     const texts: string[] = [], style: number[] = [];
     for (const g of groups.slice(0, k)) texts.push(g.head, g.prop), style.push(0, 1);
     const rest = groups.slice(k).reduce((n, g) => n + g.n, 0);
     if (rest) texts.push(`… và ${rest} tin khác – xem các trang Tin cần nghiên cứu, xử lý`), style.push(1);
-    return { texts, style };
+    return scaleFont(setParagraphs(sp, lines(...texts), (i) => style[i] ?? 1), pt / tplPt);
   };
-  for (const pt of [14, 13, 12, 11]) {
-    for (let k = groups.length; k >= (pt === 11 ? 1 : groups.length); k--) {
-      const b = build(k);
-      if (height(b.texts, pt) <= boxPt || k === 1 && pt === 11) {
-        if (k < groups.length) notes.push(`Kiến nghị – danh sách đầu mối: khung chỉ đủ ${k}/${groups.length} đơn vị – đã ghi "… và … tin khác".`);
-        return { paras: b.texts.map((t) => [{ text: t }]), style: b.style, pt };
-      }
+  for (let pt = tplPt; pt >= 11; pt -= 1) {
+    const out = build(groups.length, pt);
+    if (fits(out)) return out;
+  }
+  for (let k = groups.length - 1; k >= 1; k--) {
+    const out = build(k, 11);
+    if (fits(out) || k === 1) {
+      notes.push(`Kiến nghị – danh sách đầu mối: khung chỉ đủ ${k}/${groups.length} đơn vị – đã ghi "… và … tin khác".`);
+      return out;
     }
   }
-  throw new Error('unreachable');
-}
-/** every run of a shape at `pt` points (the template's 14 pt list, made smaller to fit) */
-function withFontSize(sp: string, pt: number): string {
-  return pt === 14 ? sp : sp.replace(/ sz="\d+"/g, ` sz="${pt * 100}"`);
+  return build(groups.length, 11);
 }
 
 function listLines(stories: ReportStory[], max = 7): Run[][] {
@@ -424,7 +463,7 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
     c.xml = editShape(c.xml, m.heading, (sp) => setParagraphs(sp, lines(TT_HEADING)));
     m.slots.forEach((slot, i) => {
       const st = tt[p * 2 + i];
-      if (st) fillSlot(c, slot, st, p * 2 + i + 1, input.images);
+      if (st) fillSlot(c, slot, st, p * 2 + i + 1, input.images, notes);
       else clearSlot(c, slot);
     });
     push(c, m.slide);
@@ -438,12 +477,12 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
     const chunk = tc.slice(p * 2, p * 2 + 2);
     const heading = input.tcHeading || [...new Set(chunk.map((s) => s.sector.toUpperCase()))].slice(0, 2).join(' VÀ ');
     c.xml = editShape(c.xml, m.heading, (sp) => setParagraphs(sp, lines(heading)));
-    c.xml = editShape(c.xml, m.sub, (sp) => setParagraphs(sp, lines(input.tcSubtitle || chunk.map((s) => s.shortLabel).join(' và '))));
+    c.xml = editShape(c.xml, m.sub, (sp) => fitShapeText(sp, lines(input.tcSubtitle || chunk.map((s) => s.shortLabel).join(' và ')), { minPt: Math.max(11, firstPt(sp) - 3), cut: true, where: 'Trang Tích cực – dòng phụ đề', notes }));
     // with a single story, the feature photo moves up into the empty second card's position
     const slot2Top = xfrm(getShape(c.xml, m.slots[1]!.card)!).y;
     m.slots.forEach((slot, i) => {
       const st = chunk[i];
-      if (st) fillSlot(c, slot, st, p * 2 + i + 1, input.images);
+      if (st) fillSlot(c, slot, st, p * 2 + i + 1, input.images, notes);
       else clearSlot(c, slot);
     });
     const feat = p === 0 && input.tcFeatureKey ? input.images.get(input.tcFeatureKey) : null;
@@ -465,10 +504,10 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
     const m = TEMPLATE_MAP.tl;
     const c = mk(m.slide);
     const chunk = tl.slice(p * 3, p * 3 + 3);
-    c.xml = editShape(c.xml, m.sub, (sp) => setParagraphs(sp, lines(input.tlSubtitle || chunk.map((s) => s.shortLabel).join(', '))));
+    c.xml = editShape(c.xml, m.sub, (sp) => fitShapeText(sp, lines(input.tlSubtitle || chunk.map((s) => s.shortLabel).join(', ')), { minPt: Math.max(11, firstPt(sp) - 3), cut: true, where: 'Trang Trung lập – dòng phụ đề', notes }));
     m.slots.forEach((slot, i) => {
       const st = chunk[i];
-      if (st) fillSlot(c, slot, st, p * 3 + i + 1, input.images);
+      if (st) fillSlot(c, slot, st, p * 3 + i + 1, input.images, notes);
       else clearSlot(c, slot);
     });
     push(c, m.slide);
@@ -484,8 +523,7 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
       c.xml = editShape(c.xml, m.email, (sp) => setParagraphs(sp, [[{ text: input.contactEmail!, linkRid: 'rId4', url: `mailto:${input.contactEmail}` }]]));
       c.rels.push(...keep.filter((r) => !/mailto:/.test(r)), relEl('rId4', 'hyperlink', `mailto:${input.contactEmail}`));
     } else c.rels.push(...keep);
-    const reco = recoGroups(c.xml, m.groups, tt, notes);
-    c.xml = editShape(c.xml, m.groups, (sp) => withFontSize(setParagraphs(sp, reco.paras, (i) => reco.style[i] ?? 1), reco.pt));
+    c.xml = editShape(c.xml, m.groups, (sp) => recoBox(sp, tt, notes));
     c.xml = editShape(c.xml, m.ttTitle, (sp) => fitHeader(setParagraphs(sp, lines(GROUP_LABEL.needs_attention)), 'needs_attention')); // the template's header above the TT list
     for (const [id, list, g] of [[m.tt, tt, 'needs_attention'], [m.tc, tc, 'positive'], [m.tl, tl, 'neutral']] as const) {
       const fitted = fittedList(c.xml, id, list, `Kiến nghị – nhóm ${GROUP_LABEL[g]}`, notes);

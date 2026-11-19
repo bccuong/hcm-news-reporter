@@ -71,6 +71,14 @@ describe.skipIf(!has)('original template adapter (RPT-01/02/03 structural)', () 
     expect(out.notes.join(' ')).toMatch(/Bìa – nhóm TIN TRUNG LẬP: khung chỉ đủ \d+\/8 nhãn/);
     expect(out.slideCount).toBe(1 + 3 + 1); // cover, 3 TL pages (3+3+2), kiến nghị – no story dropped
   });
+  it('long summaries never overflow their card: smaller font, then "…" + a note (19/11/2026)', async () => {
+    const huge = '[Mẫu thử] ' + 'Đoạn tóm tắt rất dài về dự án hạ tầng giao thông của thành phố. '.repeat(20);
+    const out = await buildFromTemplate(readFileSync(TEMPLATE), { ...input, stories: [{ ...story(1, 'positive'), summary: huge }] });
+    const zip = await JSZip.loadAsync(out.bytes);
+    const tc = await zip.file('ppt/slides/slide2.xml')!.async('string');
+    expect(tc).toMatch(/<a:t>\[Mẫu thử\] Đoạn tóm tắt[^<]*…<\/a:t>/);
+    expect(out.notes.join(' ')).toMatch(/tóm tắt: nội dung dài hơn khung, đã rút gọn trên slide/);
+  });
   it('recommendations "đầu mối" box: one entry per unit like the template, fitted to the box (19/11/2026 overflow)', async () => {
     const HT = 'Đề xuất: Giao Phòng Hạ tầng kỹ thuật, Trung tâm Quản lý giao thông và Hạ tầng kỹ thuật tham mưu, xử lý.';
     const tt = (i: number, sector: string, proposal: string) => ({ ...story(i, 'needs_attention'), sector, shortLabel: `[Mẫu thử] Nhãn ${i}`, proposal });
