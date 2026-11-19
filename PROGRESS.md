@@ -7,7 +7,15 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14r – automatic collection times editable in Settings; 2026-11-19)
+## ▶ RESUME HERE (session 14s – reports: group renamed, text fitted with real widths; 2026-11-19)
+- "Bỏ qua" on sector / setting suggestions fixed (shared id pattern src/domain/suggestId.ts; worker redeployed 1820bc9e).
+- Settings › Thời gian: 24-hour pickers (Time24 in ui.tsx) for the report window and automatic times; "Khung mở mặc định".
+- Group renamed: reports "TIN CẦN NGHIÊN CỨU, XỬ LÝ" (narrow PPTX column headers: "CẦN NGHIÊN CỨU, XỬ LÝ" at 12 pt), web "Cần nghiên cứu, xử lý". Department templates still say "TỒN TẠI CẦN KHẮC PHỤC": recognised with either wording, rewritten on export.
+- Template PPTX text fitting: src/reports/textFit.ts + arialWidths.json (Arimo/Arial metrics); title/summary/proposal/subtitles/cover & Kiến nghị lists: template size → minimum → "…" + editor note. Kiến nghị "đầu mối" box grouped by unit like the template. Checked in PowerPoint (6 and 10 TT stories, long summaries). User confirmed OK.
+- vitest 198/198, test:ui 14/14, test:ui:live 15/15. Pushed c17f042.
+- Next step: watch the next real export (08:00 run) for any "rút gọn" notes and tune minimum font sizes if the team finds text too small.
+
+## (history) Session 14r – automatic collection times editable in Settings; 2026-11-19)
 - User asked (phone screenshot): the Tự động times must be changeable in Settings, not fixed at 08:00 / 16:30.
 - schedule.ts: ScheduleTimes per profile ({morning|afternoon: {at, from}}), slotsFor() applies them (unchanged → exact defaults), validateTimes() (HH:mm, run ≤ 21:57 so the 2 h dispatch window stays in the day, from ≠ at, run times distinct). Custom window = from (yesterday when later than the run) → run minute included (to = at + 1 min, like the 08:00 default).
 - Worker: ProfileMeta.scheduleTimes; POST /auto/times (reviewer code; {} = defaults); cron and /status use slotsFor per profile (reads the profile list on every 5-min tick).
