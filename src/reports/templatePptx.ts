@@ -310,6 +310,53 @@ function fittedList(xml: string, id: number, stories: ReportStory[], where: stri
   return lines(...shown, `… và ${hidden} tin khác`);
 }
 
+/**
+ * Recommendation slide, "đầu mối" box: like the Department's template, ONE entry per unit (proposal) –
+ * a bold line (the story's short label, or "Nhóm <lĩnh vực> (N tin)" when several stories go to the same unit)
+ * then the proposal once. Always fits the box (19/11/2026: 6 stories overflowed it): 14 pt, down to 11 pt,
+ * then the last groups become "… và N tin khác" (every story stays on its own page).
+ */
+function recoGroups(xml: string, id: number, tt: ReportStory[], notes: string[]): { paras: Run[][]; style: number[]; pt: number } {
+  if (!tt.length) return { paras: lines('Không có tin Cần nghiên cứu, xử lý trong khung giờ này.'), style: [1], pt: 14 };
+  const byUnit = new Map<string, ReportStory[]>();
+  for (const s of tt) {
+    const p = (s.proposal || 'Đầu mối đề xuất, chờ rà soát.').replace(/^Đề xuất:\s*/, '').trim();
+    const key = p.charAt(0).toLocaleUpperCase('vi') + p.slice(1);
+    byUnit.set(key, [...(byUnit.get(key) ?? []), s]);
+  }
+  const groups = [...byUnit].map(([prop, list]) => {
+    const sectors = [...new Set(list.map((s) => s.sector.toLocaleLowerCase('vi')).filter(Boolean))].join(', ');
+    return { head: list.length === 1 ? list[0]!.shortLabel : `Nhóm ${sectors || 'tin'} (${list.length} tin)`, prop, n: list.length };
+  });
+  const f = xfrm(getShape(xml, id)!);
+  const boxPt = (f.cy / EMU) * 72, widthIn = f.cx / EMU;
+  const height = (texts: string[], pt: number) => {
+    const perLine = Math.max(8, Math.floor((widthIn * 72) / (pt * 0.55))); // Arial, bold heads: ~0.55 em per glyph
+    return texts.reduce((h, t) => h + Math.max(1, Math.ceil(t.length / perLine)) * pt * 1.2 + 4, 0); // + 4 pt after each paragraph
+  };
+  const build = (k: number) => {
+    const texts: string[] = [], style: number[] = [];
+    for (const g of groups.slice(0, k)) texts.push(g.head, g.prop), style.push(0, 1);
+    const rest = groups.slice(k).reduce((n, g) => n + g.n, 0);
+    if (rest) texts.push(`… và ${rest} tin khác – xem các trang Tin cần nghiên cứu, xử lý`), style.push(1);
+    return { texts, style };
+  };
+  for (const pt of [14, 13, 12, 11]) {
+    for (let k = groups.length; k >= (pt === 11 ? 1 : groups.length); k--) {
+      const b = build(k);
+      if (height(b.texts, pt) <= boxPt || k === 1 && pt === 11) {
+        if (k < groups.length) notes.push(`Kiến nghị – danh sách đầu mối: khung chỉ đủ ${k}/${groups.length} đơn vị – đã ghi "… và … tin khác".`);
+        return { paras: b.texts.map((t) => [{ text: t }]), style: b.style, pt };
+      }
+    }
+  }
+  throw new Error('unreachable');
+}
+/** every run of a shape at `pt` points (the template's 14 pt list, made smaller to fit) */
+function withFontSize(sp: string, pt: number): string {
+  return pt === 14 ? sp : sp.replace(/ sz="\d+"/g, ` sz="${pt * 100}"`);
+}
+
 function listLines(stories: ReportStory[], max = 7): Run[][] {
   if (!stories.length) return lines('(không có tin)');
   const shown = stories.slice(0, max).map((s) => s.shortLabel);
@@ -437,21 +484,15 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
       c.xml = editShape(c.xml, m.email, (sp) => setParagraphs(sp, [[{ text: input.contactEmail!, linkRid: 'rId4', url: `mailto:${input.contactEmail}` }]]));
       c.rels.push(...keep.filter((r) => !/mailto:/.test(r)), relEl('rId4', 'hyperlink', `mailto:${input.contactEmail}`));
     } else c.rels.push(...keep);
-    const groupLines: string[] = [];
-    for (const s of tt) {
-      const p = (s.proposal || 'Đầu mối đề xuất, chờ rà soát.').replace(/^Đề xuất:\s*/, '');
-      groupLines.push(s.shortLabel, p.charAt(0).toLocaleUpperCase('vi') + p.slice(1)); // "Giao Phòng …"
-    }
-    c.xml = editShape(c.xml, m.groups, (sp) => setParagraphs(sp, groupLines.length ? lines(...groupLines) : lines('Không có tin Cần nghiên cứu, xử lý trong khung giờ này.'), (i) => i % 2));
+    const reco = recoGroups(c.xml, m.groups, tt, notes);
+    c.xml = editShape(c.xml, m.groups, (sp) => withFontSize(setParagraphs(sp, reco.paras, (i) => reco.style[i] ?? 1), reco.pt));
     c.xml = editShape(c.xml, m.ttTitle, (sp) => fitHeader(setParagraphs(sp, lines(GROUP_LABEL.needs_attention)), 'needs_attention')); // the template's header above the TT list
     for (const [id, list, g] of [[m.tt, tt, 'needs_attention'], [m.tc, tc, 'positive'], [m.tl, tl, 'neutral']] as const) {
       const fitted = fittedList(c.xml, id, list, `Kiến nghị – nhóm ${GROUP_LABEL[g]}`, notes);
       c.xml = editShape(c.xml, id, (sp) => setParagraphs(sp, fitted, () => 0));
     }
-    fitWarn(c.xml, m.groups, groupLines, 'Kiến nghị – danh sách đầu mối', notes, 0);
     c.xml = editShape(c.xml, m.footer, (sp) => setParagraphs(sp, lines(`VĂN PHÒNG SỞ  ${dateLabel}`)));
     push(c, m.slide);
-    if (tt.length > 4) notes.push('Kiến nghị: nhiều hơn 4 tin Cần nghiên cứu, xử lý – kiểm tra tràn khung trên trang Kiến nghị.');
   }
 
   /* ---- page numbers ---- */

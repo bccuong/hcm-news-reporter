@@ -71,6 +71,28 @@ describe.skipIf(!has)('original template adapter (RPT-01/02/03 structural)', () 
     expect(out.notes.join(' ')).toMatch(/Bìa – nhóm TIN TRUNG LẬP: khung chỉ đủ \d+\/8 nhãn/);
     expect(out.slideCount).toBe(1 + 3 + 1); // cover, 3 TL pages (3+3+2), kiến nghị – no story dropped
   });
+  it('recommendations "đầu mối" box: one entry per unit like the template, fitted to the box (19/11/2026 overflow)', async () => {
+    const HT = 'Đề xuất: Giao Phòng Hạ tầng kỹ thuật, Trung tâm Quản lý giao thông và Hạ tầng kỹ thuật tham mưu, xử lý.';
+    const tt = (i: number, sector: string, proposal: string) => ({ ...story(i, 'needs_attention'), sector, shortLabel: `[Mẫu thử] Nhãn ${i}`, proposal });
+    const six = [tt(1, 'Hạ tầng kỹ thuật', HT), tt(2, 'Ngập lụt', HT), tt(3, 'Ngập lụt', HT), tt(4, 'Giao thông', 'Đề xuất: Giao các phòng, đơn vị tham mưu theo chức năng, nhiệm vụ.'), tt(5, 'Giao thông', 'Đề xuất: Giao Trung tâm Quản lý điều hành giao thông đô thị tham mưu, xử lý.'), tt(6, 'Giao thông', 'Đề xuất: Giao Phòng Quản lý giao thông phối hợp các đơn vị liên quan tham mưu, xử lý.')];
+    const reco = async (stories: typeof six) => {
+      const out = await buildFromTemplate(readFileSync(TEMPLATE), { ...input, stories });
+      const zip = await JSZip.loadAsync(out.bytes);
+      const xml = await zip.file(`ppt/slides/slide${out.slideCount}.xml`)!.async('string');
+      const box = xml.split('<p:sp>').find((s) => s.includes('<p:cNvPr id="13"'))!;
+      return { text: [...box.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join('\n'), sizes: [...new Set([...box.matchAll(/ sz="(\d+)"/g)].map((m) => m[1]))], notes: out.notes };
+    };
+    const a = await reco(six);
+    expect(a.text).toContain('Nhóm hạ tầng kỹ thuật, ngập lụt (3 tin)');
+    expect(a.text.split('Giao Phòng Hạ tầng kỹ thuật').length - 1).toBe(1); // the shared proposal once
+    expect(a.text).toContain('[Mẫu thử] Nhãn 6'); // all 4 units shown
+    expect(a.sizes.every((s) => Number(s) >= 1100 && Number(s) <= 1400)).toBe(true);
+    // many units → the last ones become "… và N tin khác", noted for the editor
+    const many = [...six, ...[7, 8, 9, 10].map((i) => tt(i, 'Xây dựng', `Đề xuất: Giao Phòng Quản lý xây dựng số ${i} phối hợp các đơn vị liên quan tham mưu, xử lý.`))];
+    const b = await reco(many);
+    expect(b.text).toMatch(/… và \d+ tin khác – xem các trang Tin cần nghiên cứu, xử lý/);
+    expect(b.notes.join(' ')).toMatch(/Kiến nghị – danh sách đầu mối: khung chỉ đủ \d+\/8 đơn vị/); // 4 units of the six + 4 new ones
+  });
 
   it('text-only when no usable photo (RPT-02): frame removed, never substituted', async () => {
     const out = await buildFromTemplate(readFileSync(TEMPLATE), { ...input, images: new Map(), coverImageKey: null });
