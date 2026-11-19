@@ -117,23 +117,41 @@ test('automatic times are changed in Settings (not fixed at 08:00 / 16:30), show
   const box = dlg.getByTestId('schedule-times');
   await expect(box.getByLabel('Lượt 1 – giờ chạy')).toHaveValue('08:00');
   await box.getByLabel('Lượt 1 – giờ chạy').fill('07:30');
-  await box.getByLabel('Lượt 1 – lấy tin từ').fill('17:30');
+  await expect(box.getByLabel('Lượt 1 – đến')).toHaveValue('07:30'); // "Đến" follows the run time
+  await box.getByLabel('Lượt 1 – từ').fill('17:30');
   await box.getByLabel('Lượt 2 – giờ chạy').fill('17:00');
-  await box.getByLabel('Lượt 2 – lấy tin từ').fill('07:31');
+  await box.getByLabel('Lượt 2 – từ').fill('07:31');
+  await box.getByLabel('Lượt 2 – đến').fill('16:45'); // changed by hand
   await expect(box).toContainText('kỳ 17:30 hôm qua → 07:30 hôm nay');
+  await expect(box).toContainText('kỳ 07:31 → 16:45 hôm nay (gồm phút 16:45)');
+  await box.getByLabel('Lượt 2 – đến').fill('17:30');
+  await expect(dlg.getByText(/"Đến" không được muộn hơn giờ chạy/)).toBeVisible();
+  await box.getByLabel('Lượt 2 – đến').fill('16:45');
   // invalid: same run time → save disabled with the reason
-  await box.getByLabel('Lượt 2 – giờ chạy').fill('07:30');
+  await box.getByLabel('Lượt 1 – giờ chạy').fill('17:00'); // its "Đến" follows (still untouched)
   await expect(dlg.getByText('Hai lượt không được trùng giờ chạy')).toBeVisible();
   await expect(dlg.getByRole('button', { name: 'Lưu giờ' })).toBeDisabled();
-  await box.getByLabel('Lượt 2 – giờ chạy').fill('17:00');
+  await box.getByLabel('Lượt 1 – giờ chạy').fill('07:30');
+  await expect(box.getByLabel('Lượt 1 – đến')).toHaveValue('07:30');
   await dlg.getByRole('button', { name: 'Lưu giờ' }).click();
   await expect(page.getByText(/Đã lưu giờ thu thập tự động/)).toBeVisible();
   const st = await (await request.get('http://127.0.0.1:5181/status')).json();
-  expect(st.profiles.find((p: { id: string }) => p.id === 'hcm').scheduleTimes).toEqual({ morning: { at: '07:30', from: '17:30' }, afternoon: { at: '17:00', from: '07:31' } });
+  expect(st.profiles.find((p: { id: string }) => p.id === 'hcm').scheduleTimes).toEqual({ morning: { at: '07:30', from: '17:30' }, afternoon: { at: '17:00', from: '07:31', to: '16:45' } });
   await page.screenshot({ path: 'docs/screenshots/web-schedule-times.png' });
+  // phone: the three time fields fit inside each card
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const b of await box.locator('input[type=time]').all()) {
+    const r = (await b.boundingBox())!;
+    const card = (await box.boundingBox())!;
+    expect(r.x + r.width).toBeLessThanOrEqual(card.x + card.width + 1);
+  }
+  await box.scrollIntoViewIfNeeded();
+  await box.screenshot({ path: 'docs/screenshots/web-schedule-times-phone.png' });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
   await expect(strip.getByLabel('Tự động lúc 07:30')).toBeVisible();
   await expect(strip.getByLabel('Tự động lúc 17:00')).toBeVisible();
+  await strip.screenshot({ path: 'docs/screenshots/web-edit-times-button.png' });
   // back to the defaults
   await strip.getByTestId('edit-times').click();
   await dlg.getByRole('button', { name: 'Về mặc định' }).click();

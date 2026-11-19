@@ -25,8 +25,11 @@ export const SCHEDULE_SLOTS: readonly ScheduleSlot[] = [
 ];
 export const SLOT_NAMES: Record<ScheduleSlotId, string> = { morning: 'Lượt 1', afternoon: 'Lượt 2' };
 export type ScheduleState = Partial<Record<ScheduleSlotId, boolean>>;
-/** times changed in Settings: run time + start of the window (the window ends at the run time, minute included) */
-export type ScheduleTimes = Partial<Record<ScheduleSlotId, { at: string; from: string }>>;
+/**
+ * times changed in Settings: run time + window start + window end ("Đến", minute included; unset = the run time).
+ * The start is on the day before when it is not earlier than the end.
+ */
+export type ScheduleTimes = Partial<Record<ScheduleSlotId, { at: string; from: string; to?: string }>>;
 
 const VN_MS = 7 * 3600_000;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -39,12 +42,14 @@ export const LATEST_RUN = '21:57';
 export function slotsFor(times?: ScheduleTimes | null): ScheduleSlot[] {
   return SCHEDULE_SLOTS.map((d) => {
     const t = times?.[d.id];
-    if (!t || (t.at === d.at && t.from === d.from.time)) return d;
-    const fromDay = minutesOf(t.from) >= minutesOf(t.at) ? -1 : 0;
-    const toM = minutesOf(t.at) + 1; // the run minute is included, like the default 08:00 window
+    if (!t) return d;
+    const end = t.to || t.at;
+    if (t.at === d.at && t.from === d.from.time && end === d.at) return d;
+    const fromDay = minutesOf(t.from) >= minutesOf(end) ? -1 : 0;
+    const toM = minutesOf(end) + 1; // the end minute is included, like the default 08:00 window
     return {
       id: d.id, at: t.at, from: { day: fromDay, time: t.from }, to: { day: 0, time: hhmmOf(toM) },
-      label: `kỳ ${t.from}${fromDay ? ' hôm qua' : ''} → ${t.at} hôm nay (gồm phút ${t.at})`,
+      label: `kỳ ${t.from}${fromDay ? ' hôm qua' : ''} → ${end} hôm nay (gồm phút ${end})`,
     };
   });
 }
@@ -55,9 +60,11 @@ export function validateTimes(times: ScheduleTimes): string | null {
   for (const d of SCHEDULE_SLOTS) {
     const t = times[d.id];
     if (!t) continue;
-    if (!HHMM.test(t.at) || !HHMM.test(t.from)) return `${SLOT_NAMES[d.id]}: giờ phải có dạng HH:mm`;
+    const end = t.to || t.at;
+    if (!HHMM.test(t.at) || !HHMM.test(t.from) || !HHMM.test(end)) return `${SLOT_NAMES[d.id]}: giờ phải có dạng HH:mm`;
     if (minutesOf(t.at) > minutesOf(LATEST_RUN)) return `${SLOT_NAMES[d.id]}: giờ chạy muộn nhất là ${LATEST_RUN}`;
-    if (t.at === t.from) return `${SLOT_NAMES[d.id]}: giờ bắt đầu kỳ phải khác giờ chạy`;
+    if (minutesOf(end) > minutesOf(t.at)) return `${SLOT_NAMES[d.id]}: "Đến" không được muộn hơn giờ chạy (lúc chạy chưa có tin đó)`;
+    if (end === t.from) return `${SLOT_NAMES[d.id]}: "Từ" phải khác "Đến"`;
     ats.push(t.at);
   }
   if (new Set(ats).size !== ats.length) return 'Hai lượt không được trùng giờ chạy';

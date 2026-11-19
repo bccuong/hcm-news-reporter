@@ -755,8 +755,9 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     if (!b.times || typeof b.times !== 'object' || Array.isArray(b.times)) return json({ error: 'Thiếu giờ lịch' }, 400, h);
     const times: ScheduleTimes = {};
     for (const s of SCHEDULE_SLOTS) {
-      const t = (b.times as Record<string, unknown>)[s.id] as { at?: unknown; from?: unknown } | undefined;
-      if (t) times[s.id] = { at: String(t.at ?? ''), from: String(t.from ?? '') };
+      const t = (b.times as Record<string, unknown>)[s.id] as { at?: unknown; from?: unknown; to?: unknown } | undefined;
+      // "Đến" equal to the run time is not stored (it follows the run time)
+      if (t) times[s.id] = { at: String(t.at ?? ''), from: String(t.from ?? ''), ...(t.to && t.to !== t.at ? { to: String(t.to) } : {}) };
     }
     const bad = validateTimes(times);
     if (bad) return json({ error: bad }, 400, h);

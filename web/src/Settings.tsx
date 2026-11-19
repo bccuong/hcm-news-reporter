@@ -660,12 +660,14 @@ function TimePanel({ s, up }: { s: Settings; up: Up }) {
 function ScheduleTimesSection() {
   const shared = api.shared!;
   const toast = useToast();
-  const [times, setTimes] = useState<Record<ScheduleSlotId, { at: string; from: string }> | null>(null);
+  type T = { at: string; from: string; to: string };
+  const [times, setTimes] = useState<Record<ScheduleSlotId, T> | null>(null);
   const [saved, setSaved] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const fromProfile = (st?: ScheduleTimes) => {
-    const v = Object.fromEntries(slotsFor(st).map((s) => [s.id, { at: s.at, from: s.from.time }])) as Record<ScheduleSlotId, { at: string; from: string }>;
+    // "Đến" shows the stored end, else the run time (the default afternoon window ends at 16:30 too)
+    const v = Object.fromEntries(slotsFor(st).map((s) => [s.id, { at: s.at, from: s.from.time, to: st?.[s.id]?.to || s.at }])) as Record<ScheduleSlotId, T>;
     setTimes(v);
     setSaved(JSON.stringify(v));
   };
@@ -689,22 +691,35 @@ function ScheduleTimesSection() {
       setBusy(false);
     }
   };
-  const isDefault = SCHEDULE_SLOTS.every((d) => times[d.id].at === d.at && times[d.id].from === d.from.time);
+  const isDefault = SCHEDULE_SLOTS.every((d) => times[d.id].at === d.at && times[d.id].from === d.from.time && times[d.id].to === d.at);
+  const set = (id: ScheduleSlotId, k: keyof T, v: string) => {
+    const cur = times[id];
+    // "Đến" follows the run time until it is changed by hand
+    setTimes({ ...times, [id]: k === 'at' && cur.to === cur.at ? { ...cur, at: v, to: v } : { ...cur, [k]: v } });
+  };
+  const timeField = (id: ScheduleSlotId, k: keyof T, label: string) => (
+    <label className="block min-w-0">
+      <span className="mb-1 block text-xs font-medium text-slate-600">{label}</span>
+      <input className="input w-full min-w-0 px-2 text-center" type="time" aria-label={`${SLOT_NAMES[id]} – ${label.toLowerCase()}`} value={times[id][k]} max={k === 'at' ? LATEST_RUN : undefined} onChange={(e) => set(id, k, e.target.value)} />
+    </label>
+  );
   return (
     <Section title="Giờ thu thập tự động" help="Máy chủ tự thu thập vào các giờ này cho cấu hình đang chọn (bật/tắt từng lượt bằng công tắc Tự động ở trang chính). Áp dụng cho cả nhóm.">
-      <div className="grid gap-3 md:grid-cols-2" data-testid="schedule-times">
+      <div className="grid gap-3 lg:grid-cols-2" data-testid="schedule-times">
         {SCHEDULE_SLOTS.map((d, i) => (
-          <div key={d.id} className="rounded-lg border border-slate-200 bg-white p-3">
+          <div key={d.id} className="min-w-0 rounded-lg border border-slate-200 bg-white p-3">
             <div className="mb-2 text-sm font-semibold text-navy-800">{SLOT_NAMES[d.id]}</div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Giờ chạy"><input className="input" type="time" aria-label={`${SLOT_NAMES[d.id]} – giờ chạy`} value={times[d.id].at} max={LATEST_RUN} onChange={(e) => setTimes({ ...times, [d.id]: { ...times[d.id], at: e.target.value } })} /></Field>
-              <Field label="Lấy tin từ"><input className="input" type="time" aria-label={`${SLOT_NAMES[d.id]} – lấy tin từ`} value={times[d.id].from} onChange={(e) => setTimes({ ...times, [d.id]: { ...times[d.id], from: e.target.value } })} /></Field>
+            {/* one row when there is room, one field per row on a phone */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2">
+              {timeField(d.id, 'at', 'Giờ chạy')}
+              {timeField(d.id, 'from', 'Từ')}
+              {timeField(d.id, 'to', 'Đến')}
             </div>
             <p className="mt-2 text-xs text-slate-600">{preview[i]!.label}</p>
           </div>
         ))}
       </div>
-      {problem ? <p className="text-xs text-red-700">{problem}</p> : <p className="text-xs text-slate-500">"Lấy tin từ" muộn hơn giờ chạy nghĩa là từ hôm trước. Giờ chạy muộn nhất {LATEST_RUN}. Dữ liệu có sau giờ chạy khoảng 5–10 phút.</p>}
+      {problem ? <p className="text-xs text-red-700">{problem}</p> : <p className="text-xs text-slate-500">"Đến" mặc định bằng giờ chạy, đổi được nhưng không muộn hơn giờ chạy. "Từ" muộn hơn "Đến" nghĩa là từ hôm trước. Giờ chạy muộn nhất {LATEST_RUN}. Dữ liệu có sau giờ chạy khoảng 5–10 phút.</p>}
       <div className="flex flex-wrap gap-2">
         <button className="btn-teal" disabled={busy || !!problem || JSON.stringify(times) === saved} onClick={() => void save(times)}>
           <Save className="h-4 w-4" /> {busy ? 'Đang lưu…' : 'Lưu giờ'}

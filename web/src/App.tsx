@@ -1,4 +1,4 @@
-import { Activity, AlarmClock, AlertTriangle, Archive, ArchiveRestore, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Check, Inbox, LogIn, LogOut, MapPin, QrCode, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
+import { Activity, AlarmClock, AlertTriangle, Archive, ArchiveRestore, HelpCircle, History, Lightbulb, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarClock, Clock3, Check, Inbox, LogIn, LogOut, MapPin, QrCode, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Play, RefreshCw, Search, Settings as Cog, Square, Trash2, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { suggestAssignment } from '../../src/domain/assignment';
 import { ASSESSMENT_LABEL } from '../../src/domain/classify';
@@ -2338,8 +2338,14 @@ function ServerStrip({ server, profileId, remote, onToggle, onEditTimes }: { ser
         {slots.map((s) => (
           <Switch key={s.id} label={s.at} title={`${s.at} – ${s.label}`} ariaLabel={`Tự động lúc ${s.at}`} checked={!!prof?.schedule?.[s.id]} disabled={!server.collectEnabled} onChange={(on) => onToggle(s, on)} />
         ))}
-        <button type="button" className="text-xs font-medium text-teal-700 underline-offset-2 hover:underline" onClick={onEditTimes} data-testid="edit-times" title="Đổi giờ chạy và khung giờ lấy tin của từng lượt (Cài đặt › Thời gian)">
-          Đổi giờ
+        <button
+          type="button"
+          className="inline-flex min-h-[34px] items-center gap-1.5 rounded-full border border-teal-300 bg-teal-50 px-3.5 py-1.5 text-sm font-semibold text-teal-800 shadow-sm transition hover:border-teal-400 hover:bg-teal-100 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+          onClick={onEditTimes}
+          data-testid="edit-times"
+          title="Đổi giờ chạy và khung giờ lấy tin của từng lượt (Cài đặt › Thời gian)"
+        >
+          <Clock3 className="h-4 w-4" /> Đổi giờ
         </button>
       </div>
       <span className="text-xs text-slate-500" data-testid="auto-info" title={next ? 'Dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại' : 'Chỉ thu thập khi có người bấm Thu thập'}>

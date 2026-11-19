@@ -35,11 +35,21 @@ describe('times changed in Settings (19/11/2026)', () => {
     expect(dueSlots(at('2026-11-19T16:32'), s)).toEqual([]);
     expect(label(nextRun({ morning: true, afternoon: true }, at('2026-11-19T07:40'), ['morning'], s))).toBe('17:00 2026-11-19');
   });
+  it('"Đến" changed by hand: the window ends there (minute included), the run time stays', () => {
+    const s = slotsFor({ afternoon: { at: '16:00', from: '08:05', to: '15:45' } });
+    expect(s[1]).toMatchObject({ at: '16:00', label: 'kỳ 08:05 → 15:45 hôm nay (gồm phút 15:45)' });
+    expect(slotWindow(s[1]!, at('2026-11-19T16:05'))).toEqual({ from: '2026-11-19T08:05+07:00', to: '2026-11-19T15:46+07:00' });
+    // "Từ" later than "Đến" → yesterday
+    expect(slotWindow(slotsFor({ morning: { at: '08:00', from: '16:05', to: '07:30' } })[0]!, at('2026-11-19T08:05')).from).toBe('2026-11-18T16:05+07:00');
+    expect(slotsFor({ morning: { at: '08:00', from: '17:00', to: '08:00' } })).toEqual(SCHEDULE_SLOTS);
+    expect(validateTimes({ afternoon: { at: '16:00', from: '08:05', to: '16:30' } })).toMatch(/không được muộn hơn giờ chạy/);
+    expect(validateTimes({ afternoon: { at: '16:00', from: '15:00', to: '15:00' } })).toMatch(/"Từ" phải khác "Đến"/);
+  });
   it('validation', () => {
     expect(validateTimes({ morning: { at: '07:30', from: '17:30' } })).toBeNull();
     expect(validateTimes({ morning: { at: '7:30', from: '17:30' } })).toMatch(/HH:mm/);
     expect(validateTimes({ morning: { at: '23:00', from: '17:30' } })).toMatch(/muộn nhất/);
-    expect(validateTimes({ morning: { at: '09:00', from: '09:00' } })).toMatch(/khác giờ chạy/);
+    expect(validateTimes({ morning: { at: '09:00', from: '09:00' } })).toMatch(/phải khác "Đến"/);
     expect(validateTimes({ morning: { at: '09:00', from: '17:00' }, afternoon: { at: '09:00', from: '08:00' } })).toMatch(/trùng/);
   });
 });

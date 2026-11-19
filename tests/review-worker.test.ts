@@ -161,7 +161,7 @@ describe('shared review worker', () => {
       expect((await setTimes({ morning: { at: '07:30', from: '17:30' } }, 'wrong')).status).toBe(401);
       expect((await setTimes({ morning: { at: '23:30', from: '17:30' } })).status).toBe(400);
       expect((await setTimes('x')).status).toBe(400);
-      expect((await setTimes({ morning: { at: '07:30', from: '17:30' } })).status).toBe(200);
+      expect((await setTimes({ morning: { at: '07:30', from: '17:30', to: '07:30' } })).status).toBe(200); // "Đến" = run time is not stored
       expect(await scheduledCollect(e, gh, at('2026-11-19T08:02'))).toMatchObject({ result: 'dispatched', slot: '07:30' });
       expect(dispatched()[0]).toMatchObject({ slot: '07:30', from: '2026-11-18T17:30+07:00', to: '2026-11-19T07:31+07:00' });
       const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { profiles: Array<{ scheduleTimes: object; scheduleDone: string[] }> };
