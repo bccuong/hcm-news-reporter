@@ -7,7 +7,15 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14q – learning: rule/sector suggestions from hand moves, self-learned model for Hỏi nhanh, late retry of failed feeds; 2026-11-18)
+## ▶ RESUME HERE (session 14r – automatic collection times editable in Settings; 2026-11-19)
+- User asked (phone screenshot): the Tự động times must be changeable in Settings, not fixed at 08:00 / 16:30.
+- schedule.ts: ScheduleTimes per profile ({morning|afternoon: {at, from}}), slotsFor() applies them (unchanged → exact defaults), validateTimes() (HH:mm, run ≤ 21:57 so the 2 h dispatch window stays in the day, from ≠ at, run times distinct). Custom window = from (yesterday when later than the run) → run minute included (to = at + 1 min, like the 08:00 default).
+- Worker: ProfileMeta.scheduleTimes; POST /auto/times (reviewer code; {} = defaults); cron and /status use slotsFor per profile (reads the profile list on every 5-min tick).
+- Web: Cài đặt › Thời gian › "Giờ thu thập tự động" (Lượt 1 / Lượt 2: Giờ chạy + Lấy tin từ, preview, Lưu giờ, Về mặc định); "Đổi giờ" link next to the switches opens it; strip/next run/banner use the custom times.
+- vitest 191/191 (new schedule + worker tests), typecheck OK, test:ui:live schedule tests 3/3 (new one writes docs/screenshots/web-schedule-times.png). Committed 8e01e15, NOT pushed and worker NOT redeployed yet.
+- Next step: with the user's OK, `npx wrangler deploy` in cloud/review-worker (needed for /auto/times) then push main so Pages rebuilds.
+
+## (history) Session 14q – learning: rule/sector suggestions from hand moves, self-learned model for Hỏi nhanh, late retry of failed feeds; 2026-11-18)
 - suggest.ts: new kinds "sector" (title word of relevant stories stuck in Cần kiểm tra → sector keyword) and "setting" (catalogue of rule settings tried on every judged story; kept when fixes ≥ 3 and harms ≤ fixes/4; editor sees both counts and the stories). UI in Cài đặt › Gợi ý cải thiện; worker accepts the kinds.
 - learn.ts: naive Bayes over title (x2), sapo, first 800 body chars (words + pairs), trained nightly by scripts/suggest-filter.ts on labels + team decisions; 5-fold CV accuracy (first run: 244 judged, 73%); published to worker /model (KV model:<pid>, public GET). Hỏi nhanh (askWorker) asks first where it disagrees with a TOPIC decision of the rules (p ≥ 0.8 excluded / p ≤ 0.2 ready); never place exclusions. suggest-filter --disagree lists disagreements.
 - run.ts discoverSource: RSS / section pages that failed for a passing reason (TIMEOUT, NETWORK, 5xx, 429) are tried once more at the end of discovery; route.retried shown in Độ phủ.
