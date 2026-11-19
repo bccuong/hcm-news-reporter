@@ -2043,7 +2043,7 @@ function Inspector({ a, c, r, settings, onClose, onPatch, arts, reviews, onMerge
     editedRef.current = false;
     setTimeout(() => setSaveState((s) => (s === 'saving' ? s : 'idle')), 3000);
   };
-  // "Tồn tại cần khắc phục": unit suggested from the topic (Cài đặt › Báo cáo & mẫu › Đề xuất giao đơn vị)
+  // "Cần nghiên cứu, xử lý" (formerly "Tồn tại cần khắc phục"): unit suggested from the topic (Cài đặt › Báo cáo & mẫu › Đề xuất giao đơn vị)
   const suggested = suggestAssignment({ title, sapo: a.sapo }, settings);
   useEscape(onClose);
   return (

@@ -766,7 +766,7 @@ function QualityPanel({ s, up }: { s: Settings; up: Up }) {
       </Section>
       <Section title="Độ dài tóm tắt (cảnh báo tràn khung)">
         <div className="grid gap-3 md:grid-cols-3">
-          <NumberField label="Tồn tại" value={s.editorial.summaryMaxChars.TT} min={80} max={800} onChange={(n) => up('editorial', { summaryMaxChars: { ...s.editorial.summaryMaxChars, TT: n } })} />
+          <NumberField label="Cần nghiên cứu, xử lý" value={s.editorial.summaryMaxChars.TT} min={80} max={800} onChange={(n) => up('editorial', { summaryMaxChars: { ...s.editorial.summaryMaxChars, TT: n } })} />
           <NumberField label="Tích cực" value={s.editorial.summaryMaxChars.TC} min={80} max={800} onChange={(n) => up('editorial', { summaryMaxChars: { ...s.editorial.summaryMaxChars, TC: n } })} />
           <NumberField label="Trung lập" value={s.editorial.summaryMaxChars.TL} min={80} max={800} onChange={(n) => up('editorial', { summaryMaxChars: { ...s.editorial.summaryMaxChars, TL: n } })} />
         </div>
@@ -837,10 +837,10 @@ function ReportPanel({ s, up, advanced }: { s: Settings; up: Up; advanced: boole
       </Section>
       {s.report.templateFile && (
         <div className="mb-4 rounded border border-green-300 bg-green-50 p-3 text-xs text-green-900">
-          <b>Có thêm mẫu riêng của bạn:</b> báo cáo được dựng bằng cách nhân bản đúng các trang của mẫu (Bìa → Tồn tại → Tích cực → Trung lập → Kiến nghị), thay nội dung trong các khung sẵn có và giữ nguyên định dạng. Nếu mẫu khác cấu trúc, xuất báo cáo sẽ báo <b>BLOCKED</b> thay vì tạo tệp sai.
+          <b>Có thêm mẫu riêng của bạn:</b> báo cáo được dựng bằng cách nhân bản đúng các trang của mẫu (Bìa → Cần nghiên cứu, xử lý → Tích cực → Trung lập → Kiến nghị), thay nội dung trong các khung sẵn có và giữ nguyên định dạng. Nếu mẫu khác cấu trúc, xuất báo cáo sẽ báo <b>BLOCKED</b> thay vì tạo tệp sai.
         </div>
       )}
-      <Section title="Đề xuất giao đơn vị cho tin Tồn tại cần khắc phục" help="Mỗi tin Tồn tại được gợi ý giao đơn vị của nhóm khớp nhất theo từ khóa (có trong tiêu đề = 3 điểm, chỉ trong sapo = 1 điểm). Biên tập viên vẫn sửa được từng tin.">
+      <Section title="Đề xuất giao đơn vị cho tin Cần nghiên cứu, xử lý" help="Mỗi tin Cần nghiên cứu, xử lý được gợi ý giao đơn vị của nhóm khớp nhất theo từ khóa (có trong tiêu đề = 3 điểm, chỉ trong sapo = 1 điểm). Biên tập viên vẫn sửa được từng tin.">
         <details>
         <summary className="cursor-pointer select-none text-sm text-teal-700">{(s.editorial.assignmentRules ?? []).length} nhóm đơn vị – bấm để xem / sửa</summary>
         <div className="mt-2 space-y-2" data-testid="assignment-rules">

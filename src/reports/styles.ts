@@ -72,8 +72,8 @@ const THEMES: Record<StyleId, Theme> = {
   },
 };
 
-const GROUP_TITLE: Record<EditorialAssessment, string> = { needs_attention: 'TỒN TẠI CẦN KHẮC PHỤC', positive: 'TIN TÍCH CỰC', neutral: 'TIN TRUNG LẬP' };
-const GROUP_SHORT: Record<EditorialAssessment, string> = { needs_attention: 'Tồn tại cần khắc phục', positive: 'Tích cực', neutral: 'Trung lập' };
+const GROUP_TITLE: Record<EditorialAssessment, string> = { needs_attention: 'TIN CẦN NGHIÊN CỨU, XỬ LÝ', positive: 'TIN TÍCH CỰC', neutral: 'TIN TRUNG LẬP' };
+const GROUP_SHORT: Record<EditorialAssessment, string> = { needs_attention: 'Cần nghiên cứu, xử lý', positive: 'Tích cực', neutral: 'Trung lập' };
 const GROUPS: EditorialAssessment[] = ['needs_attention', 'positive', 'neutral'];
 const A4 = { w: 7556500 / 914400, h: 10693400 / 914400 };
 const WIDE = { w: 13.333, h: 7.5 };
@@ -442,7 +442,7 @@ function recommendations(c: Ctx) {
     const rows: PptxGenJS.TableRow[] = [
       [
         { text: 'STT', options: { bold: true, color: 'FFFFFF', fill: { color: t.group.needs_attention }, align: 'center' } },
-        { text: 'Tin tồn tại cần khắc phục', options: { bold: true, color: 'FFFFFF', fill: { color: t.group.needs_attention } } },
+        { text: 'Tin cần nghiên cứu, xử lý', options: { bold: true, color: 'FFFFFF', fill: { color: t.group.needs_attention } } },
         { text: 'Đề xuất giao', options: { bold: true, color: 'FFFFFF', fill: { color: t.group.needs_attention } } },
       ],
       ...tt.map((st, i): PptxGenJS.TableRow => [
@@ -455,7 +455,7 @@ function recommendations(c: Ctx) {
     s.addTable(rows, { x: M, y, w, colW, fontFace: t.font, fontSize: fs, color: t.ink, border: { type: 'solid', pt: 0.5, color: 'D4D4D4' }, valign: 'middle', margin: 0.06, autoPage: false });
     y += tt.reduce((n, st) => n + Math.max(textH(c, st.title, colW[1]! - 0.15, fs, true), textH(c, proposalText(st.proposal), colW[2]! - 0.15, fs)) + 0.12, 0.4) + 0.2;
   } else {
-    s.addText('Không có tin thuộc nhóm Tồn tại cần khắc phục trong khung giờ này.', { x: M, y, w, h: 0.4, fontFace: t.font, fontSize: t.size.body, italic: true, color: t.muted });
+    s.addText('Không có tin thuộc nhóm Cần nghiên cứu, xử lý trong khung giờ này.', { x: M, y, w, h: 0.4, fontFace: t.font, fontSize: t.size.body, italic: true, color: t.muted });
     y += 0.6;
   }
   const by = Math.min(y, contentBottom(c) - 0.9);

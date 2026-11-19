@@ -40,7 +40,7 @@ const RED = 'B42318';
 const GREEN = '15803D';
 const GRAY = '5B6472';
 const GROUP_COLOR: Record<EditorialAssessment, string> = { needs_attention: RED, positive: GREEN, neutral: GRAY };
-const GROUP_TITLE: Record<EditorialAssessment, string> = { needs_attention: 'TỒN TẠI CẦN KHẮC PHỤC', positive: 'TIN TÍCH CỰC', neutral: 'TIN TRUNG LẬP' };
+const GROUP_TITLE: Record<EditorialAssessment, string> = { needs_attention: 'TIN CẦN NGHIÊN CỨU, XỬ LÝ', positive: 'TIN TÍCH CỰC', neutral: 'TIN TRUNG LẬP' };
 const FONT = 'Arial';
 
 export interface LayoutWarning {
@@ -166,7 +166,7 @@ export async function buildReportPptx(input: ReportInput): Promise<Uint8Array> {
   r.addText(
     tt.length
       ? tt.map((s) => `• ${s.shortLabel}: ${s.proposal || 'Đầu mối đề xuất, chờ rà soát.'}`).join('\n')
-      : 'Không có tin thuộc nhóm Tồn tại cần khắc phục trong khung giờ này.',
+      : 'Không có tin thuộc nhóm Cần nghiên cứu, xử lý trong khung giờ này.',
     { x: 0.45, y: 1.15, w: W - 0.9, h: 4.2, fontFace: FONT, fontSize: 10.5, color: '1F2937', valign: 'top' },
   );
   r.addText('Các đề xuất đầu mối là DỰ THẢO, cần lãnh đạo rà soát trước khi gửi.', { x: 0.45, y: 5.5, w: W - 0.9, h: 0.3, fontFace: FONT, fontSize: 9, italic: true, color: 'B45309' });

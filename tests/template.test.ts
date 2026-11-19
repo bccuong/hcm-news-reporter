@@ -44,7 +44,10 @@ describe.skipIf(!has)('original template adapter (RPT-01/02/03 structural)', () 
     expect(allText).toContain('NGÀY 09/11/2026');
     expect(allText).not.toContain('SÁNG NGÀY');
     expect(allText).toContain('ngày 09 tháng 11 năm 2026');
-    expect(allText).toContain('TỒN TẠI (2/2)');
+    expect(allText).toContain('CẦN NGHIÊN CỨU, XỬ LÝ (2/2)');
+    // group renamed (user, 19/11/2026): the template's old heading is rewritten on every page
+    expect(allText).toContain('TIN CẦN NGHIÊN CỨU, XỬ LÝ');
+    expect(allText).not.toMatch(/TỒN TẠI|Tồn tại/);
     expect(allText).toContain('https://fixture-a.example.vn/bai-1-1851101001.htm');
     // multi-source line: both publishers hyperlinked in the same "Nguồn:" paragraph
     const s2 = await zip.file('ppt/slides/slide2.xml')!.async('string');

@@ -15,19 +15,23 @@ import type { ReportStory } from './pptx.js';
  */
 
 export class TemplateMismatchError extends Error {}
+/** the group heading as written in the Department's template (old wording) or in a template already updated */
+const TT_TEMPLATE_HEADINGS = ['TỒN TẠI CẦN KHẮC PHỤC', 'TIN CẦN NGHIÊN CỨU, XỬ LÝ'] as const;
+/** group name in the reports since 19/11/2026 (was "TỒN TẠI CẦN KHẮC PHỤC") */
+export const TT_HEADING = 'TIN CẦN NGHIÊN CỨU, XỬ LÝ';
 
 interface Slot { card: number; badge: number; num: number; title: number; summary: number; source: number; propBg?: number; prop?: number; pic?: number }
 export const TEMPLATE_MAP = {
   cover: { slide: 1, org: 2, title: 3, pic: 4098, summaryHeader: 7, tt: { count: 10, list: 11 }, tc: { count: 14, list: 15 }, tl: { count: 18, list: 19 }, date: 20, check: [3, 'TỔNG HỢP THÔNG TIN BÁO CHÍ'] },
   ttFirst: {
-    slide: 2, label: 3, heading: 4, sub: 5, pageNum: 25, check: [4, 'TỒN TẠI CẦN KHẮC PHỤC'],
+    slide: 2, label: 3, heading: 4, sub: 5, pageNum: 25, check: [4, TT_TEMPLATE_HEADINGS],
     slots: [
       { card: 8, badge: 9, num: 10, title: 11, summary: 12, source: 13, propBg: 14, prop: 15, pic: 1026 },
       { card: 16, badge: 17, num: 18, title: 19, summary: 20, source: 21, propBg: 22, prop: 23, pic: 1028 },
     ] as Slot[],
   },
   ttNext: {
-    slide: 3, label: 3, heading: 4, sub: 5, pageNum: 25, check: [4, 'TỒN TẠI CẦN KHẮC PHỤC'],
+    slide: 3, label: 3, heading: 4, sub: 5, pageNum: 25, check: [4, TT_TEMPLATE_HEADINGS],
     slots: [
       { card: 6, badge: 7, num: 8, title: 9, summary: 10, source: 11, propBg: 12, prop: 13, pic: 2050 },
       { card: 14, badge: 15, num: 16, title: 17, summary: 18, source: 19, propBg: 20, prop: 21, pic: 2052 },
@@ -48,7 +52,7 @@ export const TEMPLATE_MAP = {
       { card: 18, badge: 19, num: 20, title: 21, summary: 22, source: 23 },
     ] as Slot[],
   },
-  reco: { slide: 6, email: 7, groups: 13, tt: 17, tc: 21, tl: 25, footer: 26, pageNum: 27, check: [2, 'KIẾN NGHỊ VÀ ĐẦU MỐI XỬ LÝ'] },
+  reco: { slide: 6, email: 7, groups: 13, ttTitle: 16, tt: 17, tc: 21, tl: 25, footer: 26, pageNum: 27, check: [2, 'KIẾN NGHỊ VÀ ĐẦU MỐI XỬ LÝ'] },
 } as const;
 
 export interface TemplateImage { bytes: Uint8Array; ext: 'jpeg' | 'png'; width: number; height: number; credit?: string; sourceUrl: string }
@@ -233,7 +237,15 @@ function sourceRuns(ctx: SlideCtx, st: ReportStory): Run[][] {
   return [runs];
 }
 
-const GROUP_LABEL: Record<EditorialAssessment, string> = { needs_attention: 'TỒN TẠI CẦN KHẮC PHỤC', positive: 'TÍCH CỰC', neutral: 'TIN TRUNG LẬP' };
+/** the TT column header is longer than the template's (19/11/2026): its first line 14 pt → 12 pt so it stays on one line */
+function fitHeader(sp: string, g: EditorialAssessment): string {
+  if (g !== 'needs_attention') return sp;
+  const i = sp.indexOf('<a:p>'), j = sp.indexOf('</a:p>', i);
+  if (i < 0 || j < 0) return sp;
+  return sp.slice(0, i) + sp.slice(i, j).replace(/ sz="\d+"/g, ' sz="1200"') + sp.slice(j);
+}
+/** narrow column headers (cover, recommendations): the short form fits on one line like the old "TỒN TẠI CẦN KHẮC PHỤC" */
+const GROUP_LABEL: Record<EditorialAssessment, string> = { needs_attention: 'CẦN NGHIÊN CỨU, XỬ LÝ', positive: 'TÍCH CỰC', neutral: 'TIN TRUNG LẬP' };
 
 function fillSlot(ctx: SlideCtx, slot: Slot, st: ReportStory & { imageKey?: string | null }, num: number, images: Map<string, TemplateImage>) {
   ctx.xml = editShape(ctx.xml, slot.num, (sp) => setParagraphs(sp, lines(String(num))));
@@ -322,9 +334,11 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
   }
   // sanity: template must be the audited one
   for (const role of Object.values(TEMPLATE_MAP)) {
-    const [id, label] = role.check as readonly [number, string];
+    const [id, want] = role.check as readonly [number, string | readonly string[]];
+    const labels = typeof want === 'string' ? [want] : want;
+    const label = labels[0]!;
     const sp = getShape(src[role.slide]!.xml, id);
-    if (!sp || !shapeText(sp).includes(label)) throw new TemplateMismatchError(`Mẫu PPTX khác mẫu đã khảo sát (slide ${role.slide}, shape #${id} không chứa "${label}")`);
+    if (!sp || !labels.some((l) => shapeText(sp).includes(l))) throw new TemplateMismatchError(`Mẫu PPTX khác mẫu đã khảo sát (slide ${role.slide}, shape #${id} không chứa "${label}")`);
   }
 
   const [y, mo, d] = input.reportDate.split('-');
@@ -343,7 +357,7 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
     c.xml = editShape(c.xml, m.title, (sp) => setParagraphs(sp, lines('TỔNG HỢP THÔNG TIN BÁO CHÍ', 'PHẢN ÁNH VỀ NGÀNH XÂY DỰNG', `NGÀY ${dateLabel}`)));
     c.xml = editShape(c.xml, m.summaryHeader, (sp) => setParagraphs(sp, lines(`TÓM TẮT BÌA – ${input.stories.length} TIN`)));
     for (const [g, k] of [['needs_attention', 'tt'], ['positive', 'tc'], ['neutral', 'tl']] as const) {
-      c.xml = editShape(c.xml, m[k].count, (sp) => setParagraphs(sp, lines(GROUP_LABEL[g], `${by(g).length} tin`)));
+      c.xml = editShape(c.xml, m[k].count, (sp) => fitHeader(setParagraphs(sp, lines(GROUP_LABEL[g], `${by(g).length} tin`)), g));
       const fitted = fittedList(c.xml, m[k].list, by(g), `Bìa – nhóm ${GROUP_LABEL[g]}`, notes);
       c.xml = editShape(c.xml, m[k].list, (sp) => setParagraphs(sp, fitted, () => 0));
     }
@@ -359,7 +373,8 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
   for (let p = 0; p < ttPages; p++) {
     const m = p === 0 ? TEMPLATE_MAP.ttFirst : TEMPLATE_MAP.ttNext;
     const c = mk(m.slide);
-    c.xml = editShape(c.xml, m.label, (sp) => setParagraphs(sp, lines(`TỒN TẠI (${p + 1}/${ttPages})`)));
+    c.xml = editShape(c.xml, m.label, (sp) => setParagraphs(sp, lines(`CẦN NGHIÊN CỨU, XỬ LÝ (${p + 1}/${ttPages})`)));
+    c.xml = editShape(c.xml, m.heading, (sp) => setParagraphs(sp, lines(TT_HEADING)));
     m.slots.forEach((slot, i) => {
       const st = tt[p * 2 + i];
       if (st) fillSlot(c, slot, st, p * 2 + i + 1, input.images);
@@ -427,7 +442,8 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
       const p = (s.proposal || 'Đầu mối đề xuất, chờ rà soát.').replace(/^Đề xuất:\s*/, '');
       groupLines.push(s.shortLabel, p.charAt(0).toLocaleUpperCase('vi') + p.slice(1)); // "Giao Phòng …"
     }
-    c.xml = editShape(c.xml, m.groups, (sp) => setParagraphs(sp, groupLines.length ? lines(...groupLines) : lines('Không có tin Tồn tại cần khắc phục trong khung giờ này.'), (i) => i % 2));
+    c.xml = editShape(c.xml, m.groups, (sp) => setParagraphs(sp, groupLines.length ? lines(...groupLines) : lines('Không có tin Cần nghiên cứu, xử lý trong khung giờ này.'), (i) => i % 2));
+    c.xml = editShape(c.xml, m.ttTitle, (sp) => fitHeader(setParagraphs(sp, lines(GROUP_LABEL.needs_attention)), 'needs_attention')); // the template's header above the TT list
     for (const [id, list, g] of [[m.tt, tt, 'needs_attention'], [m.tc, tc, 'positive'], [m.tl, tl, 'neutral']] as const) {
       const fitted = fittedList(c.xml, id, list, `Kiến nghị – nhóm ${GROUP_LABEL[g]}`, notes);
       c.xml = editShape(c.xml, id, (sp) => setParagraphs(sp, fitted, () => 0));
@@ -435,7 +451,7 @@ export async function buildFromTemplate(templateBytes: Uint8Array, input: Templa
     fitWarn(c.xml, m.groups, groupLines, 'Kiến nghị – danh sách đầu mối', notes, 0);
     c.xml = editShape(c.xml, m.footer, (sp) => setParagraphs(sp, lines(`VĂN PHÒNG SỞ  ${dateLabel}`)));
     push(c, m.slide);
-    if (tt.length > 4) notes.push('Kiến nghị: nhiều hơn 4 tin Tồn tại – kiểm tra tràn khung trên trang Kiến nghị.');
+    if (tt.length > 4) notes.push('Kiến nghị: nhiều hơn 4 tin Cần nghiên cứu, xử lý – kiểm tra tràn khung trên trang Kiến nghị.');
   }
 
   /* ---- page numbers ---- */

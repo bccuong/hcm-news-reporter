@@ -32,7 +32,7 @@ const LINK = rgb(0.02, 0.33, 0.7);
 const RULE = rgb(0.82, 0.82, 0.82);
 const hex = (h: string) => rgb(parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255);
 const GROUPS: Array<{ key: EditorialAssessment; title: string; color: RGB; tint: RGB }> = [
-  { key: 'needs_attention', title: 'TỒN TẠI CẦN KHẮC PHỤC', color: hex('A61B1B'), tint: hex('FBECEC') },
+  { key: 'needs_attention', title: 'TIN CẦN NGHIÊN CỨU, XỬ LÝ', color: hex('A61B1B'), tint: hex('FBECEC') },
   { key: 'positive', title: 'TÍCH CỰC', color: hex('1E7B34'), tint: hex('EAF5EC') },
   { key: 'neutral', title: 'TIN TRUNG LẬP', color: hex('2B4C7E'), tint: hex('ECF1F8') },
 ];

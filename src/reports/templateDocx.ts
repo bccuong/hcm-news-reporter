@@ -68,6 +68,18 @@ function chartXml(title: string, subtitle: string, category: string, series: Arr
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:lang val="vi-VN"/><c:roundedCorners val="0"/><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr>${txt(1400, false)}</a:pPr><a:r><a:rPr lang="vi-VN" sz="1400" b="0"><a:solidFill><a:srgbClr val="595959"/></a:solidFill></a:rPr><a:t>${esc(title)}</a:t></a:r></a:p><a:p><a:pPr>${txt(1200, false)}</a:pPr><a:r><a:rPr lang="vi-VN" sz="1200" b="0"><a:solidFill><a:srgbClr val="595959"/></a:solidFill></a:rPr><a:t>${esc(subtitle)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${ser}<c:gapWidth val="219"/><c:overlap val="-27"/><c:axId val="1001"/><c:axId val="1002"/></c:barChart><c:catAx><c:axId val="1001"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="D9D9D9"/></a:solidFill></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>${txt(1000, false)}</a:pPr><a:endParaRPr lang="vi-VN"/></a:p></c:txPr><c:crossAx val="1002"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx><c:valAx><c:axId val="1002"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="EDEDED"/></a:solidFill></a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="0" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>${txt(900, false)}</a:pPr><a:endParaRPr lang="vi-VN"/></a:p></c:txPr><c:crossAx val="1001"/><c:crosses val="autoZero"/><c:crossBetween val="between"/><c:majorUnit val="1"/></c:valAx><c:spPr><a:noFill/></c:spPr></c:plotArea><c:legend><c:legendPos val="b"/><c:overlay val="0"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>${txt(1000, false)}</a:pPr><a:endParaRPr lang="vi-VN"/></a:p></c:txPr></c:legend><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr></c:chartSpace>`;
 }
 
+/** group name in the reports since 19/11/2026; the Department's template still says "TỒN TẠI CẦN KHẮC PHỤC" */
+const TT_HEADING = 'TIN CẦN NGHIÊN CỨU, XỬ LÝ';
+/** the template's group heading paragraph with the new name: first text run gets it, the other runs are emptied (format kept) */
+function renameTT(p: string): string {
+  let first = true;
+  return p.replace(/(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g, (_, open: string, _t: string, close: string) => {
+    const out = first ? `${open.startsWith('<w:t ') ? open : '<w:t xml:space="preserve">'}${TT_HEADING}${close}` : `${open}${close}`;
+    first = false;
+    return out;
+  });
+}
+
 export async function buildDocxFromTemplate(templateBytes: Uint8Array, input: DocxReportInput): Promise<{ bytes: Uint8Array; notes: string[] }> {
   const zip = await JSZip.loadAsync(templateBytes);
   const notes: string[] = [];
@@ -88,7 +100,7 @@ export async function buildDocxFromTemplate(templateBytes: Uint8Array, input: Do
 
   // anchors of the surveyed template (any change → BLOCKED instead of a wrong file)
   const iDate = find((t) => /^(SÁNG\s+)?NGÀY\s*\d{1,2}\s*\/\s*\d{1,2}\s*\/\s*\d{4}$/i.test(t));
-  const iTT = find((t) => t === 'TỒN TẠI CẦN KHẮC PHỤC');
+  const iTT = find((t) => t === 'TỒN TẠI CẦN KHẮC PHỤC' || t === TT_HEADING);
   const iTC = find((t) => t === 'TÍCH CỰC');
   const iTL = find((t) => t === 'TIN TRUNG LẬP');
   const iNote = find((t) => t.startsWith('Lưu ý'));
@@ -103,7 +115,7 @@ export async function buildDocxFromTemplate(templateBytes: Uint8Array, input: Do
     return parts[storyAfter(h)]!;
   };
   const proto = {
-    TT: { heading: parts[iTT]!, story: storyProto(iTT, iTC) },
+    TT: { heading: renameTT(parts[iTT]!), story: storyProto(iTT, iTC) },
     TC: { heading: parts[iTC]!, story: storyProto(iTC, iTL) },
     TL: { heading: parts[iTL]!, story: storyProto(iTL, iNote) },
     summary: parts[storyAfter(iTT) + 1]!,
@@ -184,7 +196,7 @@ export async function buildDocxFromTemplate(templateBytes: Uint8Array, input: Do
   if (chartAdded) {
     const label = `Ngày ${d}/${mo}/${y}`;
     zip.file('word/charts/chart1.xml', chartXml(`Điểm tin Báo chí ngày ${d}/${mo}/${y}`, `Tổng: ${input.stories.length}`, label, [
-      ['Tích cực', '00B050', counts.positive], ['Tồn tại cần khắc phục', 'FF0000', counts.needs_attention], ['Trung lập', '0070C0', counts.neutral],
+      ['Tích cực', '00B050', counts.positive], ['Cần nghiên cứu, xử lý', 'FF0000', counts.needs_attention], ['Trung lập', '0070C0', counts.neutral],
     ]));
     rels = rels.replace('</Relationships>', '<Relationship Id="rIdNRChart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="charts/chart1.xml"/></Relationships>');
     if (picRelId) {

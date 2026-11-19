@@ -42,8 +42,11 @@ describe('Word report from the Department template', () => {
     const chart = await z.file('word/charts/chart1.xml')!.async('string');
     expect(chart).toContain('Điểm tin Báo chí ngày 17/11/2026');
     expect(chart).toContain('Tổng: 2');
-    expect(chart).toMatch(/Tồn tại cần khắc phục<\/c:v><\/c:tx>[\s\S]*?<c:v>1<\/c:v><\/c:pt><\/c:numLit>/);
+    expect(chart).toMatch(/Cần nghiên cứu, xử lý<\/c:v><\/c:tx>[\s\S]*?<c:v>1<\/c:v><\/c:pt><\/c:numLit>/);
     expect(z.file('word/media/image1.png')).toBeNull();
+    // group renamed (user, 19/11/2026): the template's old heading is not left in the report
+    expect(doc).toContain('TIN CẦN NGHIÊN CỨU, XỬ LÝ');
+    expect(doc).not.toMatch(/TỒN TẠI|Tồn tại/);
     expect(await z.file('[Content_Types].xml')!.async('string')).toContain('/word/charts/chart1.xml');
     // no personal names in the file properties
     const core = await z.file('docProps/core.xml')!.async('string');
@@ -56,7 +59,7 @@ describe('Word report from the Department template', () => {
     expect(doc.slice(0, doc.indexOf('Lưu ý'))).not.toContain('<w:sym ');
     // "I." / "II." / "III." take their heading's colour: the list level no longer forces "auto"
     const num = await z.file('word/numbering.xml')!.async('string');
-    const numId = /TỒN TẠI CẦN KHẮC PHỤC/.test(doc) ? /<w:numId w:val="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?TỒN TẠI CẦN KHẮC PHỤC/.exec(doc.slice(doc.lastIndexOf('<w:p', doc.indexOf('TỒN TẠI CẦN KHẮC PHỤC'))))?.[1] : undefined;
+    const numId = /TIN CẦN NGHIÊN CỨU, XỬ LÝ/.test(doc) ? /<w:numId w:val="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?TIN CẦN NGHIÊN CỨU, XỬ LÝ/.exec(doc.slice(doc.lastIndexOf('<w:p', doc.indexOf('TIN CẦN NGHIÊN CỨU, XỬ LÝ'))))?.[1] : undefined;
     const abs = new RegExp(`<w:num w:numId="${numId}"[^>]*>\\s*<w:abstractNumId w:val="(\\d+)"`).exec(num)![1];
     const a0 = num.indexOf(`w:abstractNumId="${abs}"`);
     const lvl0 = num.slice(num.indexOf('<w:lvl w:ilvl="0"', a0), num.indexOf('</w:lvl>', a0));

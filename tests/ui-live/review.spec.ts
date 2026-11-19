@@ -284,7 +284,7 @@ test('web = local: photos, full article text, shared settings used by the server
   await expect(page.getByRole('checkbox', { name: '.pdf' })).not.toBeChecked();
   const wordXml = await (await JSZip.loadAsync(Buffer.from(word.b64, 'base64'))).file('word/document.xml')!.async('string');
   expect(wordXml).toContain('Mưa lớn tối 8.11');
-  expect(wordXml).toContain('TỒN TẠI CẦN KHẮC PHỤC');
+  expect(wordXml).toContain('TIN CẦN NGHIÊN CỨU, XỬ LÝ');
   expect(wordXml).not.toContain('SÁNG');
   await page.screenshot({ path: 'docs/screenshots/web-export-template.png' });
 

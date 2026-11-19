@@ -101,7 +101,7 @@ export function suggestAssessment(title: string, body: string): { value: Editori
 }
 
 export const ASSESSMENT_LABEL: Record<EditorialAssessment, string> = {
-  needs_attention: 'Tồn tại cần khắc phục',
+  needs_attention: 'Cần nghiên cứu, xử lý',
   positive: 'Chuyển động tích cực',
   neutral: 'Tin trung lập',
 };
