@@ -4,6 +4,7 @@ import { defaultSettings } from '../../src/domain/defaults';
 import { detectLocation } from '../../src/domain/location';
 import { SettingsSchema, withoutSkillNote, type Article, type CategoryCode, type LocationArea, type RuleGroup, type RuleNode, type RuleTerm, type Settings, type Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
+import { LATEST_RUN, SCHEDULE_SLOTS, SLOT_NAMES, slotsFor, validateTimes, type ScheduleSlotId, type ScheduleTimes } from '../../src/domain/schedule';
 import { uid } from '../../src/domain/text';
 import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption } from './api';
 import { alreadyApplied, applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
@@ -73,8 +74,8 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   useEffect(() => {
-    if (initialSection) setNav(initialSection);
-  }, [initialSection]);
+    if (initialSection && open) setNav(initialSection);
+  }, [initialSection, open]);
 
   const dirtyS = !!s && !!saved && JSON.stringify(s) !== JSON.stringify(saved.s);
   const dirtySrc = !!saved && JSON.stringify(src) !== JSON.stringify(saved.src);
@@ -643,11 +644,76 @@ function TimePanel({ s, up }: { s: Settings; up: Up }) {
         <NumberField label="Biên dò thêm quanh khung giờ" value={s.reportWindow.lookbackMarginHours} min={0} max={72} suffix="giờ" onChange={(n) => up('reportWindow', { lookbackMarginHours: n })} help="Bài có ngày RSS nằm ngoài khung ± biên này được ghi nhận Ngoài khung mà không tải. Bài trong biên vẫn được tải để xác minh giờ đăng thật." />
         <p className="text-xs text-slate-600">Ngày dùng để lọc: <b>giờ đăng gốc</b> (không thay bằng giờ cập nhật hay giờ thu thập). Múi giờ cố định: Asia/Ho_Chi_Minh (UTC+07:00).</p>
       </Section>
+      {api.shared && <ScheduleTimesSection />}
       <Section title="Tự động khi mở ứng dụng">
         <Toggle checked={s.startup.autoCollectLastCompletedWindow} onChange={(v) => up('startup', { autoCollectLastCompletedWindow: v })} label="Tự thu thập kỳ gần nhất khi mở ứng dụng (cần Internet)" />
         <Toggle checked={s.startup.oncePerWindow} onChange={(v) => up('startup', { oncePerWindow: v })} label="Mỗi khung giờ chỉ tự chạy một lần (tải lại trang không tạo lượt trùng)" />
       </Section>
     </div>
+  );
+}
+
+/**
+ * web (shared): times of the automatic collection slots of the active profile, saved on the review worker at once
+ * (own "Lưu giờ" button – not part of the settings Save). The on/off switches stay on the main page.
+ */
+function ScheduleTimesSection() {
+  const shared = api.shared!;
+  const toast = useToast();
+  const [times, setTimes] = useState<Record<ScheduleSlotId, { at: string; from: string }> | null>(null);
+  const [saved, setSaved] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const fromProfile = (st?: ScheduleTimes) => {
+    const v = Object.fromEntries(slotsFor(st).map((s) => [s.id, { at: s.at, from: s.from.time }])) as Record<ScheduleSlotId, { at: string; from: string }>;
+    setTimes(v);
+    setSaved(JSON.stringify(v));
+  };
+  useEffect(() => {
+    shared.serverStatus().then((s) => fromProfile(s.profiles.find((p) => p.id === shared.profileId())?.scheduleTimes)).catch((e: Error) => setErr(e.message));
+  }, []);
+  if (!times) return <Section title="Giờ thu thập tự động">{err ? <p className="text-xs text-red-700">{err}</p> : <p className="text-xs text-slate-500">Đang tải…</p>}</Section>;
+  const problem = validateTimes(times);
+  const preview = slotsFor(times);
+  const save = async (v: ScheduleTimes) => {
+    if (!shared.session()) return toast('err', 'Hãy đăng nhập người duyệt (nút Đăng nhập ở đầu trang) để đổi giờ lịch');
+    setBusy(true);
+    try {
+      const p = await shared.setScheduleTimes(v);
+      fromProfile(p.scheduleTimes);
+      window.dispatchEvent(new Event('schedule-changed'));
+      toast('ok', 'Đã lưu giờ thu thập tự động – áp dụng từ lượt kế tiếp');
+    } catch (e) {
+      toast('err', (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const isDefault = SCHEDULE_SLOTS.every((d) => times[d.id].at === d.at && times[d.id].from === d.from.time);
+  return (
+    <Section title="Giờ thu thập tự động" help="Máy chủ tự thu thập vào các giờ này cho cấu hình đang chọn (bật/tắt từng lượt bằng công tắc Tự động ở trang chính). Áp dụng cho cả nhóm.">
+      <div className="grid gap-3 md:grid-cols-2" data-testid="schedule-times">
+        {SCHEDULE_SLOTS.map((d, i) => (
+          <div key={d.id} className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="mb-2 text-sm font-semibold text-navy-800">{SLOT_NAMES[d.id]}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Giờ chạy"><input className="input" type="time" aria-label={`${SLOT_NAMES[d.id]} – giờ chạy`} value={times[d.id].at} max={LATEST_RUN} onChange={(e) => setTimes({ ...times, [d.id]: { ...times[d.id], at: e.target.value } })} /></Field>
+              <Field label="Lấy tin từ"><input className="input" type="time" aria-label={`${SLOT_NAMES[d.id]} – lấy tin từ`} value={times[d.id].from} onChange={(e) => setTimes({ ...times, [d.id]: { ...times[d.id], from: e.target.value } })} /></Field>
+            </div>
+            <p className="mt-2 text-xs text-slate-600">{preview[i]!.label}</p>
+          </div>
+        ))}
+      </div>
+      {problem ? <p className="text-xs text-red-700">{problem}</p> : <p className="text-xs text-slate-500">"Lấy tin từ" muộn hơn giờ chạy nghĩa là từ hôm trước. Giờ chạy muộn nhất {LATEST_RUN}. Dữ liệu có sau giờ chạy khoảng 5–10 phút.</p>}
+      <div className="flex flex-wrap gap-2">
+        <button className="btn-teal" disabled={busy || !!problem || JSON.stringify(times) === saved} onClick={() => void save(times)}>
+          <Save className="h-4 w-4" /> {busy ? 'Đang lưu…' : 'Lưu giờ'}
+        </button>
+        <button className="btn-ghost" disabled={busy || isDefault} onClick={() => void save({})} title="Về 08:00 (17:00 hôm qua → 08:00) và 16:30 (08:01 → 16:30)">
+          <RotateCcw className="h-4 w-4" /> Về mặc định
+        </button>
+      </div>
+    </Section>
   );
 }
 

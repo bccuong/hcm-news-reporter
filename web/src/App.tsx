@@ -5,7 +5,7 @@ import { ASSESSMENT_LABEL } from '../../src/domain/classify';
 import { EXCLUDE_REASONS, EXCLUDE_REASON_LABEL, type AdapterHealth, type Article, type Candidate, type CategoryCode, type EditorialAssessment, type ExcludeReason, type ReviewDecision, type Settings, type Source } from '../../src/domain/schemas';
 import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validateWindow, vnIsoToLocalInput, yesterdayWindow } from '../../src/domain/timeWindow';
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
-import { nextRun, SCHEDULE_SLOTS, type ScheduleSlot } from '../../src/domain/schedule';
+import { nextRun, slotsFor, type ScheduleSlot } from '../../src/domain/schedule';
 import { uncertainStories, type UncertainStory } from '../../src/domain/suggest';
 import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
@@ -35,7 +35,7 @@ export function App() {
   const [sources, setSources] = useState<Source[]>([]);
   const [online, setOnline] = useState(navigator.onLine);
   // after switching profile inside Settings the page reloads: reopen Settings on the same section
-  const [reopenSection] = useState<string | null>(() => {
+  const [reopenSection, setReopenSection] = useState<string | null>(() => {
     try {
       const v = sessionStorage.getItem('reopenSettings');
       sessionStorage.removeItem('reopenSettings');
@@ -415,6 +415,12 @@ export function App() {
       /* status strip is informative only */
     }
   }, []);
+  // times changed in Settings › Thời gian: the "Tự động" strip shows them at once
+  useEffect(() => {
+    const on = () => void loadServer();
+    window.addEventListener('schedule-changed', on);
+    return () => window.removeEventListener('schedule-changed', on);
+  }, [loadServer]);
   const serverRunning = (server?.running.length ?? 0) > 0;
   // the server just finished a run: its data reaches the site within a minute or two – look every 15 s for 4 minutes
   const wasRunning = useRef(false);
@@ -442,7 +448,8 @@ export function App() {
   }, [loadServer, !!remote, serverRunning]);
   const busyRun: CollectRun | undefined = server?.running[0];
   // ticked fixed collection times of the active profile, e.g. "08:00, 16:30"
-  const autoTimes = SCHEDULE_SLOTS.filter((s) => server?.profiles.find((x) => x.id === profiles?.activeId)?.schedule?.[s.id]).map((s) => s.at).join(', ');
+  const activeServerProf = server?.profiles.find((x) => x.id === profiles?.activeId);
+  const autoTimes = slotsFor(activeServerProf?.scheduleTimes).filter((s) => activeServerProf?.schedule?.[s.id]).map((s) => s.at).join(', ');
   const toggleAuto = async (slot: ScheduleSlot, enabled: boolean) => {
     if (!api.shared) return;
     if (!api.shared.session()) return setLoginOpen(true);
@@ -730,7 +737,7 @@ export function App() {
             </div>
             {api.shared && server && (
               <div className="w-full border-t border-slate-100 pt-2 lg:ml-auto lg:w-auto lg:border-0 lg:pt-0">
-                <ServerStrip server={server} profileId={profiles?.activeId ?? 'hcm'} remote={!!remote} onToggle={toggleAuto} />
+                <ServerStrip server={server} profileId={profiles?.activeId ?? 'hcm'} remote={!!remote} onToggle={toggleAuto} onEditTimes={() => { setReopenSection('time'); setSettingsOpen(true); }} />
               </div>
             )}
           </div>
@@ -824,7 +831,7 @@ export function App() {
       )}
       <SettingsDrawer
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => { setSettingsOpen(false); setReopenSection(null); }}
         initialSection={(reopenSection ?? undefined) as Parameters<typeof SettingsDrawer>[0]['initialSection']}
         onSaved={(s, src) => {
           setSettings(s);
@@ -2316,9 +2323,10 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('vi-VN', { hour: 
 const RUN_KIND: Record<string, string> = { auto: 'lượt tự động theo lịch', request: 'lượt thu thập theo yêu cầu', deploy: 'cập nhật phần mềm & dữ liệu (sau khi đẩy mã mới)' };
 
 /** web: hourly automatic switch + what the collection server is doing now */
-function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerStatus; profileId: string; remote: boolean; onToggle: (slot: ScheduleSlot, on: boolean) => void }) {
+function ServerStrip({ server, profileId, remote, onToggle, onEditTimes }: { server: ServerStatus; profileId: string; remote: boolean; onToggle: (slot: ScheduleSlot, on: boolean) => void; onEditTimes: () => void }) {
   const prof = server.profiles.find((p) => p.id === profileId);
-  const next = nextRun(prof?.schedule, new Date(), prof?.scheduleDone);
+  const slots = slotsFor(prof?.scheduleTimes);
+  const next = nextRun(prof?.schedule, new Date(), prof?.scheduleDone, slots);
   const run = server.running[0];
   const who = run?.kind === 'request' ? personName(/\((.*)\)(?:\s*\[[^\]]*\])?\s*$/.exec(run.title)?.[1] ?? '') || undefined : undefined;
   return (
@@ -2327,9 +2335,12 @@ function ServerStrip({ server, profileId, remote, onToggle }: { server: ServerSt
         <AlarmClock className="h-4 w-4 text-teal-600" /> Tự động
       </span>
       <div className="flex flex-wrap items-center gap-4" data-testid="auto-schedule">
-        {SCHEDULE_SLOTS.map((s) => (
+        {slots.map((s) => (
           <Switch key={s.id} label={s.at} title={`${s.at} – ${s.label}`} ariaLabel={`Tự động lúc ${s.at}`} checked={!!prof?.schedule?.[s.id]} disabled={!server.collectEnabled} onChange={(on) => onToggle(s, on)} />
         ))}
+        <button type="button" className="text-xs font-medium text-teal-700 underline-offset-2 hover:underline" onClick={onEditTimes} data-testid="edit-times" title="Đổi giờ chạy và khung giờ lấy tin của từng lượt (Cài đặt › Thời gian)">
+          Đổi giờ
+        </button>
       </div>
       <span className="text-xs text-slate-500" data-testid="auto-info" title={next ? 'Dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại' : 'Chỉ thu thập khi có người bấm Thu thập'}>
         {next ? <>Tiếp: <b className="text-slate-700">{next.slot.at} {next.at.slice(8, 10)}/{next.at.slice(5, 7)}/{next.at.slice(0, 4)}</b></> : 'Đang tắt'}

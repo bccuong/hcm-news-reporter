@@ -151,6 +151,26 @@ describe('shared review worker', () => {
       expect(st.profiles[0]).toMatchObject({ id: 'hcm', schedule: { morning: true, afternoon: false }, autoBy: 'B' });
       expect(st.lastAuto).toMatchObject({ result: 'dispatched', slot: '08:00' });
     });
+    it('times changed in Settings: validated, saved per profile, used by the cron and shown in /status (19/11/2026)', async () => {
+      const e = genv();
+      running = [];
+      calls.length = 0;
+      const setTimes = (times: unknown, code = 'HCM-test-1234') =>
+        handle(new Request('https://w.example/auto/times', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ times, reviewer: 'C', profile: 'hcm' }) }), e, gh);
+      await setSlot(e, 'morning', true);
+      expect((await setTimes({ morning: { at: '07:30', from: '17:30' } }, 'wrong')).status).toBe(401);
+      expect((await setTimes({ morning: { at: '23:30', from: '17:30' } })).status).toBe(400);
+      expect((await setTimes('x')).status).toBe(400);
+      expect((await setTimes({ morning: { at: '07:30', from: '17:30' } })).status).toBe(200);
+      expect(await scheduledCollect(e, gh, at('2026-11-19T08:02'))).toMatchObject({ result: 'dispatched', slot: '07:30' });
+      expect(dispatched()[0]).toMatchObject({ slot: '07:30', from: '2026-11-18T17:30+07:00', to: '2026-11-19T07:31+07:00' });
+      const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { profiles: Array<{ scheduleTimes: object; scheduleDone: string[] }> };
+      expect(st.profiles[0]).toMatchObject({ scheduleTimes: { morning: { at: '07:30', from: '17:30' } }, scheduleDone: ['morning'] });
+      // back to the defaults
+      expect((await setTimes({})).status).toBe(200);
+      expect(await scheduledCollect(e, gh, at('2026-11-20T07:35'))).toBeNull();
+      expect(await scheduledCollect(e, gh, at('2026-11-20T08:02'))).toMatchObject({ result: 'dispatched', slot: '08:00' });
+    });
     it('busy server → tried again on the next tick (not skipped for the day); status names the running run kind', async () => {
       const e = genv();
       await setSlot(e, 'morning', true);

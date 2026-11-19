@@ -108,6 +108,41 @@ test('automatic collection at 08:00 / 16:30 (ticked per profile) + busy server i
   await expect(page.getByRole('button', { name: 'Thu thập' })).toBeEnabled();
 });
 
+test('automatic times are changed in Settings (not fixed at 08:00 / 16:30), shown on the strip, back to defaults', async ({ page, request }) => {
+  await page.goto('');
+  await login(page, 'Người duyệt G', 'HCM-TEST-CODE');
+  const strip = page.getByTestId('server-status');
+  await strip.getByTestId('edit-times').click();
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  const box = dlg.getByTestId('schedule-times');
+  await expect(box.getByLabel('Lượt 1 – giờ chạy')).toHaveValue('08:00');
+  await box.getByLabel('Lượt 1 – giờ chạy').fill('07:30');
+  await box.getByLabel('Lượt 1 – lấy tin từ').fill('17:30');
+  await box.getByLabel('Lượt 2 – giờ chạy').fill('17:00');
+  await box.getByLabel('Lượt 2 – lấy tin từ').fill('07:31');
+  await expect(box).toContainText('kỳ 17:30 hôm qua → 07:30 hôm nay');
+  // invalid: same run time → save disabled with the reason
+  await box.getByLabel('Lượt 2 – giờ chạy').fill('07:30');
+  await expect(dlg.getByText('Hai lượt không được trùng giờ chạy')).toBeVisible();
+  await expect(dlg.getByRole('button', { name: 'Lưu giờ' })).toBeDisabled();
+  await box.getByLabel('Lượt 2 – giờ chạy').fill('17:00');
+  await dlg.getByRole('button', { name: 'Lưu giờ' }).click();
+  await expect(page.getByText(/Đã lưu giờ thu thập tự động/)).toBeVisible();
+  const st = await (await request.get('http://127.0.0.1:5181/status')).json();
+  expect(st.profiles.find((p: { id: string }) => p.id === 'hcm').scheduleTimes).toEqual({ morning: { at: '07:30', from: '17:30' }, afternoon: { at: '17:00', from: '07:31' } });
+  await page.screenshot({ path: 'docs/screenshots/web-schedule-times.png' });
+  await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
+  await expect(strip.getByLabel('Tự động lúc 07:30')).toBeVisible();
+  await expect(strip.getByLabel('Tự động lúc 17:00')).toBeVisible();
+  // back to the defaults
+  await strip.getByTestId('edit-times').click();
+  await dlg.getByRole('button', { name: 'Về mặc định' }).click();
+  await expect(page.getByText(/Đã lưu giờ thu thập tự động/).first()).toBeVisible();
+  await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
+  await expect(strip.getByLabel('Tự động lúc 08:00')).toBeVisible();
+  await expect(strip.getByLabel('Tự động lúc 16:30')).toBeVisible();
+});
+
 test('web "Thu thập" like the local app: choose from/to → server collection → progress → new period opens', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto('');

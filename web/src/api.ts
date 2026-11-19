@@ -1,7 +1,7 @@
 import { defaultSettings, defaultSources, parseWebsitesTxt, settingsForNewRegion } from '../../src/domain/defaults';
 import type { FilterSuggestion } from '../../src/domain/suggest';
 import type { LearnedModel } from '../../src/domain/learn';
-import type { ScheduleSlot, ScheduleState } from '../../src/domain/schedule';
+import type { ScheduleSlot, ScheduleState, ScheduleTimes } from '../../src/domain/schedule';
 import { evaluateRule, validateRule } from '../../src/domain/rules';
 import { judgeRelevance } from '../../src/domain/relevance';
 import { computeRelevanceQuality, type RelevanceQuality } from '../../src/domain/quality';
@@ -19,7 +19,7 @@ export interface ExportResult { ok: boolean; dryRun?: boolean; blockers?: string
 export interface HistoryEntry { id: string; at: string; kind: string; summary: string }
 
 /** profiles (cấu hình theo địa bàn); web: the active one is chosen per browser */
-export interface ProfileInfo { id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string; autoBy?: string; autoAt?: string; schedule?: ScheduleState; /** web: slot ids already collected today (from the review worker) */ scheduleDone?: string[] }
+export interface ProfileInfo { id: string; name: string; description: string; autoCollect: boolean; clonedFrom: string | null; createdAt: string; updatedAt: string; autoBy?: string; autoAt?: string; schedule?: ScheduleState; /** times changed in Settings (unset = 08:00 / 16:30) */ scheduleTimes?: ScheduleTimes; /** web: slot ids already collected today (from the review worker) */ scheduleDone?: string[] }
 export interface ProfilesState { activeId: string; profiles: ProfileInfo[] }
 export interface TemplateOption { id: string; name: string; description: string; kind: 'original-pptx' | 'style' | 'upload'; orientation: 'portrait' | 'landscape'; available?: boolean }
 export interface NewProfileInput { name: string; description?: string; cloneFrom?: string | null; regionName?: string; regionAliases?: string[] }
@@ -114,6 +114,10 @@ export interface SharedReview {
   serverStatus(): Promise<ServerStatus>;
   /** tick / untick a fixed collection time (08:00, 16:30) of the ACTIVE profile (needs a reviewer session) */
   setSchedule(slot: ScheduleSlot['id'], enabled: boolean): Promise<ProfileInfo>;
+  /** change the times of the automatic slots of the ACTIVE profile ({} = defaults; needs a reviewer session) */
+  setScheduleTimes(times: ScheduleTimes): Promise<ProfileInfo>;
+  /** id of the active profile (the one Settings edits) */
+  profileId(): string;
   session(): { name: string } | null;
   login(name: string, code: string): Promise<void>;
   logout(): void;
@@ -858,6 +862,14 @@ class DemoApi implements Api {
         if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không đổi được chế độ tự động (HTTP ${r.status})`);
         return ((await r.json()) as { profile: ProfileInfo }).profile;
       },
+      setScheduleTimes: async (times) => {
+        const s = store.get<{ name: string; code: string }>('reviewer');
+        if (!s) throw new ApiError('Hãy đăng nhập người duyệt để đổi giờ lịch tự động');
+        const r = await fetch(`${this.reviewApi}/auto/times`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ times, reviewer: s.name, profile: this.pid }) });
+        if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được giờ lịch (HTTP ${r.status})`);
+        return ((await r.json()) as { profile: ProfileInfo }).profile;
+      },
+      profileId: () => this.pid,
       session: () => store.get<{ name: string; code: string }>('reviewer') ?? null,
       login: async (name, code) => {
         const r = await fetch(`${this.reviewApi}/login`, { method: 'POST', headers: { 'x-review-code': code } });

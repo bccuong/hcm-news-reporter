@@ -9,7 +9,7 @@
  * KV key:   l:<reportDate>:<articleId>:<reviewerId>
  * metadata: compact label for fast listing (≤ 1 KB)   value: full record (title/url for export)
  */
-import { dueSlots, SCHEDULE_SLOTS, slotWindow, vnDay, type ScheduleSlot, type ScheduleState } from '../../../src/domain/schedule';
+import { dueSlots, SCHEDULE_SLOTS, slotsFor, slotWindow, validateTimes, vnDay, type ScheduleSlot, type ScheduleState, type ScheduleTimes } from '../../../src/domain/schedule';
 
 export interface KVLike {
   get(key: string): Promise<string | null>;
@@ -139,6 +139,8 @@ export interface ProfileMeta {
   autoBy?: string; autoAt?: string;
   /** fixed daily collection times ticked for this profile (src/domain/schedule.ts); replaces the hourly autoCollect */
   schedule?: ScheduleState;
+  /** times of those slots changed in Settings (unset = defaults 08:00 / 16:30) */
+  scheduleTimes?: ScheduleTimes;
 }
 export const DEFAULT_PROFILE = 'hcm';
 const PROFILES_KEY = 'cfg:profiles';
@@ -165,16 +167,16 @@ export const AUTO_TITLE = 'Thu thập theo lịch';
 const doneKey = (pid: string, slot: ScheduleSlot, now: Date) => `sched:${pid}:${slot.id}:${vnDay(now)}`;
 
 /**
- * Called by the cron trigger every 5 minutes. Outside the dispatch windows (08:02–10:00 and 16:32–18:30) it returns
- * at once without touching KV. Inside: for each profile that ticked the slot and has not been collected today,
+ * Called by the cron trigger every 5 minutes. For each profile, the slots whose dispatch window (time + 2 min → + 2 h,
+ * times from Settings or the defaults 08:00 / 16:30) contains now: if ticked and not collected today,
  * dispatch the slot's window (one at a time; while the collection server is busy, the next tick tries again).
  */
 export async function scheduledCollect(env: Env, f: Fetch = (i, init) => fetch(i, init), now = new Date()): Promise<AutoLast | null> {
-  const due = dueSlots(now);
-  if (!due.length) return null;
+  // times are per profile (Settings), so the profile list is read on every tick (288 KV reads a day)
   const profiles = await getProfiles(env);
   const todo: Array<{ p: ProfileMeta; slot: ScheduleSlot }> = [];
-  for (const slot of due) for (const p of profiles) if (p.schedule?.[slot.id] && !(await env.REVIEWS.get(doneKey(p.id, slot, now)))) todo.push({ p, slot });
+  for (const p of profiles)
+    for (const slot of dueSlots(now, slotsFor(p.scheduleTimes))) if (p.schedule?.[slot.id] && !(await env.REVIEWS.get(doneKey(p.id, slot, now)))) todo.push({ p, slot });
   if (!todo.length) return null;
   const at = now.toISOString();
   const { p, slot } = todo[0]!;
@@ -211,7 +213,7 @@ async function serverStatus(env: Env, f: Fetch, h: Record<string, string>) {
   const profiles = await Promise.all(
     (await getProfiles(env)).map(async (p) => {
       const done: string[] = [];
-      for (const s of SCHEDULE_SLOTS) if (p.schedule?.[s.id] && (await env.REVIEWS.get(doneKey(p.id, s, now)))) done.push(s.id);
+      for (const s of slotsFor(p.scheduleTimes)) if (p.schedule?.[s.id] && (await env.REVIEWS.get(doneKey(p.id, s, now)))) done.push(s.id);
       return { ...p, scheduleDone: done };
     }),
   );
@@ -739,6 +741,29 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     const slot = SCHEDULE_SLOTS.find((s) => s.id === b.slot);
     if (!slot) return json({ error: 'Lịch không hợp lệ' }, 400, h);
     list[i] = { ...list[i]!, autoCollect: false, schedule: { ...list[i]!.schedule, [slot.id]: b.enabled }, autoBy: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', autoAt: new Date().toISOString() };
+    await saveProfiles(env, list);
+    return json({ ok: true, profile: list[i] }, 200, h);
+  }
+  // times of the automatic slots for ONE profile (Settings › Thời gian); {} = back to the defaults
+  if (url.pathname === '/auto/times' && req.method === 'POST') {
+    let b: { times?: unknown; reviewer?: unknown; profile?: unknown };
+    try {
+      b = (await req.json()) as typeof b;
+    } catch {
+      return json({ error: 'INVALID_JSON' }, 400, h);
+    }
+    if (!b.times || typeof b.times !== 'object' || Array.isArray(b.times)) return json({ error: 'Thiếu giờ lịch' }, 400, h);
+    const times: ScheduleTimes = {};
+    for (const s of SCHEDULE_SLOTS) {
+      const t = (b.times as Record<string, unknown>)[s.id] as { at?: unknown; from?: unknown } | undefined;
+      if (t) times[s.id] = { at: String(t.at ?? ''), from: String(t.from ?? '') };
+    }
+    const bad = validateTimes(times);
+    if (bad) return json({ error: bad }, 400, h);
+    const list = await getProfiles(env);
+    const i = list.findIndex((p) => p.id === String(b.profile ?? DEFAULT_PROFILE));
+    if (i < 0) return json({ error: 'Không tìm thấy cấu hình' }, 404, h);
+    list[i] = { ...list[i]!, scheduleTimes: times, autoBy: String(b.reviewer ?? '').trim().slice(0, 40) || 'web', autoAt: new Date().toISOString() };
     await saveProfiles(env, list);
     return json({ ok: true, profile: list[i] }, 200, h);
   }
