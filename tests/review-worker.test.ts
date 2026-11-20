@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { hashPassword, newSalt, saveUsers } from '../cloud/review-worker/src/accounts.js';
 import { handle, ReviewPeriod, reviewerId, runKind, scheduledCollect, type DONamespaceLike, type Env, type KVLike } from '../cloud/review-worker/src/handler.js';
 
 class MemKV implements KVLike {
@@ -186,6 +187,52 @@ describe('shared review worker', () => {
       const n = genv();
       await setSlot(n, 'morning', true);
       expect(await scheduledCollect({ ...n, GITHUB_TOKEN: '' } as Env, gh, at('2026-11-17T08:02'))).toMatchObject({ result: 'not_configured' });
+    });
+  });
+  describe('accounts: user name + password, managed in Cài đặt › Tài khoản (20/11/2026)', () => {
+    const seed = async (e: Env) => {
+      const salt = newSalt();
+      await saveUsers(e.REVIEWS, [{ u: 'admin', name: 'Quản trị', role: 'admin', salt, hash: await hashPassword('Bcc123@', salt), at: '', by: 'seed' }]);
+    };
+    const call = (e: Env, path: string, body?: unknown, code?: string) =>
+      handle(new Request(`https://w.example${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { origin: ORIGIN, 'content-type': 'application/json', ...(code ? { 'x-review-code': code } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }), e);
+    it('login → session token used like the old code; wrong password refused; old shared code still works', async () => {
+      const e = env();
+      await seed(e);
+      expect((await call(e, '/login', { username: 'admin', password: 'sai' })).status).toBe(401);
+      const r = (await (await call(e, '/login', { username: 'Admin', password: 'Bcc123@' })).json()) as { token: string; name: string; role: string };
+      expect(r).toMatchObject({ name: 'Quản trị', role: 'admin' });
+      expect(r.token).toMatch(/^sess_[0-9a-f]{48}$/);
+      expect(await (await call(e, '/me', undefined, r.token)).json()).toEqual({ user: 'admin', name: 'Quản trị', role: 'admin' });
+      expect((await call(e, '/me', undefined, 'sess_' + '0'.repeat(48))).status).toBe(401);
+      expect((await call(e, '/me', undefined, 'HCM-test-1234')).status).toBe(200); // sessions opened with the shared code keep working
+      expect(JSON.stringify(await (await call(e, '/users', undefined, r.token)).json())).not.toMatch(/hash|salt/);
+      // logout ends the session
+      await call(e, '/logout', {}, r.token);
+      expect((await call(e, '/me', undefined, r.token)).status).toBe(401);
+    });
+    it('only an admin manages accounts; at least one admin stays; everyone changes their own password', async () => {
+      const e = env();
+      await seed(e);
+      const admin = ((await (await call(e, '/login', { username: 'admin', password: 'Bcc123@' })).json()) as { token: string }).token;
+      expect((await call(e, '/users', { u: 'Nghia', name: 'Nghĩa', password: '123', role: 'reviewer' }, admin)).status).toBe(400); // short password
+      expect((await call(e, '/users', { u: 'nghia', name: 'Nghĩa', password: 'matkhau1', role: 'reviewer' }, admin)).status).toBe(200);
+      const rev = ((await (await call(e, '/login', { username: 'nghia', password: 'matkhau1' })).json()) as { token: string; role: string });
+      expect(rev.role).toBe('reviewer');
+      expect((await call(e, '/users', undefined, rev.token)).status).toBe(403);
+      expect((await call(e, '/users', { u: 'x', name: 'X', password: 'abcdef' }, rev.token)).status).toBe(403);
+      // the reviewer session works for the team's endpoints (e.g. collection status)
+      expect((await call(e, '/collect/status', undefined, rev.token)).status).toBe(200);
+      // own password
+      expect((await call(e, '/users/password', { password: 'moi-123' }, rev.token)).status).toBe(200);
+      expect((await call(e, '/login', { username: 'nghia', password: 'matkhau1' })).status).toBe(401);
+      expect((await call(e, '/login', { username: 'nghia', password: 'moi-123' })).status).toBe(200);
+      // last admin cannot be removed or demoted; self-delete refused
+      expect((await call(e, '/users/delete', { u: 'admin' }, admin)).status).toBe(400);
+      expect((await call(e, '/users', { u: 'admin', name: 'Quản trị', role: 'reviewer' }, admin)).status).toBe(400);
+      // deleting a user ends their sessions at once
+      expect((await call(e, '/users/delete', { u: 'nghia' }, admin)).status).toBe(200);
+      expect((await call(e, '/me', undefined, rev.token)).status).toBe(401);
     });
   });
   describe('collection token replaced from Cài đặt (20/11/2026)', () => {

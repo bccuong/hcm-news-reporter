@@ -10,6 +10,7 @@
  * metadata: compact label for fast listing (≤ 1 KB)   value: full record (title/url for export)
  */
 import { SUGGESTION_ID } from '../../../src/domain/suggestId';
+import { getUsers, hashPassword, login, newSalt, publicUser, saveUsers, sessionOf, USER_RE, type Session } from './accounts';
 import { dueSlots, SCHEDULE_SLOTS, slotsFor, slotWindow, validateTimes, vnDay, type ScheduleSlot, type ScheduleState, type ScheduleTimes } from '../../../src/domain/schedule';
 
 export interface KVLike {
@@ -73,6 +74,61 @@ export function reviewerId(name: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
   return s || 'an-danh';
+}
+
+/**
+ * Cài đặt › Tài khoản: an admin lists / creates / updates / deletes accounts; everyone changes their own password.
+ * Never returns password hashes.
+ */
+async function userRoutes(req: Request, url: URL, env: Env, actor: Session, h: Record<string, string>): Promise<Response | null> {
+  if (!url.pathname.startsWith('/users')) return null;
+  const kv = env.REVIEWS;
+  const list = await getUsers(kv);
+  if (url.pathname === '/users/password' && req.method === 'POST') {
+    const b = (await req.json().catch(() => null)) as { password?: unknown } | null;
+    const pw = String(b?.password ?? '');
+    if (!actor.u) return json({ error: 'Đăng nhập bằng tài khoản để đổi mật khẩu' }, 400, h);
+    if (pw.length < 6) return json({ error: 'Mật khẩu cần ít nhất 6 ký tự' }, 400, h);
+    const i = list.findIndex((x) => x.u === actor.u);
+    if (i < 0) return json({ error: 'Không tìm thấy tài khoản' }, 404, h);
+    const salt = newSalt();
+    list[i] = { ...list[i]!, salt, hash: await hashPassword(pw, salt), at: new Date().toISOString(), by: actor.u };
+    await saveUsers(kv, list);
+    return json({ ok: true }, 200, h);
+  }
+  if (actor.role !== 'admin') return json({ error: 'Chỉ quản trị viên quản lý tài khoản' }, 403, h);
+  if (url.pathname === '/users' && req.method === 'GET') return json({ users: list.map(publicUser) }, 200, h);
+  if (url.pathname === '/users' && req.method === 'POST') {
+    const b = (await req.json().catch(() => null)) as { u?: unknown; name?: unknown; password?: unknown; role?: unknown } | null;
+    const u = String(b?.u ?? '').trim().toLowerCase();
+    const name = String(b?.name ?? '').trim().slice(0, 40);
+    const pw = String(b?.password ?? '');
+    const role = b?.role === 'admin' ? 'admin' : 'reviewer';
+    if (!USER_RE.test(u)) return json({ error: 'Tên đăng nhập: 2–32 ký tự a-z, 0-9, dấu chấm, gạch ngang, gạch dưới' }, 400, h);
+    if (!name) return json({ error: 'Cần nhập họ tên' }, 400, h);
+    const i = list.findIndex((x) => x.u === u);
+    if (i < 0 && pw.length < 6) return json({ error: 'Mật khẩu cần ít nhất 6 ký tự' }, 400, h);
+    if (pw && pw.length < 6) return json({ error: 'Mật khẩu cần ít nhất 6 ký tự' }, 400, h);
+    if (i >= 0 && role !== 'admin' && list[i]!.role === 'admin' && list.filter((x) => x.role === 'admin').length === 1) return json({ error: 'Phải còn ít nhất một quản trị viên' }, 400, h);
+    const at = new Date().toISOString();
+    const by = actor.u || 'mã chung';
+    const pass = pw ? await (async () => { const salt = newSalt(); return { salt, hash: await hashPassword(pw, salt) }; })() : null;
+    if (i >= 0) list[i] = { ...list[i]!, name, role, ...(pass ?? {}), at, by };
+    else list.push({ u, name, role, ...pass!, at, by });
+    await saveUsers(kv, list);
+    return json({ ok: true, users: list.map(publicUser) }, 200, h);
+  }
+  if (url.pathname === '/users/delete' && req.method === 'POST') {
+    const u = String(((await req.json().catch(() => null)) as { u?: unknown } | null)?.u ?? '');
+    if (u === actor.u) return json({ error: 'Không tự xoá tài khoản đang đăng nhập' }, 400, h);
+    const rec = list.find((x) => x.u === u);
+    if (!rec) return json({ error: 'Không tìm thấy tài khoản' }, 404, h);
+    if (rec.role === 'admin' && list.filter((x) => x.role === 'admin').length === 1) return json({ error: 'Phải còn ít nhất một quản trị viên' }, 400, h);
+    const next = list.filter((x) => x.u !== u);
+    await saveUsers(kv, next);
+    return json({ ok: true, users: next.map(publicUser) }, 200, h);
+  }
+  return json({ error: 'NOT_FOUND' }, 404, h);
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -771,11 +827,27 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     return json({ exportedAt: new Date().toISOString(), count: out.length, labels: out }, 200, {});
   }
 
-  // reviewer endpoints: shared access code
+  // account login (user name + password) → session token, sent afterwards where the shared code used to go
+  if (url.pathname === '/login' && req.method === 'POST' && !req.headers.get('x-review-code')) {
+    const b = (await req.json().catch(() => null)) as { username?: unknown; password?: unknown } | null;
+    const r = await login(env.REVIEWS, String(b?.username ?? ''), String(b?.password ?? ''));
+    if (!r) return json({ error: 'Sai tên đăng nhập hoặc mật khẩu' }, 401, h);
+    return json({ ok: true, token: r.token, name: r.session.name, role: r.session.role, user: r.session.u, collectEnabled: !!env.GITHUB_TOKEN }, 200, h);
+  }
+
+  // reviewer endpoints: a session of an account, or the shared access code (kept for sessions opened before accounts)
   const code = (req.headers.get('x-review-code') ?? '').trim();
-  if (!safeEqual(code, (env.ACCESS_CODE ?? '').trim())) return json({ error: 'Mã truy cập không đúng' }, 401, h);
+  const actor: Session | null = safeEqual(code, (env.ACCESS_CODE ?? '').trim()) ? { u: '', name: '', role: 'admin' } : await sessionOf(env.REVIEWS, code);
+  if (!actor) return json({ error: 'Phiên đăng nhập đã hết hạn – hãy đăng nhập lại' }, 401, h);
 
   if (url.pathname === '/login' && req.method === 'POST') return json({ ok: true, collectEnabled: !!env.GITHUB_TOKEN }, 200, h);
+  if (url.pathname === '/me' && req.method === 'GET') return json({ user: actor.u, name: actor.name, role: actor.role }, 200, h);
+  if (url.pathname === '/logout' && req.method === 'POST') {
+    if (code.startsWith('sess_')) await env.REVIEWS.delete(`sess:${code}`);
+    return json({ ok: true }, 200, h);
+  }
+  const ur = await userRoutes(req, url, env, actor, h);
+  if (ur) return ur;
   if (url.pathname === '/collect' && req.method === 'POST') return collect(req, env, f, h);
   if (url.pathname === '/collect/status' && req.method === 'GET') return collectStatus(env, f, h);
   if (url.pathname === '/token' && req.method === 'GET') return tokenInfo(env, f, h);

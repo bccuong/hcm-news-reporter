@@ -6,7 +6,7 @@ import { SettingsSchema, withoutSkillNote, type Article, type CategoryCode, type
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
 import { LATEST_RUN, SCHEDULE_SLOTS, SLOT_NAMES, slotsFor, validateTimes, type ScheduleSlotId, type ScheduleTimes } from '../../src/domain/schedule';
 import { uid } from '../../src/domain/text';
-import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption, type TokenInfo } from './api';
+import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption, type TokenInfo, type UserInfo, type UserRole } from './api';
 import { alreadyApplied, applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
 import { RuleBuilder } from './RuleBuilder';
 import { SourcesPanel } from './SourcesPanel';
@@ -22,6 +22,7 @@ const NAV = [
   ['time', 'Thời gian'],
   ['quality', 'Chất lượng thu thập & ảnh'],
   ['report', 'Báo cáo & mẫu'],
+  ['users', 'Tài khoản'],
   ['performance', 'Hiệu năng'],
   ['backup', 'Sao lưu & lịch sử'],
 ] as const;
@@ -144,7 +145,8 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
     setS({ ...s, ...Object.fromEntries(keys.map((k) => [k, d[k]])) });
   };
 
-  const navItems = NAV.filter(([, l]) => !filter || l.toLowerCase().includes(filter.toLowerCase()) || SEARCH_INDEX[NAV.find((n) => n[1] === l)![0]]?.some((w) => w.includes(filter.toLowerCase())));
+  // Tài khoản: only on the web with the shared server (the local app has no accounts)
+  const navItems = NAV.filter(([k]) => k !== 'users' || !!api.shared).filter(([, l]) => !filter || l.toLowerCase().includes(filter.toLowerCase()) || SEARCH_INDEX[NAV.find((n) => n[1] === l)![0]]?.some((w) => w.includes(filter.toLowerCase())));
   // advanced sections are listed when the switch is on, while searching, or when one of them is open
   const showAdvanced = advanced || !!filter || ADVANCED.includes(nav);
   const navBtn = ([k, l]: (typeof NAV)[number]) => (
@@ -176,7 +178,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
             </details>
           )}
           <span className="flex-1" />
-          <button className="btn-ghost rounded-full px-2.5" onClick={resetSection} disabled={nav === 'profiles' || nav === 'newProfile' || nav === 'sources' || nav === 'backup'} title="Đặt mục này về mặc định" aria-label="Mặc định mục này">
+          <button className="btn-ghost rounded-full px-2.5" onClick={resetSection} disabled={nav === 'profiles' || nav === 'newProfile' || nav === 'sources' || nav === 'backup' || nav === 'users'} title="Đặt mục này về mặc định" aria-label="Mặc định mục này">
             <RotateCcw className="h-4 w-4" />
           </button>
           <button className="btn-ghost rounded-full px-2.5" onClick={close} aria-label="Đóng cài đặt" title="Đóng">
@@ -261,6 +263,8 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
               <ReportPanel s={s} up={up} advanced={advanced} />
             ) : nav === 'performance' ? (
               <PerfPanel s={s} up={up} />
+            ) : nav === 'users' ? (
+              <UsersPanel />
             ) : (
               <BackupPanel onRestored={load} />
             )}
@@ -286,6 +290,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
 }
 
 const SEARCH_INDEX: Record<string, string[]> = {
+  users: ['tài khoản', 'mật khẩu', 'đăng nhập', 'người dùng', 'admin', 'quản trị'],
   suggest: ['gợi ý', 'học', 'cải thiện', 'đề xuất từ khóa'],
   profiles: ['profile', 'cấu hình', 'hà nội', 'đà nẵng', 'tỉnh', 'thành phố', 'sao chép', 'clone'],
   sources: ['rss', 'sitemap', 'chuyên mục', 'báo', 'website', 'phân trang', 'độ sâu'],
@@ -736,6 +741,129 @@ function ScheduleTimesSection() {
         </button>
       </div>
     </Section>
+  );
+}
+
+/* ---------------- Accounts (web) ---------------- */
+function UsersPanel() {
+  const shared = api.shared!;
+  const toast = useToast();
+  const me = shared.session() as ({ name: string; user?: string } | null);
+  const isAdmin = shared.role() === 'admin';
+  const [users, setUsers] = useState<UserInfo[] | null>(null);
+  const [err, setErr] = useState('');
+  const [form, setForm] = useState<{ u: string; name: string; password: string; role: UserRole; editing: boolean }>({ u: '', name: '', password: '', role: 'reviewer', editing: false });
+  const [myPw, setMyPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (isAdmin) shared.users().then(setUsers).catch((e: Error) => setErr(e.message));
+  }, []);
+  const run = async (fn: () => Promise<void>, ok: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      toast('ok', ok);
+    } catch (e) {
+      toast('err', (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!me) return <Section title="Tài khoản"><p className="text-sm text-slate-600">Đăng nhập để xem và đổi mật khẩu.</p></Section>;
+  return (
+    <div data-testid="users-panel">
+      <Section title="Tài khoản của tôi">
+        <p className="text-sm text-slate-700">
+          Đang đăng nhập: <b>{me.name}</b>
+          {me.user ? <span className="text-slate-500"> ({me.user})</span> : null} · {isAdmin ? 'Quản trị viên' : 'Người duyệt'}
+        </p>
+        {me.user ? (
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block min-w-0 flex-1">
+              <span className="label">Mật khẩu mới</span>
+              <input className="input" type="password" autoComplete="new-password" value={myPw} onChange={(e) => setMyPw(e.target.value)} />
+            </label>
+            <button className="btn-teal" disabled={busy || myPw.length < 6} onClick={() => void run(async () => { await shared.changePassword(myPw); setMyPw(''); }, 'Đã đổi mật khẩu')}>
+              <Save className="h-4 w-4" /> Đổi mật khẩu
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">Bạn đang đăng nhập bằng mã truy cập cũ – hãy đăng xuất và đăng nhập bằng tài khoản.</p>
+        )}
+      </Section>
+      {isAdmin && (
+        <Section title="Quản lý tài khoản" help="Tài khoản dùng chung cho bản web, lưu trên máy chủ duyệt tin (mật khẩu được mã hoá một chiều). Quản trị viên quản lý tài khoản; người duyệt duyệt tin, thu thập và sửa cài đặt.">
+          {err && <p className="text-xs text-red-700">{err}</p>}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="users-table">
+              <thead>
+                <tr className="text-left text-xs text-slate-500">
+                  <th className="py-1 pr-3">Tên đăng nhập</th>
+                  <th className="py-1 pr-3">Họ tên</th>
+                  <th className="py-1 pr-3">Quyền</th>
+                  <th className="py-1" />
+                </tr>
+              </thead>
+              <tbody>
+                {(users ?? []).map((x) => (
+                  <tr key={x.u} className="border-t border-slate-100">
+                    <td className="py-1.5 pr-3 font-mono">{x.u}</td>
+                    <td className="py-1.5 pr-3">{x.name}</td>
+                    <td className="py-1.5 pr-3">{x.role === 'admin' ? 'Quản trị viên' : 'Người duyệt'}</td>
+                    <td className="py-1.5 text-right whitespace-nowrap">
+                      <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setForm({ u: x.u, name: x.name, password: '', role: x.role, editing: true })}>Sửa</button>
+                      <button
+                        className="btn-ghost px-2 py-1 text-xs text-red-700"
+                        disabled={busy || x.u === me.user}
+                        onClick={() => {
+                          if (confirm(`Xoá tài khoản "${x.u}"?`)) void run(async () => setUsers(await shared.deleteUser(x.u)), `Đã xoá ${x.u}`);
+                        }}
+                      >
+                        Xoá
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="mb-2 text-sm font-semibold text-navy-800">{form.editing ? `Sửa tài khoản ${form.u}` : 'Thêm tài khoản'}</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="block">
+                <span className="label">Tên đăng nhập</span>
+                <input className="input font-mono" aria-label="Tên đăng nhập mới" value={form.u} disabled={form.editing} autoCapitalize="none" spellCheck={false} onChange={(e) => setForm({ ...form, u: e.target.value.toLowerCase() })} placeholder="vd: nghia" />
+              </label>
+              <label className="block">
+                <span className="label">Họ tên</span>
+                <input className="input" aria-label="Họ tên" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="label">{form.editing ? 'Mật khẩu mới (để trống = giữ nguyên)' : 'Mật khẩu'}</span>
+                <input className="input" type="password" aria-label="Mật khẩu tài khoản" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              </label>
+              <Select<UserRole> label="Quyền" value={form.role} onChange={(v) => setForm({ ...form, role: v })} options={[['reviewer', 'Người duyệt'], ['admin', 'Quản trị viên']]} />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                className="btn-teal"
+                disabled={busy || !form.u.trim() || !form.name.trim() || (!form.editing && form.password.length < 6)}
+                onClick={() =>
+                  void run(async () => {
+                    setUsers(await shared.saveUser({ u: form.u.trim(), name: form.name.trim(), role: form.role, ...(form.password ? { password: form.password } : {}) }));
+                    setForm({ u: '', name: '', password: '', role: 'reviewer', editing: false });
+                  }, form.editing ? 'Đã lưu tài khoản' : 'Đã thêm tài khoản')
+                }
+              >
+                <Save className="h-4 w-4" /> {form.editing ? 'Lưu' : 'Thêm'}
+              </button>
+              {form.editing && <button className="btn-ghost" onClick={() => setForm({ u: '', name: '', password: '', role: 'reviewer', editing: false })}>Huỷ sửa</button>}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Mật khẩu ít nhất 6 ký tự. Xoá tài khoản thì người đó bị đăng xuất ngay.</p>
+          </div>
+        </Section>
+      )}
+    </div>
   );
 }
 

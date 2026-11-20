@@ -111,6 +111,8 @@ export interface ServerStatus {
   /** collection token: expiry (ISO, null = never / unknown); rejected = expired or revoked */
   token?: { expiresAt: string | null; rejected: boolean };
 }
+export type UserRole = 'admin' | 'reviewer';
+export interface UserInfo { u: string; name: string; role: UserRole; at: string; by: string }
 export interface TokenInfo { configured: boolean; ok?: boolean; status?: number; source?: 'web' | 'server'; last4?: string; by?: string | null; at?: string | null; expiresAt?: string | null; repo?: string }
 export interface SharedReview {
   /** public: automatic collection times + what the collection server is doing now */
@@ -126,8 +128,15 @@ export interface SharedReview {
   /** id of the active profile (the one Settings edits) */
   profileId(): string;
   session(): { name: string } | null;
-  login(name: string, code: string): Promise<void>;
+  /** account login (user name + password); the session token is then sent where the shared code used to go */
+  login(username: string, password: string): Promise<{ name: string; role: UserRole }>;
   logout(): void;
+  /** role of the signed-in account (sessions opened with the old shared code count as admin) */
+  role(): UserRole | null;
+  users(): Promise<UserInfo[]>;
+  saveUser(u: { u: string; name: string; password?: string; role: UserRole }): Promise<UserInfo[]>;
+  deleteUser(u: string): Promise<UserInfo[]>;
+  changePassword(password: string): Promise<void>;
   votes(runId: string): Promise<Record<string, Vote[]>>;
   /** recent runs of the GitHub collection workflow (progress of an on-demand collection) */
   collectStatus(): Promise<{ enabled: boolean; runs: CollectRun[] }>;
@@ -855,6 +864,15 @@ class DemoApi implements Api {
   /* ---------------- shared review (Cloudflare Worker) ---------------- */
   private readonly reviewApi = (import.meta.env.VITE_REVIEW_API as string | undefined) || '';
   shared: SharedReview | undefined = this.reviewApi && this.mode === 'live' ? this.makeShared() : undefined;
+  /** Cài đặt › Tài khoản calls (session of the signed-in account) */
+  private async userCall(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
+    const s = store.get<{ code: string }>('reviewer');
+    if (!s) throw new ApiError('Hãy đăng nhập');
+    const r = await fetch(`${this.reviewApi}${path}`, { method, headers: { 'x-review-code': s.code, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, cache: 'no-cache' });
+    const j = (await r.json().catch(() => ({}))) as { error?: string };
+    if (!r.ok) throw new ApiError(j.error ?? `Lỗi ${r.status}`);
+    return j;
+  }
   private makeShared(): SharedReview {
     return {
       serverStatus: async () => {
@@ -893,12 +911,26 @@ class DemoApi implements Api {
       },
       profileId: () => this.pid,
       session: () => store.get<{ name: string; code: string }>('reviewer') ?? null,
-      login: async (name, code) => {
-        const r = await fetch(`${this.reviewApi}/login`, { method: 'POST', headers: { 'x-review-code': code } });
-        if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Không đăng nhập được');
-        store.set('reviewer', { name: name.trim().slice(0, 40), code });
+      login: async (username, password) => {
+        const r = await fetch(`${this.reviewApi}/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: username.trim(), password }) });
+        const j = (await r.json().catch(() => ({}))) as { error?: string; token?: string; name?: string; role?: UserRole; user?: string };
+        if (!r.ok || !j.token) throw new ApiError(j.error ?? 'Không đăng nhập được');
+        store.set('reviewer', { name: (j.name || j.user || username).slice(0, 40), code: j.token, user: j.user, role: j.role });
+        return { name: j.name || username, role: j.role ?? 'reviewer' };
       },
-      logout: () => store.set('reviewer', null),
+      logout: () => {
+        const s = store.get<{ code: string }>('reviewer');
+        if (s?.code.startsWith('sess_')) void fetch(`${this.reviewApi}/logout`, { method: 'POST', headers: { 'x-review-code': s.code } }).catch(() => undefined);
+        store.set('reviewer', null);
+      },
+      role: () => {
+        const s = store.get<{ code: string; role?: UserRole }>('reviewer');
+        return s ? (s.role ?? (s.code.startsWith('sess_') ? 'reviewer' : 'admin')) : null;
+      },
+      users: async () => ((await this.userCall('GET', '/users')) as { users: UserInfo[] }).users,
+      saveUser: async (u) => ((await this.userCall('POST', '/users', u)) as { users: UserInfo[] }).users,
+      deleteUser: async (u) => ((await this.userCall('POST', '/users/delete', { u })) as { users: UserInfo[] }).users,
+      changePassword: async (password) => void (await this.userCall('POST', '/users/password', { password })),
       votes: async (runId) => {
         const s = store.get<{ name: string; code: string }>('reviewer');
         if (!s) return {};

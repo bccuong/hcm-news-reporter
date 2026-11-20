@@ -15,10 +15,12 @@ async function setWindowField(p: Page, label: string, v: string) {
 const FLOOD = /Liên quan: \[Mẫu thử\] Mưa lớn tối 8\.11 khiến/;
 const METRO_NO = /^Không liên quan: \[Mẫu thử\] Khánh thành nhà ga metro/;
 
-async function login(page: Page, name: string, code: string) {
+/** accounts seeded by the fake worker: "Người duyệt X" = duyet-x / test-pass */
+const userOf = (name: string) => 'duyet-' + name.slice(-1).toLowerCase();
+async function login(page: Page, name: string, _code?: string) {
   await page.getByRole('button', { name: 'Đăng nhập duyệt tin' }).click();
-  await page.getByLabel('Họ tên').fill(name);
-  await page.getByLabel('Mã truy cập (do quản trị gửi)').fill(code);
+  await page.getByLabel('Tên đăng nhập').fill(userOf(name));
+  await page.getByLabel('Mật khẩu').fill('test-pass');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
 }
 
@@ -28,12 +30,12 @@ test('shared review: login gate, votes from two reviewers, team quality, export'
   await expect(a.getByTestId('live-banner')).toBeVisible();
   // labelling without a session opens the login dialog
   await a.getByRole('button', { name: FLOOD }).click();
-  await expect(a.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
-  await a.getByLabel('Họ tên').fill('Người duyệt A');
-  await a.getByLabel('Mã truy cập (do quản trị gửi)').fill('SAI-MA');
+  await expect(a.getByRole('dialog', { name: 'Đăng nhập' })).toBeVisible();
+  await a.getByLabel('Tên đăng nhập').fill('duyet-a');
+  await a.getByLabel('Mật khẩu').fill('sai-mat-khau');
   await a.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
-  await expect(a.getByText('Mã truy cập không đúng')).toBeVisible();
-  await a.getByLabel('Mã truy cập (do quản trị gửi)').fill('HCM-TEST-CODE');
+  await expect(a.getByText('Sai tên đăng nhập hoặc mật khẩu')).toBeVisible();
+  await a.getByLabel('Mật khẩu').fill('test-pass');
   await a.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
   await expect(a.getByTestId('reviewer-chip')).toContainText('Người duyệt A');
   await a.getByRole('button', { name: FLOOD }).click();
@@ -73,10 +75,10 @@ test('automatic collection at 08:00 / 16:30 (ticked per profile) + busy server i
   await expect(page.getByTestId('live-banner')).toContainText('tự động thu thập đang TẮT');
   // ticking needs a reviewer session
   await morning.click();
-  await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Đăng nhập' })).toBeVisible();
   await expect(morning).not.toBeChecked();
-  await page.getByLabel('Họ tên').fill('Người duyệt D');
-  await page.getByLabel('Mã truy cập (do quản trị gửi)').fill('HCM-TEST-CODE');
+  await page.getByLabel('Tên đăng nhập').fill('duyet-d');
+  await page.getByLabel('Mật khẩu').fill('test-pass');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
   await morning.click(); // saved on the worker, then reflected
   await expect(morning).toBeChecked();
@@ -176,9 +178,9 @@ test('web "Thu thập" like the local app: choose from/to → server collection 
   await expect(page.getByTestId('window-range')).toHaveText('18:00 08/11 → 07:00 09/11/2026');
   // collecting requires a reviewer session
   await page.getByRole('button', { name: 'Thu thập' }).click();
-  await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
-  await page.getByLabel('Họ tên').fill('Người duyệt C');
-  await page.getByLabel('Mã truy cập (do quản trị gửi)').fill('HCM-TEST-CODE');
+  await expect(page.getByRole('dialog', { name: 'Đăng nhập' })).toBeVisible();
+  await page.getByLabel('Tên đăng nhập').fill('duyet-c');
+  await page.getByLabel('Mật khẩu').fill('test-pass');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
   await expect(page.getByTestId('reviewer-chip')).toBeVisible();
   await page.getByRole('button', { name: 'Thu thập' }).click();
@@ -411,9 +413,9 @@ test('web review is ONE for the whole team: what A selects / moves / removes on 
   await b.screenshot({ path: 'docs/screenshots/web-team-review.png' });
   // without a session B cannot change it (login dialog), with one B's change reaches A
   await s1.getByLabel(/^Chọn bài/).uncheck().catch(() => undefined);
-  await expect(b.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
-  await b.getByLabel('Họ tên').fill('Người duyệt H');
-  await b.getByLabel('Mã truy cập (do quản trị gửi)').fill('HCM-TEST-CODE');
+  await expect(b.getByRole('dialog', { name: 'Đăng nhập' })).toBeVisible();
+  await b.getByLabel('Tên đăng nhập').fill('duyet-h');
+  await b.getByLabel('Mật khẩu').fill('test-pass');
   await b.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
   await expect(b.getByTestId('reviewer-chip')).toContainText('Người duyệt H');
   await b.locator('article').filter({ hasText: t1 }).getByLabel(/^Chọn bài/).uncheck();
@@ -700,7 +702,7 @@ test('source tile "Kiểm tra nhanh": checks the publisher now (1 listing page +
   const btn = page.getByTestId('source-check-fixture-a');
   await expect(btn).toBeVisible();
   await btn.click(); // not logged in → the login dialog
-  await expect(page.getByRole('dialog', { name: 'Đăng nhập người duyệt' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Đăng nhập' })).toBeVisible();
   await page.keyboard.press('Escape');
   await login(page, 'Người duyệt K', 'HCM-TEST-CODE');
   const id = (await btn.getAttribute('data-testid'))!.replace('source-check-', '');
@@ -741,4 +743,43 @@ test('collection token: expiry warning for everyone, replaced from Cài đặt a
   await box.screenshot({ path: 'docs/screenshots/web-collect-token.png' });
   await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
   await expect(warn).toHaveCount(0); // the new token is far from expiry
+});
+
+test('accounts: admin adds a reviewer in Cài đặt › Tài khoản; the reviewer signs in, changes the password, cannot manage accounts (20/11/2026)', async ({ page }) => {
+  await page.goto('');
+  await page.getByRole('button', { name: 'Đăng nhập duyệt tin' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Đăng nhập' });
+  await page.getByLabel('Tên đăng nhập').fill('admin');
+  await page.getByLabel('Mật khẩu').fill('sai');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(dlg.getByText('Sai tên đăng nhập hoặc mật khẩu')).toBeVisible();
+  await page.getByLabel('Mật khẩu').fill('admin-pass');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(page.getByText('Xin chào Quản trị')).toBeVisible();
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  const set = page.getByRole('dialog', { name: 'Cài đặt' });
+  await set.getByRole('button', { name: 'Tài khoản', exact: true }).click();
+  const panel = set.getByTestId('users-panel');
+  await expect(panel.getByTestId('users-table')).toContainText('duyet-a');
+  await panel.getByLabel('Tên đăng nhập mới').fill('Thu.Ha');
+  await panel.getByLabel('Họ tên').fill('Thu Hà');
+  await panel.getByLabel('Mật khẩu tài khoản').fill('thuha-123');
+  await panel.getByRole('button', { name: 'Thêm' }).click();
+  await expect(panel.getByTestId('users-table')).toContainText('thu.ha');
+  await panel.screenshot({ path: 'docs/screenshots/web-accounts.png' });
+  await set.getByRole('button', { name: 'Đóng cài đặt' }).click();
+  // sign out, sign in as the new reviewer
+  await page.getByRole('button', { name: 'Đăng xuất' }).click();
+  await page.getByRole('button', { name: 'Đăng nhập duyệt tin' }).click();
+  await page.getByLabel('Tên đăng nhập').fill('thu.ha');
+  await page.getByLabel('Mật khẩu').fill('thuha-123');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(page.getByText('Xin chào Thu Hà')).toBeVisible();
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  await set.getByRole('button', { name: 'Tài khoản', exact: true }).click();
+  await expect(panel).toContainText('Người duyệt');
+  await expect(panel.getByTestId('users-table')).toHaveCount(0);
+  await panel.getByLabel('Mật khẩu mới').fill('moi-thuha');
+  await panel.getByRole('button', { name: 'Đổi mật khẩu' }).click();
+  await expect(page.getByText('Đã đổi mật khẩu')).toBeVisible();
 });

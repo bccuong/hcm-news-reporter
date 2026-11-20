@@ -821,11 +821,11 @@ export function App() {
       {loginOpen && api.shared && (
         <ReviewerLogin
           onClose={() => setLoginOpen(false)}
-          onLogin={async (name, code) => {
-            await api.shared!.login(name, code);
+          onLogin={async (user, password) => {
+            const me = await api.shared!.login(user, password);
             setReviewer(api.shared!.session());
             setLoginOpen(false);
-            toast('ok', `Xin chào ${name} – các đánh giá của bạn được lưu chung cho cả nhóm`);
+            toast('ok', `Xin chào ${me.name}`);
           }}
         />
       )}
@@ -1616,22 +1616,22 @@ function ArticleList({ list, excluded = [], reviews, cands, settings, onInspect,
   );
 }
 
-function ReviewerLogin({ onClose, onLogin }: { onClose: () => void; onLogin: (name: string, code: string) => Promise<void> }) {
-  const [name, setName] = useState('');
-  const [code, setCode] = useState('');
+function ReviewerLogin({ onClose, onLogin }: { onClose: () => void; onLogin: (user: string, password: string) => Promise<void> }) {
+  const [user, setUser] = useState('');
+  const [pass, setPass] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEscape(onClose);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Đăng nhập người duyệt">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" role="dialog" aria-modal="true" aria-label="Đăng nhập">
       <form
-        className="card w-full max-w-md space-y-3 p-5"
+        className="card w-full max-w-sm space-y-3 p-5"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
           setErr(null);
           try {
-            await onLogin(name, code.trim());
+            await onLogin(user.trim(), pass);
           } catch (x) {
             setErr((x as Error).message);
           } finally {
@@ -1639,22 +1639,20 @@ function ReviewerLogin({ onClose, onLogin }: { onClose: () => void; onLogin: (na
           }
         }}
       >
-        <h2 className="text-lg font-bold text-navy-700">Đăng nhập duyệt tin</h2>
-        <p className="text-xs text-slate-600">
-          Đánh giá của bạn (liên quan / không, lĩnh vực, tính chất, ghi chú) được lưu chung cho nhóm và dùng để cải thiện bộ thu thập. Trong kho mã nguồn công khai, tên bạn được thay bằng mã ẩn danh; <b>ghi chú có thể được công khai</b>, đừng ghi thông tin cá nhân.
-        </p>
+        <h2 className="text-lg font-bold text-navy-700">Đăng nhập</h2>
+        <p className="text-xs text-slate-500">Để duyệt tin, thu thập và sửa cài đặt cho cả nhóm.</p>
         <label className="block">
-          <span className="label">Họ tên</span>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required maxLength={40} autoFocus />
+          <span className="label">Tên đăng nhập</span>
+          <input className="input" value={user} onChange={(e) => setUser(e.target.value)} required autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus />
         </label>
         <label className="block">
-          <span className="label">Mã truy cập (do quản trị gửi)</span>
-          <input className="input font-mono" value={code} onChange={(e) => setCode(e.target.value)} required placeholder="HCM-XXXX-XXXX" />
+          <span className="label">Mật khẩu</span>
+          <input className="input" type="password" value={pass} onChange={(e) => setPass(e.target.value)} required autoComplete="current-password" />
         </label>
         {err && <p className="text-sm text-red-700">{err}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={onClose}>Hủy</button>
-          <button className="btn-primary" disabled={busy || !name.trim() || !code.trim()}>{busy ? 'Đang kiểm tra…' : 'Đăng nhập'}</button>
+          <button className="btn-primary" disabled={busy || !user.trim() || !pass}>{busy ? 'Đang kiểm tra…' : 'Đăng nhập'}</button>
         </div>
       </form>
     </div>

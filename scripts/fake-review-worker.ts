@@ -5,6 +5,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { hashPassword, newSalt, saveUsers } from '../cloud/review-worker/src/accounts.js';
 import { deflateSync } from 'node:zlib';
 import path from 'node:path';
 import { AUTO_TITLE, handle, scheduledCollect, type KVLike } from '../cloud/review-worker/src/handler.js';
@@ -25,6 +26,16 @@ const env = {
   REVIEWS: new MemKV(), ACCESS_CODE: 'HCM-TEST-CODE', EXPORT_TOKEN: 'test-export-token', ALLOWED_ORIGINS: 'https://tinbaochi.github.io',
   GITHUB_TOKEN: 'fake', GITHUB_REPO: 'tinbaochi/collector', COLLECT_WORKFLOW: 'pages.yml',
 };
+
+// accounts for the UI tests: duyet-a … duyet-z ("Người duyệt A" … "Z", password test-pass) + admin (admin-pass)
+{
+  const users = [];
+  for (const [u, name, role, pw] of [['admin', 'Quản trị', 'admin', 'admin-pass'], ...'abcdefghijklmnopqrstuvwxyz'.split('').map((c) => [`duyet-${c}`, `Người duyệt ${c.toUpperCase()}`, 'reviewer', 'test-pass'])] as const) {
+    const salt = newSalt();
+    users.push({ u, name, role, salt, hash: await hashPassword(pw, salt), at: '', by: 'seed' });
+  }
+  await saveUsers(env.REVIEWS, users as Parameters<typeof saveUsers>[1]);
+}
 
 const LIVE = path.resolve('dist/pages/live/hcm');
 const runs: Array<{ id: number; status: string; conclusion: string | null; created_at: string; updated_at: string; event: string; display_title: string; html_url: string }> = [];
