@@ -112,6 +112,11 @@ export interface ServerStatus {
   token?: { expiresAt: string | null; rejected: boolean };
 }
 export type UserRole = 'admin' | 'reviewer';
+/** web: the signed-in account is a reviewer (not an admin) → system-wide changes are greyed out with this hint */
+export const ADMIN_HINT = 'Chỉ quản trị viên';
+export function adminOnly(): boolean {
+  return !!api.shared && !!api.shared.session() && api.shared.role() !== 'admin';
+}
 export interface UserInfo { u: string; name: string; role: UserRole; at: string; by: string }
 export interface TokenInfo { configured: boolean; ok?: boolean; status?: number; source?: 'web' | 'server'; last4?: string; by?: string | null; at?: string | null; expiresAt?: string | null; repo?: string }
 export interface SharedReview {

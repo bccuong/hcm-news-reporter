@@ -235,6 +235,40 @@ describe('shared review worker', () => {
       expect((await call(e, '/me', undefined, rev.token)).status).toBe(401);
     });
   });
+  describe('reviewer vs admin (20/11/2026)', () => {
+    it('reviewers do the daily work; system-wide changes are refused with 403', async () => {
+      const e = env();
+      const salt = newSalt();
+      await saveUsers(e.REVIEWS, [
+        { u: 'admin', name: 'Quản trị', role: 'admin', salt, hash: await hashPassword('Bcc123@', salt), at: '', by: '' },
+        { u: 'nghia', name: 'Nghĩa', role: 'reviewer', salt, hash: await hashPassword('matkhau1', salt), at: '', by: '' },
+      ]);
+      const tok = async (u: string, p: string) => ((await (await handle(new Request('https://w.example/login', { method: 'POST', headers: { origin: ORIGIN, 'content-type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) }), e)).json()) as { token: string }).token;
+      const rev = await tok('nghia', 'matkhau1');
+      const adm = await tok('admin', 'Bcc123@');
+      const post = (code: string, path: string, body: unknown, method = 'POST') => handle(new Request(`https://w.example${path}`, { method, headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);
+      for (const [path, body, method] of [
+        ['/token', { token: 'github_pat_' + 'A'.repeat(40), reviewer: 'Nghĩa' }, 'POST'],
+        ['/config', { profile: 'hcm', settings: {}, reviewer: 'Nghĩa' }, 'POST'],
+        ['/config/rollback', { profile: 'hcm', id: 'x', reviewer: 'Nghĩa' }, 'POST'],
+        ['/profiles', { id: 'da-nang', name: 'Đà Nẵng', reviewer: 'Nghĩa' }, 'POST'],
+        ['/profiles/hcm', { name: 'X', reviewer: 'Nghĩa' }, 'PATCH'],
+        ['/profiles/hcm', {}, 'DELETE'],
+        ['/auto', { slot: 'morning', enabled: true, reviewer: 'Nghĩa', profile: 'hcm' }, 'POST'],
+        ['/auto/times', { times: {}, reviewer: 'Nghĩa', profile: 'hcm' }, 'POST'],
+        ['/runs/hide', { profile: 'hcm', runId: '2026-11-19', hidden: true, reviewer: 'Nghĩa' }, 'POST'],
+      ] as const) {
+        const r = await post(rev, path, body, method);
+        expect(r.status, `${method} ${path}`).toBe(403);
+        expect(((await r.json()) as { error: string }).error).toBe('Chỉ quản trị viên được làm việc này');
+      }
+      // archiving a run stays open to reviewers; the admin passes the same checks
+      expect((await post(rev, '/runs/hide', { profile: 'hcm', runId: '2026-11-19', archived: true, reviewer: 'Nghĩa' })).status).not.toBe(403);
+      expect((await post(adm, '/auto', { slot: 'morning', enabled: true, reviewer: 'Quản trị', profile: 'hcm' })).status).toBe(200);
+      // the old shared code is an admin
+      expect((await post('HCM-test-1234', '/auto', { slot: 'morning', enabled: false, reviewer: 'X', profile: 'hcm' })).status).toBe(200);
+    });
+  });
   describe('collection token replaced from Cài đặt (20/11/2026)', () => {
     const GOOD = 'github_pat_' + 'A'.repeat(40) + 'gOOd';
     const NOPERM = 'github_pat_' + 'B'.repeat(40) + 'noPm';

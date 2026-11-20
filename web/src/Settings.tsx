@@ -6,7 +6,7 @@ import { SettingsSchema, withoutSkillNote, type Article, type CategoryCode, type
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
 import { LATEST_RUN, SCHEDULE_SLOTS, SLOT_NAMES, slotsFor, validateTimes, type ScheduleSlotId, type ScheduleTimes } from '../../src/domain/schedule';
 import { uid } from '../../src/domain/text';
-import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption, type TokenInfo, type UserInfo, type UserRole } from './api';
+import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption, type TokenInfo, type UserInfo, type UserRole, adminOnly, ADMIN_HINT } from './api';
 import { alreadyApplied, applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
 import { RuleBuilder } from './RuleBuilder';
 import { SourcesPanel } from './SourcesPanel';
@@ -185,6 +185,11 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
             <X className="h-4 w-4" />
           </button>
         </header>
+        {adminOnly() && (
+          <div className="border-b border-sky-200 bg-sky-50 px-4 py-2 text-xs text-sky-900" data-testid="reviewer-readonly">
+            Bạn đăng nhập với quyền <b>người duyệt</b>: xem được mọi cài đặt; lưu cài đặt dùng chung, cấu hình địa bàn, lịch tự động và khóa thu thập là việc của quản trị viên.
+          </div>
+        )}
         {validation && !validation.success && (
           <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-800">
             {validation.error.issues.slice(0, 5).map((i) => (
@@ -279,7 +284,7 @@ export function SettingsDrawer({ open, onClose, onSaved, initialSection }: { ope
             <button className="btn-ghost rounded-full" onClick={() => saved && (setS(structuredClone(saved.s)), setSrc(structuredClone(saved.src)))}>
               Hủy thay đổi
             </button>
-            <button className="btn-primary rounded-full px-5 shadow-sm" disabled={saving || (validation ? !validation.success : true)} onClick={save}>
+            <button className="btn-primary rounded-full px-5 shadow-sm" disabled={saving || adminOnly() || (validation ? !validation.success : true)} title={adminOnly() ? `${ADMIN_HINT} lưu được cài đặt dùng chung` : undefined} onClick={save}>
               <Save className="h-4 w-4" /> {saving ? 'Đang lưu…' : 'Lưu'}
             </button>
           </div>
@@ -733,10 +738,10 @@ function ScheduleTimesSection() {
       </div>
       {problem ? <p className="text-xs text-red-700">{problem}</p> : <p className="text-xs text-slate-500">"Đến" mặc định bằng giờ chạy, đổi được nhưng không muộn hơn giờ chạy. "Từ" muộn hơn "Đến" nghĩa là từ hôm trước. Giờ chạy muộn nhất {LATEST_RUN}. Dữ liệu có sau giờ chạy khoảng 5–10 phút.</p>}
       <div className="flex flex-wrap gap-2">
-        <button className="btn-teal" disabled={busy || !!problem || JSON.stringify(times) === saved} onClick={() => void save(times)}>
+        <button className="btn-teal" disabled={busy || adminOnly() || !!problem || JSON.stringify(times) === saved} title={adminOnly() ? ADMIN_HINT : undefined} onClick={() => void save(times)}>
           <Save className="h-4 w-4" /> {busy ? 'Đang lưu…' : 'Lưu giờ'}
         </button>
-        <button className="btn-ghost" disabled={busy || isDefault} onClick={() => void save({})} title="Về 08:00 (17:00 hôm qua → 08:00) và 16:30 (08:01 → 16:30)">
+        <button className="btn-ghost" disabled={busy || isDefault || adminOnly()} onClick={() => void save({})} title="Về 08:00 (17:00 hôm qua → 08:00) và 16:30 (08:01 → 16:30)">
           <RotateCcw className="h-4 w-4" /> Về mặc định
         </button>
       </div>
@@ -935,7 +940,7 @@ function CollectTokenSection() {
         </details>
         <div className="flex flex-wrap gap-2">
           <input className="input min-w-0 flex-1 font-mono" type="password" autoComplete="off" spellCheck={false} placeholder="github_pat_…" aria-label="Khóa mới" value={value} onChange={(e) => setValue(e.target.value)} />
-          <button className="btn-teal" disabled={busy || value.trim().length < 20 || !shared.session()} onClick={() => void save()}>
+          <button className="btn-teal" disabled={busy || value.trim().length < 20 || !shared.session() || adminOnly()} title={adminOnly() ? ADMIN_HINT : undefined} onClick={() => void save()}>
             <Save className="h-4 w-4" /> {busy ? 'Đang kiểm tra…' : 'Kiểm tra & lưu'}
           </button>
         </div>
@@ -1236,7 +1241,7 @@ function SuggestPanel({ s, setS, onCount }: { s: Settings; setS: (fn: (p: Settin
                   {s.categories.filter((c) => c.enabled).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
                 </select>
               )}
-              <button className="btn-teal rounded-full" onClick={() => apply(x)}>Áp dụng</button>
+              <button className="btn-teal rounded-full" disabled={adminOnly()} title={adminOnly() ? `${ADMIN_HINT} áp dụng gợi ý` : undefined} onClick={() => apply(x)}>Áp dụng</button>
               <button className="btn-ghost rounded-full" onClick={() => dismiss(x)}>Bỏ qua</button>
             </div>
             <details className="mt-2 text-xs text-slate-600">
@@ -1338,7 +1343,7 @@ function BackupPanel({ onRestored }: { onRestored: () => void }) {
                 <td className="td text-xs">{h.kind === 'settings' ? 'Cài đặt' : 'Nguồn tin'}</td>
                 <td className="td text-xs">Trạng thái trước khi: {h.summary}</td>
                 <td className="td">
-                  <button className="btn-ghost btn-xs" onClick={async () => { if (!confirm('Khôi phục về phiên bản này? Bản hiện tại sẽ được lưu vào lịch sử.')) return; try { await api.rollback(h.id); toast('ok', 'Đã hoàn tác'); onRestored(); reload(); } catch (e) { toast('err', (e as Error).message); } }}>
+                  <button className="btn-ghost btn-xs" disabled={adminOnly()} title={adminOnly() ? ADMIN_HINT : undefined} onClick={async () => { if (!confirm('Khôi phục về phiên bản này? Bản hiện tại sẽ được lưu vào lịch sử.')) return; try { await api.rollback(h.id); toast('ok', 'Đã hoàn tác'); onRestored(); reload(); } catch (e) { toast('err', (e as Error).message); } }}>
                     <RotateCcw className="h-3 w-3" /> Khôi phục
                   </button>
                 </td>
@@ -1461,8 +1466,8 @@ function ProfilesPanel({ dirty, view, onCreate, onChanged }: { dirty: boolean; v
                 <td className="whitespace-nowrap py-2 text-right">
                   {p.id !== st.activeId && <button className="btn-teal btn-xs" onClick={() => activate(p.id)}>Dùng cấu hình này</button>}
                   <button className="btn-ghost btn-xs" onClick={() => (setMode('clone'), setCloneFrom(p.id), setName(`${p.name} (bản sao)`), onCreate())}>Sao chép thành cấu hình mới</button>
-                  <button className="btn-ghost btn-xs" onClick={() => setRenaming({ id: p.id, name: p.name })}>Đổi tên</button>
-                  {st.profiles.length > 1 && <button className="btn-danger btn-xs" onClick={() => remove(p.id, p.name)}>Xóa</button>}
+                  <button className="btn-ghost btn-xs" disabled={adminOnly()} title={adminOnly() ? ADMIN_HINT : undefined} onClick={() => setRenaming({ id: p.id, name: p.name })}>Đổi tên</button>
+                  {st.profiles.length > 1 && <button className="btn-danger btn-xs" disabled={adminOnly()} title={adminOnly() ? ADMIN_HINT : undefined} onClick={() => remove(p.id, p.name)}>Xóa</button>}
                 </td>
               </tr>
             ))}
@@ -1493,7 +1498,7 @@ function ProfilesPanel({ dirty, view, onCreate, onChanged }: { dirty: boolean; v
         )}
         <Field label="Mô tả (không bắt buộc)"><input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} /></Field>
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={useNow} onChange={(e) => setUseNow(e.target.checked)} /> Dùng cấu hình mới ngay sau khi tạo</label>
-        <button className="btn-primary w-fit" disabled={busy} onClick={create}><Plus className="h-4 w-4" /> Tạo cấu hình</button>
+        <button className="btn-primary w-fit" disabled={busy || adminOnly()} title={adminOnly() ? ADMIN_HINT : undefined} onClick={create}><Plus className="h-4 w-4" /> Tạo cấu hình</button>
       </Section>
       )}
     </div>

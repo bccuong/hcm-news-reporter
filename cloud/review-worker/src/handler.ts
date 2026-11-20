@@ -77,6 +77,22 @@ export function reviewerId(name: string): string {
 }
 
 /**
+ * Changes that affect the whole system are for admins (20/11/2026): the collection token, profiles (create /
+ * rename / delete), the shared configuration (save / roll back), the automatic schedule, deleting a saved run.
+ * Reviewers keep the daily work: review, edit, "Thu thập", archive a run, suggestions, export.
+ */
+export async function adminOnly(req: Request, url: URL): Promise<boolean> {
+  const p = url.pathname, post = req.method === 'POST';
+  if (post && ['/token', '/config', '/config/rollback', '/profiles', '/auto', '/auto/times'].includes(p)) return true;
+  if (/^\/profiles\/[a-z0-9-]{1,40}$/.test(p) && req.method !== 'GET') return true;
+  if (post && p === '/runs/hide') {
+    const b = (await req.clone().json().catch(() => null)) as { hidden?: unknown } | null;
+    return typeof b?.hidden === 'boolean'; // delete / restore; archiving stays open to reviewers
+  }
+  return false;
+}
+
+/**
  * Cài đặt › Tài khoản: an admin lists / creates / updates / deletes accounts; everyone changes their own password.
  * Never returns password hashes.
  */
@@ -848,6 +864,7 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
   }
   const ur = await userRoutes(req, url, env, actor, h);
   if (ur) return ur;
+  if (actor.role !== 'admin' && (await adminOnly(req, url))) return json({ error: 'Chỉ quản trị viên được làm việc này' }, 403, h);
   if (url.pathname === '/collect' && req.method === 'POST') return collect(req, env, f, h);
   if (url.pathname === '/collect/status' && req.method === 'GET') return collectStatus(env, f, h);
   if (url.pathname === '/token' && req.method === 'GET') return tokenInfo(env, f, h);

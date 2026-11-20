@@ -27,10 +27,10 @@ const env = {
   GITHUB_TOKEN: 'fake', GITHUB_REPO: 'tinbaochi/collector', COLLECT_WORKFLOW: 'pages.yml',
 };
 
-// accounts for the UI tests: duyet-a … duyet-z ("Người duyệt A" … "Z", password test-pass) + admin (admin-pass)
+// accounts for the UI tests: duyet-a … duyet-z ("Người duyệt A" … "Z", admins so the older tests may change settings), nguoi-duyet (a plain reviewer), all password test-pass; admin (admin-pass)
 {
   const users = [];
-  for (const [u, name, role, pw] of [['admin', 'Quản trị', 'admin', 'admin-pass'], ...'abcdefghijklmnopqrstuvwxyz'.split('').map((c) => [`duyet-${c}`, `Người duyệt ${c.toUpperCase()}`, 'reviewer', 'test-pass'])] as const) {
+  for (const [u, name, role, pw] of [['admin', 'Quản trị', 'admin', 'admin-pass'], ['nguoi-duyet', 'Người duyệt thường', 'reviewer', 'test-pass'], ...'abcdefghijklmnopqrstuvwxyz'.split('').map((c) => [`duyet-${c}`, `Người duyệt ${c.toUpperCase()}`, 'admin', 'test-pass'])] as const) {
     const salt = newSalt();
     users.push({ u, name, role, salt, hash: await hashPassword(pw, salt), at: '', by: 'seed' });
   }

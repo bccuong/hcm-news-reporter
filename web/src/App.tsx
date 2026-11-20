@@ -7,7 +7,7 @@ import { formatVn, lastCompletedWindow, localInputToVnIso, todayWindow, validate
 import { mergePatches, rootOf, secondariesOf } from '../../src/reports/assemble';
 import { nextRun, slotsFor, type ScheduleSlot } from '../../src/domain/schedule';
 import { uncertainStories, type UncertainStory } from '../../src/domain/suggest';
-import { api, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
+import { api, adminOnly, ADMIN_HINT, type CollectRun, type ExportFormat, type ExportResult, type ProfilesState, type TemplateOption, type RelevanceQuality, type RunInfo, type ServerStatus, type Vote } from './api';
 import { SettingsDrawer } from './Settings';
 import { QrDialog } from './QrTool';
 import type { AskReply, AskRequest } from './askWorker';
@@ -150,7 +150,9 @@ export function App() {
       toast('err', (e as Error).message);
     }
   };
-  const canDeleteRuns = !!api.deleteRun && (api.mode === 'local' || !!api.shared?.session());
+  // web: archiving a run is for every reviewer, deleting it for admins (20/11/2026)
+  const canArchiveRuns = !!api.deleteRun && (api.mode === 'local' || !!api.shared?.session());
+  const canDeleteRuns = canArchiveRuns && !adminOnly();
   const archiveRun = async (r: RunInfo, on: boolean) => {
     try {
       await api.archiveRun!(r.runId, on);
@@ -765,7 +767,7 @@ export function App() {
 
         {/* sources of the viewed period: one tile per publisher */}
         {run && <SourceStrip run={run} arts={arts} ready={ready} sources={sources} onOpen={() => setCoverageOpen(true)}
-          picker={runs.length > 0 ? <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? 'Đăng nhập người duyệt để xoá / lưu trữ' : undefined} onArchive={api.archiveRun && canDeleteRuns ? archiveRun : undefined} /> : null} canTest={() => (api.shared && !api.shared.session() ? (setLoginOpen(true), false) : true)} />}
+          picker={runs.length > 0 ? <RunPicker runs={runs} runId={runId} onPick={pickRun} onDelete={canDeleteRuns ? removeRun : undefined} deleteHint={api.deleteRun && !canDeleteRuns ? (canArchiveRuns ? `${ADMIN_HINT} xoá được lượt (bạn vẫn lưu trữ được)` : 'Đăng nhập người duyệt để xoá / lưu trữ') : undefined} onArchive={api.archiveRun && canArchiveRuns ? archiveRun : undefined} /> : null} canTest={() => (api.shared && !api.shared.session() ? (setLoginOpen(true), false) : true)} />}
 
         {!run ? (
           <div className="card animate-in flex flex-col items-center gap-2 p-10 text-center text-slate-500">
@@ -2334,7 +2336,7 @@ function ServerStrip({ server, profileId, remote, onToggle, onEditTimes }: { ser
       </span>
       <div className="flex flex-wrap items-center gap-4" data-testid="auto-schedule">
         {slots.map((s) => (
-          <Switch key={s.id} label={s.at} title={`${s.at} – ${s.label}`} ariaLabel={`Tự động lúc ${s.at}`} checked={!!prof?.schedule?.[s.id]} disabled={!server.collectEnabled} onChange={(on) => onToggle(s, on)} />
+          <Switch key={s.id} label={s.at} title={adminOnly() ? `${s.at} – ${s.label} (${ADMIN_HINT} bật/tắt)` : `${s.at} – ${s.label}`} ariaLabel={`Tự động lúc ${s.at}`} checked={!!prof?.schedule?.[s.id]} disabled={!server.collectEnabled || adminOnly()} onChange={(on) => onToggle(s, on)} />
         ))}
         <button
           type="button"

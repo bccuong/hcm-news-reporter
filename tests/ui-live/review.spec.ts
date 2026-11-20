@@ -783,3 +783,29 @@ test('accounts: admin adds a reviewer in Cài đặt › Tài khoản; the revie
   await panel.getByRole('button', { name: 'Đổi mật khẩu' }).click();
   await expect(page.getByText('Đã đổi mật khẩu')).toBeVisible();
 });
+
+test('reviewer vs admin: a reviewer reviews, while system-wide changes are greyed out "Chỉ quản trị viên" (20/11/2026)', async ({ page }) => {
+  await page.goto('');
+  await page.getByRole('button', { name: 'Đăng nhập duyệt tin' }).click();
+  await page.getByLabel('Tên đăng nhập').fill('nguoi-duyet');
+  await page.getByLabel('Mật khẩu').fill('test-pass');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(page.getByText('Xin chào Người duyệt thường')).toBeVisible();
+  // automatic schedule switches: greyed out
+  const strip = page.getByTestId('server-status');
+  await expect(strip.getByLabel('Tự động lúc 08:00')).toBeDisabled();
+  // daily work still open: mark a story relevant
+  await page.getByRole('button', { name: /^Liên quan:/ }).first().click();
+  await expect(page.getByRole('button', { name: /^Liên quan:/ }).first()).toHaveAttribute('aria-pressed', 'true');
+  // Cài đặt: read-only note, Thời gian › Lưu giờ and Khóa thu thập greyed out
+  await page.getByRole('button', { name: 'Cài đặt' }).click();
+  const set = page.getByRole('dialog', { name: 'Cài đặt' });
+  await expect(set.getByTestId('reviewer-readonly')).toBeVisible();
+  await set.getByRole('button', { name: 'Đóng cài đặt' }).click();
+  await strip.getByTestId('edit-times').click(); // opens Cài đặt › Thời gian
+  await expect(set.getByRole('button', { name: 'Về mặc định' })).toBeDisabled();
+  await expect(set.getByRole('button', { name: 'Kiểm tra & lưu' })).toBeDisabled();
+  await set.getByRole('button', { name: 'Tổng quan', exact: true }).click();
+  await expect(set.getByRole('button', { name: 'Đổi tên' }).first()).toBeDisabled();
+  await set.screenshot({ path: 'docs/screenshots/web-reviewer-readonly.png' });
+});
