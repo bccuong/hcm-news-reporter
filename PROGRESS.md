@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14s – reports: group renamed, text fitted with real widths; 2026-11-19)
+## ▶ RESUME HERE (session 14t – site moved to tinbaochi/collector; 2026-11-20)
+- Repo transferred bccuong/news-reporter → org tinbaochi, renamed collector (user approved). Site: https://tinbaochi.github.io/collector/ (base /collector/). git remote updated. Variables/secrets (REVIEW_API_URL, EXPORT_TOKEN) moved with the repo; Pages source = GitHub Actions.
+- Worker b1f0fba4: GITHUB_REPO tinbaochi/collector, ALLOWED_ORIGINS new + old origin.
+- Old address: new repo bccuong/news-reporter (Pages, legacy build) serves index.html + 404.html redirecting /news-reporter/<rest>?q#h → /collector/<rest>?q#h. Checked with Edge.
+- BLOCKER: worker GITHUB_TOKEN (fine-grained PAT) was scoped to the old repo → /status 502, "Thu thập" and scheduled runs fail until the user creates a PAT for tinbaochi/collector (Actions: read & write) and runs "npx wrangler secret put GITHUB_TOKEN" in cloud/review-worker.
+- Next step: after the new token, check /status 200 and that the next scheduled run dispatches in tinbaochi/collector.
+
+## (history) Session 14s – reports: group renamed, text fitted with real widths; 2026-11-19)
 - "Bỏ qua" on sector / setting suggestions fixed (shared id pattern src/domain/suggestId.ts; worker redeployed 1820bc9e).
 - Settings › Thời gian: 24-hour pickers (Time24 in ui.tsx) for the report window and automatic times; "Khung mở mặc định".
 - Group renamed: reports "TIN CẦN NGHIÊN CỨU, XỬ LÝ" (narrow PPTX column headers: "CẦN NGHIÊN CỨU, XỬ LÝ" at 12 pt), web "Cần nghiên cứu, xử lý". Department templates still say "TỒN TẠI CẦN KHẮC PHỤC": recognised with either wording, rewritten on export.
