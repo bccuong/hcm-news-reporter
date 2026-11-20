@@ -4,6 +4,11 @@
 
 @layer base {
   html { font-size: 14px; }
+  /* phones / tablets: Safari zooms the page into any field under 16px when it gets the focus (every dialog
+     focuses its first field) – 16px fields on touch screens; the page itself can still be zoomed by the user */
+  @media (hover: none) and (pointer: coarse) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea { font-size: 16px !important; }
+  }
   body { @apply bg-slate-50 text-slate-800 antialiased; }
   :focus-visible { @apply outline-none ring-2 ring-teal-500 ring-offset-1; }
   /* checkboxes: rounded square, teal when ticked with a white check, clear hover / disabled */
