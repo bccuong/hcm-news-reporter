@@ -7,7 +7,14 @@
 - Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14t – site moved to tinbaochi/collector; 2026-11-20)
+## ▶ RESUME HERE (session 14u – accounts, token from the web, phone zoom; 2026-11-20)
+- Accounts: cloud/review-worker/src/accounts.ts (KV cfg:users, PBKDF2 5000 it., sessions sess:<token> 1 year). /login {username,password} → token accepted wherever the shared code was (old code still = admin). /me, /logout, /users (admin), /users/delete, /users/password. Web: login dialog "Tên đăng nhập / Mật khẩu"; Cài đặt › Tài khoản (web only). Live KV seeded with admin (password given by the user in chat, NOT in the repo; hash only) – verified on the live worker (worker 515a9872).
+- Collection token replaceable in Cài đặt › Thời gian (POST /token checks read + dispatch permission with a dispatch to a non-existent branch → 422); /status carries the expiry; strip warns < 30 days. Current token valid until 2027-11-21, dispatch probe 422 OK (token edited to include tinbaochi/collector + Actions write).
+- Phones: 16px fields on touch screens (no Safari zoom on dialogs).
+- vitest 202, test:ui 14, test:ui:live 17.
+- Next step: team members get accounts from the admin (Cài đặt › Tài khoản); later the shared ACCESS_CODE can be removed.
+
+## (history) Session 14t – site moved to tinbaochi/collector; 2026-11-20)
 - Repo transferred bccuong/news-reporter → org tinbaochi, renamed collector (user approved). Site: https://tinbaochi.github.io/collector/ (base /collector/). git remote updated. Variables/secrets (REVIEW_API_URL, EXPORT_TOKEN) moved with the repo; Pages source = GitHub Actions.
 - Worker b1f0fba4: GITHUB_REPO tinbaochi/collector, ALLOWED_ORIGINS new + old origin.
 - Old address: new repo bccuong/news-reporter (Pages, legacy build) serves index.html + 404.html redirecting /news-reporter/<rest>?q#h → /collector/<rest>?q#h. Checked with Edge.
