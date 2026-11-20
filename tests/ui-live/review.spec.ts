@@ -809,3 +809,24 @@ test('reviewer vs admin: a reviewer reviews, while system-wide changes are greye
   await expect(set.getByRole('button', { name: 'Đổi tên' }).first()).toBeDisabled();
   await set.screenshot({ path: 'docs/screenshots/web-reviewer-readonly.png' });
 });
+
+test('same account on a second device: my Liên quan / Không votes show on the buttons there too (20/11/2026)', async ({ browser }) => {
+  const pc = await (await browser.newContext()).newPage();
+  await pc.goto('');
+  await login(pc, 'Người duyệt V');
+  const first = pc.getByRole('button', { name: /^Liên quan:/ }).first();
+  const title = ((await first.getAttribute('aria-label')) ?? '').replace(/^Liên quan: /, '');
+  await first.click();
+  await expect(first).toHaveAttribute('aria-pressed', 'true');
+  await pc.waitForTimeout(1500); // the vote is saved in the background
+  // the "phone": a new browser, nothing stored locally
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+  await phone.goto('');
+  await login(phone, 'Người duyệt V');
+  await expect(phone.getByRole('button', { name: `Liên quan: ${title}` }).first()).toHaveAttribute('aria-pressed', 'true');
+  // another reviewer's vote does not press MY button
+  const other = await (await browser.newContext()).newPage();
+  await other.goto('');
+  await login(other, 'Người duyệt W');
+  await expect(other.getByRole('button', { name: `Liên quan: ${title}` }).first()).toHaveAttribute('aria-pressed', 'false');
+});
