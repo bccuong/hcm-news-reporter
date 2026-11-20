@@ -2348,6 +2348,18 @@ function ServerStrip({ server, profileId, remote, onToggle, onEditTimes }: { ser
           <Clock3 className="h-4 w-4" /> Đổi giờ
         </button>
       </div>
+      {(() => {
+        // collection token: refused, or expiring within 30 days → everyone sees it, one click opens Cài đặt › Thời gian
+        const t = server.token;
+        const left = t?.expiresAt ? Math.floor((Date.parse(t.expiresAt) - Date.now()) / 86400_000) : null;
+        if (!t || (!t.rejected && (left === null || left >= 30))) return null;
+        const text = t.rejected || (left !== null && left < 0) ? 'Khóa thu thập đã hết hạn – Thu thập và lịch tự động đang dừng' : `Khóa thu thập hết hạn sau ${left} ngày – cần làm mới`;
+        return (
+          <button type="button" onClick={onEditTimes} data-testid="token-warning" className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${t.rejected || (left ?? 0) < 0 ? 'border-red-300 bg-red-50 text-red-800' : 'border-amber-300 bg-amber-50 text-amber-800'}`} title="Mở Cài đặt › Thời gian › Khóa thu thập">
+            <AlertTriangle className="h-3.5 w-3.5" /> {text}
+          </button>
+        );
+      })()}
       <span className="text-xs text-slate-500" data-testid="auto-info" title={next ? 'Dữ liệu có sau khoảng 5–10 phút; máy chủ bận thì tự thử lại' : 'Chỉ thu thập khi có người bấm Thu thập'}>
         {next ? <>Tiếp: <b className="text-slate-700">{next.slot.at} {next.at.slice(8, 10)}/{next.at.slice(5, 7)}/{next.at.slice(0, 4)}</b></> : 'Đang tắt'}
       </span>

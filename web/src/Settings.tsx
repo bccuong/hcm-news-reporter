@@ -6,7 +6,7 @@ import { SettingsSchema, withoutSkillNote, type Article, type CategoryCode, type
 import { formatVn, lastCompletedWindow } from '../../src/domain/timeWindow';
 import { LATEST_RUN, SCHEDULE_SLOTS, SLOT_NAMES, slotsFor, validateTimes, type ScheduleSlotId, type ScheduleTimes } from '../../src/domain/schedule';
 import { uid } from '../../src/domain/text';
-import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption } from './api';
+import { api, type GoldenSet, type HistoryEntry, type PreviewResult, type ProfilesState, type SuggestionsState, type TemplateOption, type TokenInfo } from './api';
 import { alreadyApplied, applySuggestion, impactOf, type FilterSuggestion, type Judged } from '../../src/domain/suggest';
 import { RuleBuilder } from './RuleBuilder';
 import { SourcesPanel } from './SourcesPanel';
@@ -651,6 +651,7 @@ function TimePanel({ s, up }: { s: Settings; up: Up }) {
         <p className="text-xs text-slate-600">Ngày dùng để lọc: <b>giờ đăng gốc</b> (không thay bằng giờ cập nhật hay giờ thu thập). Múi giờ cố định: Asia/Ho_Chi_Minh (UTC+07:00).</p>
       </Section>
       {api.shared && <ScheduleTimesSection />}
+      {api.shared && <CollectTokenSection />}
       <Section title="Tự động khi mở ứng dụng">
         <Toggle checked={s.startup.autoCollectLastCompletedWindow} onChange={(v) => up('startup', { autoCollectLastCompletedWindow: v })} label="Tự thu thập kỳ gần nhất khi mở ứng dụng (cần Internet)" />
         <Toggle checked={s.startup.oncePerWindow} onChange={(v) => up('startup', { oncePerWindow: v })} label="Mỗi khung giờ chỉ tự chạy một lần (tải lại trang không tạo lượt trùng)" />
@@ -733,6 +734,84 @@ function ScheduleTimesSection() {
         <button className="btn-ghost" disabled={busy || isDefault} onClick={() => void save({})} title="Về 08:00 (17:00 hôm qua → 08:00) và 16:30 (08:01 → 16:30)">
           <RotateCcw className="h-4 w-4" /> Về mặc định
         </button>
+      </div>
+    </Section>
+  );
+}
+
+const vnDate = (iso: string) => new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+const daysLeft = (iso: string) => Math.floor((Date.parse(iso) - Date.now()) / 86400_000);
+
+/**
+ * web (shared): the GitHub token the server uses for "Thu thập" and the automatic runs. A new one is pasted here,
+ * checked by the server (reads the repository, may start the workflow) and only then saved; it is never shown again.
+ */
+function CollectTokenSection() {
+  const shared = api.shared!;
+  const toast = useToast();
+  const [info, setInfo] = useState<TokenInfo | null>(null);
+  const [err, setErr] = useState('');
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = () => {
+    if (!shared.session()) return setErr('Đăng nhập người duyệt để xem và đổi khóa thu thập.');
+    setErr('');
+    shared.tokenInfo().then(setInfo).catch((e: Error) => setErr(e.message));
+  };
+  useEffect(load, []);
+  const save = async () => {
+    setBusy(true);
+    try {
+      setInfo(await shared.setToken(value.trim()));
+      setValue('');
+      window.dispatchEvent(new Event('schedule-changed'));
+      toast('ok', 'Đã kiểm tra và lưu khóa mới – thu thập dùng khóa này từ bây giờ');
+    } catch (e) {
+      toast('err', (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const left = info?.expiresAt ? daysLeft(info.expiresAt) : null;
+  const repo = info?.repo ?? 'repository thu thập';
+  return (
+    <Section title="Khóa thu thập (GitHub)" help="Máy chủ dùng khóa này để chạy Thu thập và các lượt tự động. Khóa có hạn tối đa 1 năm: tạo khóa mới rồi dán vào đây trước khi hết hạn.">
+      <div className="space-y-3 text-sm" data-testid="collect-token">
+        {err && <p className="text-xs text-slate-600">{err}</p>}
+        {info && !info.configured && <p className="text-xs text-red-700">Máy chủ chưa có khóa – nút Thu thập và lịch tự động chưa chạy được.</p>}
+        {info?.configured && (
+          <div className={`rounded-lg border p-3 ${!info.ok || (left !== null && left < 30) ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+            <div>
+              Khóa đang dùng: <b className="font-mono">…{info.last4}</b>
+              {info.source === 'web' && info.by && info.at ? <span className="text-slate-500"> · cập nhật bởi {info.by}, {vnDate(info.at)}</span> : <span className="text-slate-500"> · đặt trên máy chủ</span>}
+            </div>
+            {!info.ok ? (
+              <div className="mt-1 font-semibold text-red-700">GitHub không nhận khóa này (hết hạn hoặc đã thu hồi) – hãy dán khóa mới.</div>
+            ) : info.expiresAt ? (
+              <div className={`mt-1 ${left !== null && left < 30 ? 'font-semibold text-amber-800' : 'text-slate-600'}`}>
+                Hết hạn: <b>{vnDate(info.expiresAt)}</b> ({left !== null && left >= 0 ? `còn ${left} ngày` : 'đã hết hạn'})
+              </div>
+            ) : (
+              <div className="mt-1 text-slate-600">Khóa không có ngày hết hạn.</div>
+            )}
+          </div>
+        )}
+        <details className="rounded-lg border border-slate-200 bg-white p-3">
+          <summary className="cursor-pointer font-medium text-teal-800">Cách tạo khóa mới</summary>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-slate-700">
+            <li>Mở <a className="text-blue-700 underline" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com › Fine-grained token mới</a> (đăng nhập tài khoản quản lý repository).</li>
+            <li><b>Resource owner</b>: chủ của <b>{repo}</b>; <b>Repository access</b>: Only select repositories → <b>{repo.split('/')[1] ?? repo}</b>.</li>
+            <li><b>Permissions › Actions</b>: <b>Read and write</b>. Hạn dùng: tối đa 366 ngày.</li>
+            <li>Bấm Generate token, chép khóa và dán vào ô dưới. Nếu GitHub báo chờ duyệt, chủ tổ chức bấm Approve.</li>
+          </ol>
+        </details>
+        <div className="flex flex-wrap gap-2">
+          <input className="input min-w-0 flex-1 font-mono" type="password" autoComplete="off" spellCheck={false} placeholder="github_pat_…" aria-label="Khóa mới" value={value} onChange={(e) => setValue(e.target.value)} />
+          <button className="btn-teal" disabled={busy || value.trim().length < 20 || !shared.session()} onClick={() => void save()}>
+            <Save className="h-4 w-4" /> {busy ? 'Đang kiểm tra…' : 'Kiểm tra & lưu'}
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">Khóa được kiểm tra với GitHub trước khi lưu (đọc được repository, có quyền chạy thu thập); khóa sai hoặc thiếu quyền thì giữ nguyên khóa cũ. Sau khi lưu, khóa không bao giờ hiện lại – chỉ 4 ký tự cuối.</p>
       </div>
     </Section>
   );

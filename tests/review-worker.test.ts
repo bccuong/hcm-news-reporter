@@ -188,6 +188,55 @@ describe('shared review worker', () => {
       expect(await scheduledCollect({ ...n, GITHUB_TOKEN: '' } as Env, gh, at('2026-11-17T08:02'))).toMatchObject({ result: 'not_configured' });
     });
   });
+  describe('collection token replaced from Cài đặt (20/11/2026)', () => {
+    const GOOD = 'github_pat_' + 'A'.repeat(40) + 'gOOd';
+    const NOPERM = 'github_pat_' + 'B'.repeat(40) + 'noPm';
+    const REVOKED = 'github_pat_' + 'C'.repeat(40) + 'dead';
+    const used: string[] = [];
+    // fake GitHub: GOOD reads the repo and may dispatch, NOPERM only reads, REVOKED is refused
+    const gh = async (url: string, init?: RequestInit) => {
+      const tok = String((init?.headers as Record<string, string>)?.authorization ?? '').replace('Bearer ', '');
+      used.push(`${init?.method ?? 'GET'} ${url} ${tok.slice(-4)}`);
+      if (tok === REVOKED) return new Response('{}', { status: 401 });
+      const exp = { 'github-authentication-token-expiration': '2027-11-21 04:06:07 UTC' };
+      if (url.endsWith('/dispatches')) return new Response('{}', { status: tok === GOOD ? 422 : 403 });
+      if (url.includes('/runs?per_page')) return new Response(JSON.stringify({ workflow_runs: [] }), { status: 200, headers: exp });
+      if (url.includes('/runs?status=')) return new Response(JSON.stringify({ total_count: 0 }), { status: 200 });
+      return new Response('{}', { status: 200, headers: exp });
+    };
+    const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'github_pat_' + 'S'.repeat(40) + 'srvr', GITHUB_REPO: 'tinbaochi/collector', COLLECT_WORKFLOW: 'pages.yml' });
+    const post = (e: Env, token: string, code = 'HCM-test-1234') => handle(new Request('https://w.example/token', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ token, reviewer: 'Cường' }) }), e, gh);
+    it('checked before saving, never sent back, then used for status / collection; expiry shown', async () => {
+      const e = genv();
+      expect((await post(e, GOOD, 'wrong')).status).toBe(401);
+      expect(((await (await post(e, 'abc')).json()) as { error: string }).error).toMatch(/không đúng dạng/);
+      expect(((await (await post(e, REVOKED)).json()) as { error: string }).error).toMatch(/không nhận khóa/);
+      expect(((await (await post(e, NOPERM)).json()) as { error: string }).error).toMatch(/Actions: Read and write/);
+      // the permission probe dispatches to a branch that does not exist: nothing can run
+      expect(used.filter((u) => u.includes('/dispatches'))).toEqual(['POST https://api.github.com/repos/tinbaochi/collector/actions/workflows/pages.yml/dispatches noPm']);
+      const ok = await post(e, GOOD);
+      expect(ok.status).toBe(200);
+      const body = await ok.text();
+      expect(body).not.toContain(GOOD);
+      expect(JSON.parse(body).token).toMatchObject({ last4: 'gOOd', by: 'Cường', expiresAt: '2027-11-21T04:06:07.000Z', source: 'web' });
+      const info = await (await handle(new Request('https://w.example/token', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e, gh)).text();
+      expect(info).not.toContain(GOOD);
+      expect(JSON.parse(info)).toMatchObject({ source: 'web', last4: 'gOOd', ok: true, expiresAt: '2027-11-21T04:06:07.000Z' });
+      // public status: the saved token is used, only the expiry date is public
+      used.length = 0;
+      const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { token: { expiresAt: string } };
+      expect(st.token).toEqual({ expiresAt: '2027-11-21T04:06:07.000Z', rejected: false });
+      expect(used.every((u) => u.endsWith('gOOd'))).toBe(true);
+    });
+    it('without a saved token the wrangler secret is used; a refused token shows on the status', async () => {
+      const e = genv();
+      used.length = 0;
+      await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh);
+      expect(used.every((u) => u.endsWith('srvr'))).toBe(true);
+      const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), { ...e, GITHUB_TOKEN: REVOKED }, gh)).json()) as { token: { rejected: boolean } };
+      expect(st.token.rejected).toBe(true);
+    });
+  });
   describe('shared collector configuration + image proxy', () => {
     const H = { origin: ORIGIN, 'x-review-code': 'HCM-test-1234', 'content-type': 'application/json' };
     const put = (e: Env, settings: unknown, summary: string, code = 'HCM-test-1234') =>

@@ -710,3 +710,35 @@ test('source tile "Kiểm tra nhanh": checks the publisher now (1 listing page +
   await expect(res).toContainText(/hoạt động · \d+ link|đường OK|không lấy được tin/);
   await expect(page.getByTestId(`source-tile-${id}`)).toContainText(/✓ OK|Một phần|lỗi/); // the period's own status stays
 });
+
+test('collection token: expiry warning for everyone, replaced from Cài đặt after the server checked it (20/11/2026)', async ({ page, request }) => {
+  const soon = new Date(Date.now() + 10 * 86400_000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  await request.get(`http://127.0.0.1:5181/__token-expiry?d=${encodeURIComponent(soon)}`);
+  await page.goto('');
+  const warn = page.getByTestId('token-warning');
+  await expect(warn).toContainText(/Khóa thu thập hết hạn sau (9|10) ngày/);
+  await login(page, 'Người duyệt H', 'HCM-TEST-CODE');
+  await warn.click(); // opens Cài đặt › Thời gian
+  const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
+  const box = dlg.getByTestId('collect-token');
+  await expect(box).toContainText('Khóa đang dùng: …fake');
+  await expect(box).toContainText(/còn (9|10) ngày/);
+  // a token without the Actions permission is refused, the old one stays
+  await box.getByLabel('Khóa mới').fill('github_pat_noperm_' + 'N'.repeat(30));
+  await box.getByRole('button', { name: 'Kiểm tra & lưu' }).click();
+  await expect(page.getByText(/Khóa thiếu quyền chạy thu thập/)).toBeVisible();
+  await expect(box).toContainText('Khóa đang dùng: …fake');
+  // a good token is saved, never shown again (only the last 4 characters)
+  const good = 'github_pat_' + 'G'.repeat(36) + 'k3Y9';
+  await box.getByLabel('Khóa mới').fill(good);
+  await box.getByRole('button', { name: 'Kiểm tra & lưu' }).click();
+  await expect(page.getByText(/Đã kiểm tra và lưu khóa mới/)).toBeVisible();
+  await expect(box).toContainText('Khóa đang dùng: …k3Y9');
+  await expect(box).toContainText('cập nhật bởi Người duyệt H');
+  await expect(box).toContainText(/còn (299|300) ngày/);
+  await expect(box.getByLabel('Khóa mới')).toHaveValue('');
+  expect(await page.content()).not.toContain(good);
+  await box.screenshot({ path: 'docs/screenshots/web-collect-token.png' });
+  await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
+  await expect(warn).toHaveCount(0); // the new token is far from expiry
+});

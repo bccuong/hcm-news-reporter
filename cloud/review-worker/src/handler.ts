@@ -124,6 +124,55 @@ interface RunInfo { id: number; status: string; conclusion: string | null; creat
 
 const ghReady = (env: Env) => !!(env.GITHUB_TOKEN && env.GITHUB_REPO && env.COLLECT_WORKFLOW);
 
+/* ---------- collection token: set by "wrangler secret put GITHUB_TOKEN", or replaced from the web (Cài đặt, 20/11/2026) ---------- */
+const TOKEN_KEY = 'cfg:ghToken';
+interface StoredToken { token: string; last4: string; by: string; at: string; expiresAt: string | null }
+/** "2027-11-21 04:06:07 UTC" (GitHub header) → ISO; null when the token never expires / no header */
+export function tokenExpiry(h: Headers): string | null {
+  const v = h.get('github-authentication-token-expiration');
+  if (!v) return null;
+  const d = new Date(v.replace(' UTC', 'Z').replace(' ', 'T'));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+/** the env with the token saved from the web, when there is one (it wins over the wrangler secret) */
+async function withToken(env: Env): Promise<Env> {
+  const v = await env.REVIEWS.get(TOKEN_KEY);
+  if (!v) return env;
+  const t = JSON.parse(v) as StoredToken;
+  return { ...env, GITHUB_TOKEN: t.token };
+}
+/**
+ * POST /token: a reviewer replaces the collection token. Checked before it is saved – it must read this repository
+ * and be allowed to start the collection workflow (a dispatch to a branch that does not exist: 422 = allowed,
+ * 403/404 = not allowed; nothing runs). The token is never sent back: only its last 4 characters and expiry.
+ */
+async function saveToken(req: Request, env: Env, f: Fetch, h: Record<string, string>) {
+  const b = (await req.json().catch(() => null)) as { token?: unknown; reviewer?: unknown } | null;
+  const token = String(b?.token ?? '').trim();
+  const by = String(b?.reviewer ?? '').trim().slice(0, 40);
+  if (!by) return json({ error: 'Cần nhập tên người duyệt' }, 400, h);
+  if (!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,255}$/.test(token)) return json({ error: 'Khóa không đúng dạng (bắt đầu bằng github_pat_ …)' }, 400, h);
+  if (!env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ error: 'Máy chủ chưa cấu hình repository thu thập' }, 503, h);
+  const t = { ...env, GITHUB_TOKEN: token };
+  const repo = await gh(t, f, '');
+  if (repo.status === 401) return json({ error: 'GitHub không nhận khóa này (sai, đã thu hồi hoặc hết hạn)' }, 400, h);
+  if (!repo.ok) return json({ error: `Khóa không đọc được repository ${env.GITHUB_REPO} – khi tạo khóa, chọn đúng chủ sở hữu và repository này` }, 400, h);
+  const probe = await gh(t, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'refs/heads/__token-check-does-not-exist__' }) });
+  if (probe.status !== 422) return json({ error: 'Khóa thiếu quyền chạy thu thập – đặt "Actions: Read and write" khi tạo khóa' }, 400, h);
+  const saved: StoredToken = { token, last4: token.slice(-4), by, at: new Date().toISOString(), expiresAt: tokenExpiry(repo.headers) };
+  await env.REVIEWS.put(TOKEN_KEY, JSON.stringify(saved));
+  return json({ ok: true, token: { last4: saved.last4, by, at: saved.at, expiresAt: saved.expiresAt, source: 'web' } }, 200, h);
+}
+/** GET /token: which token is used (never the token itself) */
+async function tokenInfo(env: Env, f: Fetch, h: Record<string, string>) {
+  const v = await env.REVIEWS.get(TOKEN_KEY);
+  const s = v ? (JSON.parse(v) as StoredToken) : null;
+  const e = s ? { ...env, GITHUB_TOKEN: s.token } : env;
+  if (!e.GITHUB_TOKEN || !e.GITHUB_REPO) return json({ configured: false }, 200, h);
+  const r = await gh(e, f, '');
+  return json({ configured: true, ok: r.ok, status: r.status, source: s ? 'web' : 'server', last4: s?.last4 ?? (e.GITHUB_TOKEN ?? '').trim().slice(-4), by: s?.by ?? null, at: s?.at ?? null, expiresAt: tokenExpiry(r.headers) ?? s?.expiresAt ?? null, repo: e.GITHUB_REPO }, 200, h);
+}
+
 /** is a collection workflow run queued or running? */
 async function busy(env: Env, f: Fetch): Promise<boolean> {
   for (const st of ['in_progress', 'queued']) {
@@ -179,6 +228,7 @@ export async function scheduledCollect(env: Env, f: Fetch = (i, init) => fetch(i
   for (const p of profiles)
     for (const slot of dueSlots(now, slotsFor(p.scheduleTimes))) if (p.schedule?.[slot.id] && !(await env.REVIEWS.get(doneKey(p.id, slot, now)))) todo.push({ p, slot });
   if (!todo.length) return null;
+  env = await withToken(env);
   const at = now.toISOString();
   const { p, slot } = todo[0]!;
   let last: AutoLast;
@@ -209,7 +259,8 @@ const mapRun = (x: RunInfo) => ({
 });
 
 /** public server status: per-profile hourly switch + what the collection server is doing right now */
-async function serverStatus(env: Env, f: Fetch, h: Record<string, string>) {
+async function serverStatus(env0: Env, f: Fetch, h: Record<string, string>) {
+  const env = await withToken(env0);
   const now = new Date();
   const profiles = await Promise.all(
     (await getProfiles(env)).map(async (p) => {
@@ -223,7 +274,9 @@ async function serverStatus(env: Env, f: Fetch, h: Record<string, string>) {
   if (!ghReady(env)) return json({ collectEnabled: false, profiles, lastAuto, running: [] }, 200, h);
   const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?per_page=6`);
   const runs = r.ok ? ((await r.json()) as { workflow_runs: RunInfo[] }).workflow_runs.map(mapRun) : [];
-  return json({ collectEnabled: true, profiles, lastAuto, running: runs.filter((x) => x.status !== 'completed') }, r.ok ? 200 : 502, h);
+  // expiry of the collection token (public: date only) – the web warns 30 days ahead; 401 = expired / revoked
+  const token = { expiresAt: tokenExpiry(r.headers), rejected: r.status === 401 };
+  return json({ collectEnabled: true, profiles, lastAuto, running: runs.filter((x) => x.status !== 'completed'), token }, r.ok ? 200 : 502, h);
 }
 
 /* ---------- shared collector configuration (settings + sources) per profile, edited on the web, used by the server ---------- */
@@ -404,7 +457,8 @@ async function imageProxy(url: URL, f: Fetch, h: Record<string, string>) {
 }
 
 /** On-demand collection for a custom window: dispatch the collection workflow (one at a time). */
-async function collect(req: Request, env: Env, f: Fetch, h: Record<string, string>) {
+async function collect(req: Request, env0: Env, f: Fetch, h: Record<string, string>) {
+  const env = await withToken(env0);
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ error: 'Máy chủ chưa được cấu hình để thu thập theo yêu cầu' }, 503, h);
   let b: { from?: string; to?: string; reviewer?: string; profile?: string };
   try {
@@ -433,7 +487,8 @@ async function collect(req: Request, env: Env, f: Fetch, h: Record<string, strin
   return json({ ok: true, from, to, profile, requestedAt: new Date().toISOString() }, 202, h);
 }
 
-async function collectStatus(env: Env, f: Fetch, h: Record<string, string>) {
+async function collectStatus(env0: Env, f: Fetch, h: Record<string, string>) {
+  const env = await withToken(env0);
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO || !env.COLLECT_WORKFLOW) return json({ enabled: false, runs: [] }, 200, h);
   const r = await gh(env, f, `/actions/workflows/${env.COLLECT_WORKFLOW}/runs?per_page=6`);
   if (!r.ok) return json({ error: `Máy chủ thu thập không trả lời (HTTP ${r.status})` }, 502, h);
@@ -723,6 +778,8 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
   if (url.pathname === '/login' && req.method === 'POST') return json({ ok: true, collectEnabled: !!env.GITHUB_TOKEN }, 200, h);
   if (url.pathname === '/collect' && req.method === 'POST') return collect(req, env, f, h);
   if (url.pathname === '/collect/status' && req.method === 'GET') return collectStatus(env, f, h);
+  if (url.pathname === '/token' && req.method === 'GET') return tokenInfo(env, f, h);
+  if (url.pathname === '/token' && req.method === 'POST') return saveToken(req, env, f, h);
   if (url.pathname === '/img' && req.method === 'GET') return imageProxy(url, f, h);
   if (url.pathname === '/fetch' && req.method === 'GET') return pageProxy(url, f, h);
   const pr = await profileRoutes(req, url, env, h);

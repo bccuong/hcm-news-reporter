@@ -108,7 +108,10 @@ export interface ServerStatus {
   lastAuto: { at: string; result: 'dispatched' | 'off' | 'busy' | 'error' | 'not_configured'; detail?: string; profiles?: string[]; slot?: string } | null;
   /** queued / running collection workflow runs */
   running: CollectRun[];
+  /** collection token: expiry (ISO, null = never / unknown); rejected = expired or revoked */
+  token?: { expiresAt: string | null; rejected: boolean };
 }
+export interface TokenInfo { configured: boolean; ok?: boolean; status?: number; source?: 'web' | 'server'; last4?: string; by?: string | null; at?: string | null; expiresAt?: string | null; repo?: string }
 export interface SharedReview {
   /** public: automatic collection times + what the collection server is doing now */
   serverStatus(): Promise<ServerStatus>;
@@ -116,6 +119,10 @@ export interface SharedReview {
   setSchedule(slot: ScheduleSlot['id'], enabled: boolean): Promise<ProfileInfo>;
   /** change the times of the automatic slots of the ACTIVE profile ({} = defaults; needs a reviewer session) */
   setScheduleTimes(times: ScheduleTimes): Promise<ProfileInfo>;
+  /** which collection token the server uses (never the token itself) */
+  tokenInfo(): Promise<TokenInfo>;
+  /** replace the collection token (checked by the server before it is saved) */
+  setToken(token: string): Promise<TokenInfo>;
   /** id of the active profile (the one Settings edits) */
   profileId(): string;
   session(): { name: string } | null;
@@ -868,6 +875,21 @@ class DemoApi implements Api {
         const r = await fetch(`${this.reviewApi}/auto/times`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ times, reviewer: s.name, profile: this.pid }) });
         if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được giờ lịch (HTTP ${r.status})`);
         return ((await r.json()) as { profile: ProfileInfo }).profile;
+      },
+      tokenInfo: async () => {
+        const s = store.get<{ name: string; code: string }>('reviewer');
+        if (!s) throw new ApiError('Hãy đăng nhập người duyệt để xem khóa thu thập');
+        const r = await fetch(`${this.reviewApi}/token`, { headers: { 'x-review-code': s.code }, cache: 'no-cache' });
+        if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không xem được khóa thu thập (HTTP ${r.status})`);
+        return (await r.json()) as TokenInfo;
+      },
+      setToken: async (token) => {
+        const s = store.get<{ name: string; code: string }>('reviewer');
+        if (!s) throw new ApiError('Hãy đăng nhập người duyệt để đổi khóa thu thập');
+        const r = await fetch(`${this.reviewApi}/token`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ token, reviewer: s.name }) });
+        const j = (await r.json().catch(() => ({}))) as { error?: string; token?: TokenInfo };
+        if (!r.ok) throw new ApiError(j.error ?? `Không lưu được khóa (HTTP ${r.status})`);
+        return { configured: true, ok: true, ...j.token };
       },
       profileId: () => this.pid,
       session: () => store.get<{ name: string; code: string }>('reviewer') ?? null,

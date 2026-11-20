@@ -77,7 +77,20 @@ function makePng(w = 1200, h = 800): Uint8Array {
 }
 const PNG = makePng();
 
+/** expiry the fake GitHub reports for the server token ("/__token-expiry?d=<ISO>" changes it); tokens saved from the web get +300 days */
+let serverTokenExpiry = '2027-11-21 04:06:07 UTC';
+const ghExpiry = (init?: RequestInit) => {
+  const tok = String((init?.headers as Record<string, string> | undefined)?.authorization ?? '');
+  return tok.includes('github_pat_') ? new Date(Date.now() + 300 * 86400_000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : serverTokenExpiry;
+};
 const fakeGitHub = async (url: string, init?: RequestInit): Promise<Response> => {
+  // token checks (Cài đặt › Khóa thu thập): "revoked" is refused, "noperm" may read but not start the workflow
+  const auth = String((init?.headers as Record<string, string> | undefined)?.authorization ?? '');
+  if (url.startsWith('https://api.github.com/')) {
+    if (auth.includes('revoked')) return new Response('{}', { status: 401 });
+    if (url.endsWith('/dispatches') && String(init?.body).includes('__token-check')) return new Response('{}', { status: auth.includes('noperm') ? 403 : 422 });
+    if (/\/repos\/[^/]+\/[^/]+$/.test(url)) return new Response('{}', { status: 200, headers: { 'github-authentication-token-expiration': ghExpiry(init) } });
+  }
   // publisher photos of the fixture sites (fetched by the worker's /img proxy)
   if (/^https:\/\/fixture-[a-z]\.example\.vn\/img\//.test(url)) return new Response(PNG as Uint8Array<ArrayBuffer>, { status: 200, headers: { 'content-type': 'image/png' } });
   // publisher pages of fixture site A (fetched by the worker's /fetch proxy for "Dò nguồn / Thử nguồn" on the web)
@@ -107,7 +120,7 @@ const fakeGitHub = async (url: string, init?: RequestInit): Promise<Response> =>
     }, 3000);
     return new Response(null, { status: 204 });
   }
-  if (url.includes('/runs?per_page')) return new Response(JSON.stringify({ workflow_runs: runs.slice(0, 6) }), { status: 200 });
+  if (url.includes('/runs?per_page')) return new Response(JSON.stringify({ workflow_runs: runs.slice(0, 6) }), { status: 200, headers: { 'github-authentication-token-expiration': ghExpiry(init) } });
   return new Response('{}', { status: 404 });
 };
 
@@ -121,6 +134,11 @@ createServer(async (req, res) => {
     const q = new URL(req.url!, 'http://x').searchParams.get('at');
     const now = q ? new Date(q) : new Date(`${new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)}T08:02:00+07:00`);
     return res.end(JSON.stringify(await scheduledCollect(env, fakeGitHub, now)));
+  }
+  if (req.url?.startsWith('/__token-expiry')) {
+    serverTokenExpiry = new URL(req.url!, 'http://x').searchParams.get('d')!;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end('{"ok":true}');
   }
   if (req.url === '/__png') {
     res.writeHead(200, { 'content-type': 'image/png' });
