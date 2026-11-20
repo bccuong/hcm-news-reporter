@@ -89,6 +89,7 @@ function makePng(w = 1200, h = 800): Uint8Array {
 const PNG = makePng();
 
 /** expiry the fake GitHub reports for the server token ("/__token-expiry?d=<ISO>" changes it); tokens saved from the web get +300 days */
+let slowReviewMs = 0;
 let serverTokenExpiry = '2027-11-21 04:06:07 UTC';
 const ghExpiry = (init?: RequestInit) => {
   const tok = String((init?.headers as Record<string, string> | undefined)?.authorization ?? '');
@@ -146,6 +147,13 @@ createServer(async (req, res) => {
     const now = q ? new Date(q) : new Date(`${new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)}T08:02:00+07:00`);
     return res.end(JSON.stringify(await scheduledCollect(env, fakeGitHub, now)));
   }
+  // the team review answers late ("/__slow-review?ms=…", 0 = normal): the page must not lose the votes it already applied
+  if (req.url?.startsWith('/__slow-review')) {
+    slowReviewMs = Number(new URL(req.url!, 'http://x').searchParams.get('ms') ?? 0);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end('{"ok":true}');
+  }
+  if (slowReviewMs && req.method === 'GET' && req.url?.startsWith('/review')) await new Promise((ok) => setTimeout(ok, slowReviewMs));
   if (req.url?.startsWith('/__token-expiry')) {
     serverTokenExpiry = new URL(req.url!, 'http://x').searchParams.get('d')!;
     res.writeHead(200, { 'content-type': 'application/json' });

@@ -814,19 +814,26 @@ test('same account on a second device: my Liên quan / Không votes show on the 
   const pc = await (await browser.newContext()).newPage();
   await pc.goto('');
   await login(pc, 'Người duyệt V');
-  const first = pc.getByRole('button', { name: /^Liên quan:/ }).first();
-  const title = ((await first.getAttribute('aria-label')) ?? '').replace(/^Liên quan: /, '');
+  // a story whose title is unique (two sources may carry the same title, in either order)
+  await pc.getByRole('button', { name: /^Liên quan:/ }).first().waitFor();
+  const labels = await pc.getByRole('button', { name: /^Liên quan:/ }).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? ''));
+  const title = labels.find((l) => labels.filter((x) => x === l).length === 1)!.replace(/^Liên quan: /, '');
+  const first = pc.getByRole('button', { name: `Liên quan: ${title}`, exact: true });
   await first.click();
   await expect(first).toHaveAttribute('aria-pressed', 'true');
   await pc.waitForTimeout(1500); // the vote is saved in the background
-  // the "phone": a new browser, nothing stored locally
+  // the "phone": a new browser, nothing stored locally; the team review answers AFTER the votes (bug seen on 20/11/2026)
+  await fetch('http://127.0.0.1:5181/__slow-review?ms=2500');
   const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
   await phone.goto('');
   await login(phone, 'Người duyệt V');
-  await expect(phone.getByRole('button', { name: `Liên quan: ${title}` }).first()).toHaveAttribute('aria-pressed', 'true');
+  await expect(phone.getByText('Xin chào Người duyệt V')).toBeVisible(); // signed in before the reload
+  await phone.reload(); // F5 with a session: votes and review load together
+  await expect(phone.getByRole('button', { name: `Liên quan: ${title}`, exact: true })).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
+  await fetch('http://127.0.0.1:5181/__slow-review?ms=0');
   // another reviewer's vote does not press MY button
   const other = await (await browser.newContext()).newPage();
   await other.goto('');
   await login(other, 'Người duyệt W');
-  await expect(other.getByRole('button', { name: `Liên quan: ${title}` }).first()).toHaveAttribute('aria-pressed', 'false');
+  await expect(other.getByRole('button', { name: `Liên quan: ${title}`, exact: true })).toHaveAttribute('aria-pressed', 'false');
 });

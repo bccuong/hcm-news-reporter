@@ -473,34 +473,35 @@ export function App() {
     if (!api.shared || !runId || !api.shared.session()) return setVotes({});
     api.shared
       .votes(runId)
-      .then((v) => {
-        setVotes(v);
-        // my own votes made on another device (20/11/2026): Liên quan / Không, lĩnh vực, tính chất, ghi chú show here too.
-        // Only fills what this browser has not set – a click made here a moment ago is never overwritten by a slower read.
-        const me = api.shared?.session()?.name;
-        if (!me) return;
-        setReviews((prev) => {
-          let changed = false;
-          const next = { ...prev };
-          for (const [aid, list] of Object.entries(v)) {
-            const own = list.find((x) => x.r === me);
-            if (!own) continue;
-            const cur = next[aid] ?? { articleId: aid, included: false, order: 0, updatedAt: '', changes: [] };
-            const add: Partial<ReviewDecision> = {};
-            if (cur.relevanceLabel === undefined && own.l) add.relevanceLabel = own.l;
-            if (cur.primaryCategory === undefined && own.c) add.primaryCategory = own.c as ReviewDecision['primaryCategory'];
-            if (cur.assessment === undefined && own.a) add.assessment = own.a as ReviewDecision['assessment'];
-            if (cur.reviewNote === undefined && own.n) add.reviewNote = own.n;
-            if (Object.keys(add).length) {
-              next[aid] = { ...cur, ...add };
-              changed = true;
-            }
-          }
-          return changed ? next : prev;
-        });
-      })
+      .then(setVotes)
       .catch((e) => toast('err', (e as Error).message));
   }, [runId, toast]);
+  // my own votes made on another device (20/11/2026): Liên quan / Không, lĩnh vực, tính chất, ghi chú show here too.
+  // Runs whenever the votes OR the review arrive (whichever is last – the review load replaces the whole state).
+  // Only fills what this browser has not set: a click made here a moment ago is never overwritten by a slower read.
+  useEffect(() => {
+    const me = api.shared?.session()?.name;
+    if (!me || !Object.keys(votes).length) return;
+    setReviews((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [aid, list] of Object.entries(votes)) {
+        const own = list.find((x) => x.r === me);
+        if (!own) continue;
+        const cur = next[aid] ?? { articleId: aid, included: false, order: 0, updatedAt: '', changes: [] };
+        const add: Partial<ReviewDecision> = {};
+        if (cur.relevanceLabel == null && own.l) add.relevanceLabel = own.l;
+        if (cur.primaryCategory == null && own.c) add.primaryCategory = own.c as ReviewDecision['primaryCategory'];
+        if (cur.assessment == null && own.a) add.assessment = own.a as ReviewDecision['assessment'];
+        if (!cur.reviewNote && own.n) add.reviewNote = own.n;
+        if (Object.keys(add).length) {
+          next[aid] = { ...cur, ...add };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [votes, reviews, reviewer]);
   useEffect(() => {
     reloadVotes();
     // other reviewers' votes: refresh every 2 minutes (Cloudflare KV listings are eventually consistent, ~60 s)
