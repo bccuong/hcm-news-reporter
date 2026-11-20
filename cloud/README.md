@@ -28,7 +28,7 @@ Báo ──▶ GitHub Actions: thu thập ──▶ GitHub Pages (một bản we
 - Còn khác bản local: dò/thử nguồn và "quét lại từng nguồn" cần mạng trực tiếp từ máy → chỉ ở bản local; trên web bấm **Thu thập** để quét lại cả khung giờ.
 
 ## Gửi cho người duyệt
-- Link: https://bccuong.github.io/news-reporter/
+- Link: https://tinbaochi.github.io/collector/
 - Mã truy cập: gửi riêng (không đăng công khai). Đổi mã: `cd cloud/review-worker && npx wrangler secret put ACCESS_CODE` (người cũ phải đăng nhập lại).
 - Hướng dẫn ngắn: bấm **Đăng nhập duyệt tin** → nhập họ tên + mã → ở tab *Bài sẵn sàng* và *Cần kiểm tra* bấm **✓ Liên quan / ✗ Không**; mở **Xem chi tiết** để sửa *lĩnh vực*, *tính chất* và ghi *góp ý*; ở *Sổ ứng viên* bấm **Thực ra liên quan?** cho tin bị loại nhầm.
 

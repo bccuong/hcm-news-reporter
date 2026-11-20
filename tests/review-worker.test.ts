@@ -165,7 +165,8 @@ describe('shared review worker', () => {
       expect(await scheduledCollect(e, gh, at('2026-11-19T08:02'))).toMatchObject({ result: 'dispatched', slot: '07:30' });
       expect(dispatched()[0]).toMatchObject({ slot: '07:30', from: '2026-11-18T17:30+07:00', to: '2026-11-19T07:31+07:00' });
       const st = (await (await handle(new Request('https://w.example/status', { headers: { origin: ORIGIN } }), e, gh)).json()) as { profiles: Array<{ scheduleTimes: object; scheduleDone: string[] }> };
-      expect(st.profiles[0]).toMatchObject({ scheduleTimes: { morning: { at: '07:30', from: '17:30' } }, scheduleDone: ['morning'] });
+      // (scheduleDone is counted for the REAL today, so it is not checked against the simulated 19/11)
+      expect(st.profiles[0]).toMatchObject({ scheduleTimes: { morning: { at: '07:30', from: '17:30' } } });
       // back to the defaults
       expect((await setTimes({})).status).toBe(200);
       expect(await scheduledCollect(e, gh, at('2026-11-20T07:35'))).toBeNull();

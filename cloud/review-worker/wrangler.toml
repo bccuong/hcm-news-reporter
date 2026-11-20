@@ -8,8 +8,8 @@ compatibility_date = "2024-11-01"
 crons = ["2-59/5 * * * *"] # :02, :07 … – the fixed times 08:00 / 16:30 run at 08:02 / 16:32 (feeds catch up 2 min)
 
 [vars]
-ALLOWED_ORIGINS = "https://bccuong.github.io"
-GITHUB_REPO = "bccuong/news-reporter"
+ALLOWED_ORIGINS = "https://tinbaochi.github.io,https://bccuong.github.io" # old address kept while the redirect page lives there
+GITHUB_REPO = "tinbaochi/collector"
 COLLECT_WORKFLOW = "pages.yml"
 
 # KV namespace id is filled in by `npx wrangler kv namespace create REVIEWS` (see cloud/README.md)
@@ -27,4 +27,4 @@ binding = "REVIEWS"
 id = "229cb5fc8b7a4474a199d2b025c71c35"
 
 # Secrets (never committed): npx wrangler secret put ACCESS_CODE / EXPORT_TOKEN / GITHUB_TOKEN
-# GITHUB_TOKEN = fine-grained PAT, repository bccuong/news-reporter only, permission "Actions: Read and write"
+# GITHUB_TOKEN = fine-grained PAT, repository tinbaochi/collector only, permission "Actions: Read and write"
