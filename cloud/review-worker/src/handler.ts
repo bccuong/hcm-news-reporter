@@ -1,7 +1,7 @@
 /**
  * Shared review store for News Reporter (Cloudflare Worker + KV, free tier).
  *
- * Reviewers open the GitHub Pages app, enter their name + the shared ACCESS_CODE, and label collected articles:
+ * Reviewers open the GitHub Pages app, sign in with their account (user name + password), and label collected articles:
  * relevant / not relevant, correct sector and editorial assessment, optional note. Labels from all reviewers are
  * visible to each other (vote counts). A nightly GitHub Action pulls everything via /export (EXPORT_TOKEN) into
  * the repo, where reviewer names are replaced by pseudonyms, to tune the collector.
@@ -30,7 +30,6 @@ export interface Env {
    * previous save (title edited, then "Lưu biên tập", then a photo…). Without the binding (tests) KV is used.
    */
   REVIEW_DO?: DONamespaceLike;
-  ACCESS_CODE: string;
   EXPORT_TOKEN: string;
   ALLOWED_ORIGINS: string; // comma separated
   /** fine-grained PAT (this repo only, Actions: read & write) – lets reviewers start an on-demand collection */
@@ -127,7 +126,7 @@ async function userRoutes(req: Request, url: URL, env: Env, actor: Session, h: R
     if (pw && pw.length < 6) return json({ error: 'Mật khẩu cần ít nhất 6 ký tự' }, 400, h);
     if (i >= 0 && role !== 'admin' && list[i]!.role === 'admin' && list.filter((x) => x.role === 'admin').length === 1) return json({ error: 'Phải còn ít nhất một quản trị viên' }, 400, h);
     const at = new Date().toISOString();
-    const by = actor.u || 'mã chung';
+    const by = actor.u;
     const pass = pw ? await (async () => { const salt = newSalt(); return { salt, hash: await hashPassword(pw, salt) }; })() : null;
     if (i >= 0) list[i] = { ...list[i]!, name, role, ...(pass ?? {}), at, by };
     else list.push({ u, name, role, ...pass!, at, by });
@@ -851,9 +850,9 @@ async function route(req: Request, env: Env, f: Fetch): Promise<Response> {
     return json({ ok: true, token: r.token, name: r.session.name, role: r.session.role, user: r.session.u, collectEnabled: !!env.GITHUB_TOKEN }, 200, h);
   }
 
-  // reviewer endpoints: a session of an account, or the shared access code (kept for sessions opened before accounts)
+  // reviewer endpoints: a session of an account only (the shared access code was retired on 21/11/2026)
   const code = (req.headers.get('x-review-code') ?? '').trim();
-  const actor: Session | null = safeEqual(code, (env.ACCESS_CODE ?? '').trim()) ? { u: '', name: '', role: 'admin' } : await sessionOf(env.REVIEWS, code);
+  const actor: Session | null = await sessionOf(env.REVIEWS, code);
   if (!actor) return json({ error: 'Phiên đăng nhập đã hết hạn – hãy đăng nhập lại' }, 401, h);
 
   if (url.pathname === '/login' && req.method === 'POST') return json({ ok: true, collectEnabled: !!env.GITHUB_TOKEN }, 200, h);

@@ -3,11 +3,18 @@
 ## Current status
 - Specification: v1.2
 - Milestones: **M0 DONE · M1 DONE · M2 DONE · M5 DONE (original template; PDF via Microsoft PowerPoint or LibreOffice, visually inspected)** · M3/M4 mostly done · M6 partial
-- Repository: https://github.com/bccuong/news-reporter (renamed from hcm-news-reporter on 15/11/2026; branch `main`, public) · Live site: https://bccuong.github.io/news-reporter/ (real data, hourly auto collection switchable on the web + on-demand "Thu thập")
-- Last session: 2026-11-16 (session 13) – hourly cloud runs continue the published period; label evaluation fixed
+- Repository: https://github.com/tinbaochi/collector (moved from bccuong/news-reporter on 20/11/2026; branch `main`, public) · Live site: https://tinbaochi.github.io/collector/ (real data, scheduled collection editable on the web + on-demand "Thu thập")
+- Last session: 2026-11-21 (session 14v) – shared access code retired, accounts only
 - The user (GitHub `bccuong`) has authorised commits/pushes to this repo and GitHub Pages/Actions for this project.
 
-## ▶ RESUME HERE (session 14u – accounts, token from the web, phone zoom; 2026-11-20)
+## ▶ RESUME HERE (session 14v – shared access code retired; 2026-11-21)
+- All team members have accounts (user confirmed). Worker: only account sessions are accepted (`sessionOf`); the ACCESS_CODE branch and `Env.ACCESS_CODE` removed (cloud/review-worker/src/handler.ts, accounts.ts). Web (web/src/api.ts): a browser still holding the old code drops it at start-up and shows "Đăng nhập duyệt tin"; role no longer guessed from the code. Docs: cloud/README.md, wrangler.toml.
+- Also recorded here (commits after 14u): roles (system-wide changes admin only, e58d807), my votes follow the account to other devices (b9be5e4, 05a6471).
+- Tests: typecheck OK, vitest 203/203 (admin session seeded in env(); shared code → 401 even if the secret is still set), test:ui:live 19/19 + new "shared access code retired" test PASS.
+- NOT DONE (permission): `cd cloud/review-worker; npx --yes wrangler@3.112.0 deploy` was blocked by the session's permission check → live worker still accepts the old code until the user deploys. git push (Pages deploy of the web change) also left to the user. Optional afterwards: `npx wrangler secret delete ACCESS_CODE`.
+- Next step: user deploys the worker, then check on the live worker that GET /me with the old code → 401 and a login with an account → 200.
+
+## (history) Session 14u – accounts, token from the web, phone zoom; 2026-11-20)
 - Accounts: cloud/review-worker/src/accounts.ts (KV cfg:users, PBKDF2 5000 it., sessions sess:<token> 1 year). /login {username,password} → token accepted wherever the shared code was (old code still = admin). /me, /logout, /users (admin), /users/delete, /users/password. Web: login dialog "Tên đăng nhập / Mật khẩu"; Cài đặt › Tài khoản (web only). Live KV seeded with admin (password given by the user in chat, NOT in the repo; hash only) – verified on the live worker (worker 515a9872).
 - Collection token replaceable in Cài đặt › Thời gian (POST /token checks read + dispatch permission with a dispatch to a non-existent branch → 422); /status carries the expiry; strip warns < 30 days. Current token valid until 2027-11-21, dispatch probe 422 OK (token edited to include tinbaochi/collector + Actions write).
 - Phones: 16px fields on touch screens (no Safari zoom on dialogs).

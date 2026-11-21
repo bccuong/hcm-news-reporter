@@ -26,5 +26,5 @@ new_sqlite_classes = ["ReviewPeriod"]
 binding = "REVIEWS"
 id = "229cb5fc8b7a4474a199d2b025c71c35"
 
-# Secrets (never committed): npx wrangler secret put ACCESS_CODE / EXPORT_TOKEN / GITHUB_TOKEN
+# Secrets (never committed): npx wrangler secret put EXPORT_TOKEN / GITHUB_TOKEN
 # GITHUB_TOKEN = fine-grained PAT, repository tinbaochi/collector only, permission "Actions: Read and write"

@@ -15,9 +15,15 @@ class MemKV implements KVLike {
     return { keys: [...this.m.entries()].filter(([k]) => k.startsWith(o.prefix)).map(([name, x]) => ({ name, metadata: x.meta })), list_complete: true };
   }
 }
-const env = (): Env => ({ REVIEWS: new MemKV(), ACCESS_CODE: 'HCM-test-1234', EXPORT_TOKEN: 'export-secret', ALLOWED_ORIGINS: 'https://bccuong.github.io' });
+/** session of a seeded admin account (the shared access code was retired on 21/11/2026) */
+const ADMIN = 'sess_' + 'a'.repeat(48);
+const env = (kv: MemKV = new MemKV()): Env => {
+  kv.m.set('cfg:users', { v: JSON.stringify([{ u: 'test-admin', name: 'Quản trị thử', role: 'admin', salt: 'x', hash: 'x', at: '', by: 'seed' }]) });
+  kv.m.set(`sess:${ADMIN}`, { v: JSON.stringify({ u: 'test-admin', name: 'Quản trị thử', role: 'admin' }) });
+  return { REVIEWS: kv, EXPORT_TOKEN: 'export-secret', ALLOWED_ORIGINS: 'https://bccuong.github.io' };
+};
 const ORIGIN = 'https://bccuong.github.io';
-const post = (e: Env, body: unknown, code = 'HCM-test-1234') =>
+const post = (e: Env, body: unknown, code = ADMIN) =>
   handle(new Request('https://w.example/labels', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);
 const label = (p: Record<string, unknown> = {}) => ({ reviewer: 'Nguyễn Văn Đức', reportDate: '2026-11-16', articleId: 'a_1234abcd5678', url: 'https://x.vn/a', title: 'T', sourceId: 'tn', label: 'relevant', ...p });
 
@@ -36,7 +42,7 @@ describe('shared review worker', () => {
     expect((await post(e, label())).status).toBe(200);
     expect((await post(e, label({ reviewer: 'Trần Thị B', label: 'irrelevant', note: 'tin thể thao' }))).status).toBe(200);
     expect((await post(e, label({ label: 'irrelevant', category: 'FLOOD' }))).status).toBe(200); // same reviewer → overwrite
-    const r = await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e);
+    const r = await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': ADMIN } }), e);
     const j = (await r.json()) as { votes: Record<string, Array<{ r: string; l: string; c: string | null }>> };
     const v = j.votes['a_1234abcd5678']!;
     expect(v).toHaveLength(2);
@@ -51,7 +57,7 @@ describe('shared review worker', () => {
     await post(e, label());
     await post(e, label({ label: null }));
     expect([...(e.REVIEWS as MemKV).m.keys()].filter((k) => k.startsWith('l:'))).toEqual([]);
-    const r = await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e);
+    const r = await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': ADMIN } }), e);
     expect(((await r.json()) as { votes: object }).votes).toEqual({});
   });
   it('export needs the bearer token and returns full records', async () => {
@@ -64,10 +70,9 @@ describe('shared review worker', () => {
     expect(j.labels[0]!.reviewerId).toBe('nguyen-van-duc');
   });
   it('secrets stored with a trailing newline (shell pipe) still match', async () => {
-    const e = { ...env(), ACCESS_CODE: 'HCM-test-1234\r\n', EXPORT_TOKEN: 'export-secret\n' };
-    expect((await post(e, label())).status).toBe(200);
+    const e = { ...env(), EXPORT_TOKEN: 'export-secret\n' };
     expect((await handle(new Request('https://w.example/export', { headers: { authorization: 'Bearer export-secret' } }), e)).status).toBe(200);
-    expect((await post(e, label(), 'HCM-test-12345')).status).toBe(401);
+    expect((await handle(new Request('https://w.example/export', { headers: { authorization: 'Bearer export-secre' } }), e)).status).toBe(401);
   });
   describe('on-demand collection (dispatch GitHub workflow)', () => {
     const calls: Array<{ url: string; body?: string }> = [];
@@ -79,7 +84,7 @@ describe('shared review worker', () => {
       return new Response('{}', { status: 404 });
     };
     const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
-    const req = (body: unknown, code = 'HCM-test-1234') =>
+    const req = (body: unknown, code = ADMIN) =>
       new Request('https://w.example/collect', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const W = { from: '2026-11-14T17:00+07:00', to: '2026-11-15T08:00+07:00', reviewer: 'A' };
 
@@ -100,7 +105,7 @@ describe('shared review worker', () => {
       expect((await handle(req(W), env(), fakeGitHub())).status).toBe(503);
     });
     it('reports recent workflow runs for the progress display', async () => {
-      const r = await handle(new Request('https://w.example/collect/status', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), genv(), fakeGitHub());
+      const r = await handle(new Request('https://w.example/collect/status', { headers: { origin: ORIGIN, 'x-review-code': ADMIN } }), genv(), fakeGitHub());
       const j = (await r.json()) as { enabled: boolean; runs: Array<{ id: number; status: string }> };
       expect(j.enabled).toBe(true);
       expect(j.runs[0]).toMatchObject({ id: 7, status: 'in_progress' });
@@ -117,7 +122,7 @@ describe('shared review worker', () => {
       return new Response('{}', { status: 404 });
     };
     const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'ghp_test', GITHUB_REPO: 'bccuong/news-reporter', COLLECT_WORKFLOW: 'pages.yml' });
-    const setSlot = (e: Env, slot: unknown, enabled: unknown, code = 'HCM-test-1234', profile = 'hcm') =>
+    const setSlot = (e: Env, slot: unknown, enabled: unknown, code = ADMIN, profile = 'hcm') =>
       handle(new Request('https://w.example/auto', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ slot, enabled, reviewer: 'B', profile }) }), e, gh);
     const at = (vn: string) => new Date(`${vn}+07:00`);
     const dispatched = () => calls.filter((c) => c.includes('/dispatches')).map((c) => JSON.parse(c.slice(c.indexOf('{'))).inputs);
@@ -156,7 +161,7 @@ describe('shared review worker', () => {
       const e = genv();
       running = [];
       calls.length = 0;
-      const setTimes = (times: unknown, code = 'HCM-test-1234') =>
+      const setTimes = (times: unknown, code = ADMIN) =>
         handle(new Request('https://w.example/auto/times', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ times, reviewer: 'C', profile: 'hcm' }) }), e, gh);
       await setSlot(e, 'morning', true);
       expect((await setTimes({ morning: { at: '07:30', from: '17:30' } }, 'wrong')).status).toBe(401);
@@ -196,7 +201,7 @@ describe('shared review worker', () => {
     };
     const call = (e: Env, path: string, body?: unknown, code?: string) =>
       handle(new Request(`https://w.example${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { origin: ORIGIN, 'content-type': 'application/json', ...(code ? { 'x-review-code': code } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }), e);
-    it('login → session token used like the old code; wrong password refused; old shared code still works', async () => {
+    it('login → session token used like the old code; wrong password refused; the retired shared code is refused', async () => {
       const e = env();
       await seed(e);
       expect((await call(e, '/login', { username: 'admin', password: 'sai' })).status).toBe(401);
@@ -205,7 +210,8 @@ describe('shared review worker', () => {
       expect(r.token).toMatch(/^sess_[0-9a-f]{48}$/);
       expect(await (await call(e, '/me', undefined, r.token)).json()).toEqual({ user: 'admin', name: 'Quản trị', role: 'admin' });
       expect((await call(e, '/me', undefined, 'sess_' + '0'.repeat(48))).status).toBe(401);
-      expect((await call(e, '/me', undefined, 'HCM-test-1234')).status).toBe(200); // sessions opened with the shared code keep working
+      // the shared access code was retired (21/11/2026): even with ACCESS_CODE still set on the worker it opens nothing
+      expect((await call({ ...e, ACCESS_CODE: 'HCM-test-1234' } as Env, '/me', undefined, 'HCM-test-1234')).status).toBe(401);
       expect(JSON.stringify(await (await call(e, '/users', undefined, r.token)).json())).not.toMatch(/hash|salt/);
       // logout ends the session
       await call(e, '/logout', {}, r.token);
@@ -265,8 +271,8 @@ describe('shared review worker', () => {
       // archiving a run stays open to reviewers; the admin passes the same checks
       expect((await post(rev, '/runs/hide', { profile: 'hcm', runId: '2026-11-19', archived: true, reviewer: 'Nghĩa' })).status).not.toBe(403);
       expect((await post(adm, '/auto', { slot: 'morning', enabled: true, reviewer: 'Quản trị', profile: 'hcm' })).status).toBe(200);
-      // the old shared code is an admin
-      expect((await post('HCM-test-1234', '/auto', { slot: 'morning', enabled: false, reviewer: 'X', profile: 'hcm' })).status).toBe(200);
+      // the retired shared code is no admin any more
+      expect((await post('HCM-test-1234', '/auto', { slot: 'morning', enabled: false, reviewer: 'X', profile: 'hcm' })).status).toBe(401);
     });
   });
   describe('collection token replaced from Cài đặt (20/11/2026)', () => {
@@ -286,7 +292,7 @@ describe('shared review worker', () => {
       return new Response('{}', { status: 200, headers: exp });
     };
     const genv = (): Env => ({ ...env(), GITHUB_TOKEN: 'github_pat_' + 'S'.repeat(40) + 'srvr', GITHUB_REPO: 'tinbaochi/collector', COLLECT_WORKFLOW: 'pages.yml' });
-    const post = (e: Env, token: string, code = 'HCM-test-1234') => handle(new Request('https://w.example/token', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ token, reviewer: 'Cường' }) }), e, gh);
+    const post = (e: Env, token: string, code = ADMIN) => handle(new Request('https://w.example/token', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ token, reviewer: 'Cường' }) }), e, gh);
     it('checked before saving, never sent back, then used for status / collection; expiry shown', async () => {
       const e = genv();
       expect((await post(e, GOOD, 'wrong')).status).toBe(401);
@@ -300,7 +306,7 @@ describe('shared review worker', () => {
       const body = await ok.text();
       expect(body).not.toContain(GOOD);
       expect(JSON.parse(body).token).toMatchObject({ last4: 'gOOd', by: 'Cường', expiresAt: '2027-11-21T04:06:07.000Z', source: 'web' });
-      const info = await (await handle(new Request('https://w.example/token', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e, gh)).text();
+      const info = await (await handle(new Request('https://w.example/token', { headers: { origin: ORIGIN, 'x-review-code': ADMIN } }), e, gh)).text();
       expect(info).not.toContain(GOOD);
       expect(JSON.parse(info)).toMatchObject({ source: 'web', last4: 'gOOd', ok: true, expiresAt: '2027-11-21T04:06:07.000Z' });
       // public status: the saved token is used, only the expiry date is public
@@ -319,8 +325,8 @@ describe('shared review worker', () => {
     });
   });
   describe('shared collector configuration + image proxy', () => {
-    const H = { origin: ORIGIN, 'x-review-code': 'HCM-test-1234', 'content-type': 'application/json' };
-    const put = (e: Env, settings: unknown, summary: string, code = 'HCM-test-1234') =>
+    const H = { origin: ORIGIN, 'x-review-code': ADMIN, 'content-type': 'application/json' };
+    const put = (e: Env, settings: unknown, summary: string, code = ADMIN) =>
       handle(new Request('https://w.example/config', { method: 'POST', headers: { ...H, 'x-review-code': code }, body: JSON.stringify({ settings, sources: [{ id: 's1' }], summary, reviewer: 'C' }) }), e);
     it('public read, reviewer write, every save kept in history, rollback restores', async () => {
       const e = env();
@@ -342,7 +348,7 @@ describe('shared review worker', () => {
     it('image proxy: reviewers only, https public images only', async () => {
       const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
       const f = async (url: string) => (url.includes('ok.vn') ? new Response(png, { headers: { 'content-type': 'image/png' } }) : new Response('<html>', { headers: { 'content-type': 'text/html' } }));
-      const get = (u: string, code = 'HCM-test-1234') => handle(new Request(`https://w.example/img?url=${encodeURIComponent(u)}`, { headers: { origin: ORIGIN, 'x-review-code': code } }), env(), f);
+      const get = (u: string, code = ADMIN) => handle(new Request(`https://w.example/img?url=${encodeURIComponent(u)}`, { headers: { origin: ORIGIN, 'x-review-code': code } }), env(), f);
       const r = await get('https://ok.vn/a.png');
       expect(r.status).toBe(200);
       expect(r.headers.get('access-control-allow-origin')).toBe(ORIGIN);
@@ -354,8 +360,8 @@ describe('shared review worker', () => {
     });
   });
   describe('profiles (cấu hình theo địa bàn)', () => {
-    const H = { origin: ORIGIN, 'x-review-code': 'HCM-test-1234', 'content-type': 'application/json' };
-    const req = (e: Env, method: string, p: string, body?: unknown, code = 'HCM-test-1234') =>
+    const H = { origin: ORIGIN, 'x-review-code': ADMIN, 'content-type': 'application/json' };
+    const req = (e: Env, method: string, p: string, body?: unknown, code = ADMIN) =>
       handle(new Request(`https://w.example${p}`, { method, headers: { ...H, 'x-review-code': code }, body: body === undefined ? undefined : JSON.stringify(body) }), e);
     it('default TP.HCM (legacy config + switch kept), create / rename / delete, config per profile', async () => {
       const e = env();
@@ -407,7 +413,7 @@ describe('shared review worker', () => {
     });
   });
   describe('shared editorial review (one decision per article per period, whole team)', () => {
-    const rv = (e: Env, body: unknown, code = 'HCM-test-1234') =>
+    const rv = (e: Env, body: unknown, code = ADMIN) =>
       handle(new Request('https://w.example/review', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);
     const read = async (e: Env, period = 'custom-202611151700-202611161145', profile = 'hcm') =>
       (await (await handle(new Request(`https://w.example/review?profile=${profile}&period=${period}`, { headers: { origin: ORIGIN } }), e)).json()) as { reviews: Record<string, any> };
@@ -451,13 +457,11 @@ describe('shared review worker', () => {
         return (await read(e)).reviews;
       };
       // KV only: the stale copy loses the first saves
-      const kvOnly = env();
-      kvOnly.REVIEWS = new StaleKV();
+      const kvOnly = env(new StaleKV());
       const lost = await edits(kvOnly);
       expect(lost[A]?.title).toBeUndefined();
       // with the Durable Object: every save is kept, and KV holds a copy
-      const e = env();
-      e.REVIEWS = new StaleKV();
+      const e = env(new StaleKV());
       e.REVIEW_DO = doNs(e);
       const kept = await edits(e);
       expect(kept[A]).toMatchObject({ title: 'Tiêu đề đã sửa', summary: 'Tóm tắt đã sửa', by: 'Cường' });
@@ -504,7 +508,7 @@ describe('shared review worker', () => {
       // labels: same, one get per read
       await post(e, label());
       const l0 = kv.lists;
-      for (let i = 0; i < 3; i++) await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234' } }), e);
+      for (let i = 0; i < 3; i++) await handle(new Request('https://w.example/labels?date=2026-11-16', { headers: { origin: ORIGIN, 'x-review-code': ADMIN } }), e);
       expect(kv.lists).toBe(l0);
     });
     it('a batch ("Chọn tất cả") is saved in one request: one read + one write, every item validated', async () => {
@@ -535,7 +539,7 @@ describe('shared review worker', () => {
       expect((await pub(items, 'wrong')).status).toBe(401);
       expect((await pub(items)).status).toBe(200);
       expect((await read()).items.map((i) => i.id)).toEqual(['include:lối đi bộ', 'exclude_title:giá vàng']); // invalid item dropped
-      const dis = (id: string, code = 'HCM-test-1234') => handle(new Request('https://w.example/suggestions/dismiss', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'hcm', id, reviewer: 'A' }) }), e);
+      const dis = (id: string, code = ADMIN) => handle(new Request('https://w.example/suggestions/dismiss', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'hcm', id, reviewer: 'A' }) }), e);
       expect((await dis('exclude_title:giá vàng', 'wrong')).status).toBe(401);
       expect((await dis('../x')).status).toBe(400);
       expect((await dis('exclude_title:giá vàng')).status).toBe(200);
@@ -562,7 +566,7 @@ describe('shared review worker', () => {
     });
     it('saved runs removed by a reviewer: hidden for everyone (public read), restorable, reviewers only', async () => {
       const e = env();
-      const hide = (body: unknown, code = 'HCM-test-1234') => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);
+      const hide = (body: unknown, code = ADMIN) => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': code, 'content-type': 'application/json' }, body: JSON.stringify(body) }), e);
       const list = async (pid = 'hcm') => ((await (await handle(new Request(`https://w.example/runs/hidden?profile=${pid}`, { headers: { origin: ORIGIN } }), e)).json()) as { hidden: Array<{ runId: string; by: string }> }).hidden;
       expect((await hide({ profile: 'hcm', runId: 'run_live_custom1', hidden: true, reviewer: 'A' }, 'wrong')).status).toBe(401);
       expect((await hide({ profile: 'hcm', runId: '../x', hidden: true, reviewer: 'A' })).status).toBe(400);
@@ -601,7 +605,7 @@ describe('shared review worker', () => {
   });
 
   describe('page proxy for "Dò nguồn / Thử nguồn" on the web', () => {
-    const call = (e: Env, target: string, f: (u: string, init?: RequestInit) => Promise<Response>, code = 'HCM-test-1234') =>
+    const call = (e: Env, target: string, f: (u: string, init?: RequestInit) => Promise<Response>, code = ADMIN) =>
       handle(new Request(`https://w.example/fetch?url=${encodeURIComponent(target)}`, { headers: { origin: ORIGIN, 'x-review-code': code } }), e, f as never);
     it('reviewers only; returns the page as the collector expects; follows public redirects only', async () => {
       const e = env();
@@ -647,7 +651,7 @@ describe('self-learned model store (nightly publish, public read)', () => {
 describe('saved runs: archive (listed in "Lưu trữ") vs delete (final), 18/11/2026', () => {
   it('archive / unarchive; a deleted run stays deleted when someone archives it', async () => {
     const e = env();
-    const hide = (body: Record<string, unknown>) => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': 'HCM-test-1234', 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'hcm', reviewer: 'A', ...body }) }), e);
+    const hide = (body: Record<string, unknown>) => handle(new Request('https://w.example/runs/hide', { method: 'POST', headers: { origin: ORIGIN, 'x-review-code': ADMIN, 'content-type': 'application/json' }, body: JSON.stringify({ profile: 'hcm', reviewer: 'A', ...body }) }), e);
     const list = async () => ((await (await handle(new Request('https://w.example/runs/hidden?profile=hcm', { headers: { origin: ORIGIN } }), e)).json()) as { hidden: Array<{ runId: string; archived?: boolean }> }).hidden;
     expect((await hide({ runId: 'run_live_20261117', archived: true })).status).toBe(200);
     expect(await list()).toEqual([expect.objectContaining({ runId: 'run_live_20261117', archived: true })]);

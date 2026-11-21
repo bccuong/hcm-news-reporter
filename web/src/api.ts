@@ -136,7 +136,7 @@ export interface SharedReview {
   /** account login (user name + password); the session token is then sent where the shared code used to go */
   login(username: string, password: string): Promise<{ name: string; role: UserRole }>;
   logout(): void;
-  /** role of the signed-in account (sessions opened with the old shared code count as admin) */
+  /** role of the signed-in account */
   role(): UserRole | null;
   users(): Promise<UserInfo[]>;
   saveUser(u: { u: string; name: string; password?: string; role: UserRole }): Promise<UserInfo[]>;
@@ -254,6 +254,11 @@ const store = {
     LS.set(k, v);
   },
 };
+// the shared access code was retired (21/11/2026): a browser still holding it signs in again with an account
+{
+  const s = store.get<{ code?: unknown }>('reviewer');
+  if (s && !(typeof s.code === 'string' && s.code.startsWith('sess_'))) store.set('reviewer', null);
+}
 
 /* small IndexedDB store for files that must stay in this browser (the department's PPTX template) */
 function idbOpen(): Promise<IDBDatabase> {
@@ -925,12 +930,12 @@ class DemoApi implements Api {
       },
       logout: () => {
         const s = store.get<{ code: string }>('reviewer');
-        if (s?.code.startsWith('sess_')) void fetch(`${this.reviewApi}/logout`, { method: 'POST', headers: { 'x-review-code': s.code } }).catch(() => undefined);
+        if (s) void fetch(`${this.reviewApi}/logout`, { method: 'POST', headers: { 'x-review-code': s.code } }).catch(() => undefined);
         store.set('reviewer', null);
       },
       role: () => {
         const s = store.get<{ code: string; role?: UserRole }>('reviewer');
-        return s ? (s.role ?? (s.code.startsWith('sess_') ? 'reviewer' : 'admin')) : null;
+        return s ? (s.role ?? 'reviewer') : null;
       },
       users: async () => ((await this.userCall('GET', '/users')) as { users: UserInfo[] }).users,
       saveUser: async (u) => ((await this.userCall('POST', '/users', u)) as { users: UserInfo[] }).users,
@@ -962,7 +967,7 @@ class DemoApi implements Api {
   }
   private async sharedPostNow(body: Record<string, unknown>) {
     const s = store.get<{ name: string; code: string }>('reviewer');
-    if (!s) throw new ApiError('Hãy đăng nhập người duyệt (tên + mã truy cập) để lưu đánh giá cho cả nhóm');
+    if (!s) throw new ApiError('Hãy đăng nhập người duyệt để lưu đánh giá cho cả nhóm');
     const r = await fetch(`${this.reviewApi}/labels`, { method: 'POST', headers: { 'x-review-code': s.code, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, reviewer: s.name }) });
     if (!r.ok) throw new ApiError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Không lưu được đánh giá (HTTP ${r.status})`);
   }

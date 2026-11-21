@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import JSZip from 'jszip';
 
 /** Two reviewers label the same published (fixture) articles through the shared review store. */
@@ -17,6 +17,11 @@ const METRO_NO = /^Không liên quan: \[Mẫu thử\] Khánh thành nhà ga metr
 
 /** accounts seeded by the fake worker: "Người duyệt X" = duyet-x / test-pass */
 const userOf = (name: string) => 'duyet-' + name.slice(-1).toLowerCase();
+/** session token of a test account, for direct calls to the fake worker (no shared access code any more) */
+async function tokenOf(request: APIRequestContext, name: string) {
+  const r = await request.post('http://127.0.0.1:5181/login', { data: { username: userOf(name), password: 'test-pass' } });
+  return ((await r.json()) as { token: string }).token;
+}
 async function login(page: Page, name: string, _code?: string) {
   await page.getByRole('button', { name: 'Đăng nhập duyệt tin' }).click();
   await page.getByLabel('Tên đăng nhập').fill(userOf(name));
@@ -45,7 +50,7 @@ test('shared review: login gate, votes from two reviewers, team quality, export'
   // second reviewer in a separate browser sees A's vote and adds their own
   const b = await (await browser.newContext()).newPage();
   await b.goto('');
-  await login(b, 'Người duyệt B', 'HCM-TEST-CODE');
+  await login(b, 'Người duyệt B');
   await expect(b.getByText(/Nhóm duyệt: ✓1 ✗0/).first()).toBeVisible();
   await b.getByRole('button', { name: FLOOD }).click();
   await expect(b.getByText(/Nhóm duyệt: ✓2 ✗0/).first()).toBeVisible();
@@ -112,7 +117,7 @@ test('automatic collection at 08:00 / 16:30 (ticked per profile) + busy server i
 
 test('automatic times are changed in Settings (not fixed at 08:00 / 16:30), shown on the strip, back to defaults', async ({ page, request }) => {
   await page.goto('');
-  await login(page, 'Người duyệt G', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt G');
   const strip = page.getByTestId('server-status');
   await strip.getByTestId('edit-times').click();
   const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
@@ -220,7 +225,7 @@ test('web = local: photos, full article text, shared settings used by the server
   await page.goto('');
 
   // settings are SHARED: saved through the worker, which the server collector reads (scripts/cloud-collect.ts)
-  await login(page, 'Người duyệt E', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt E');
   await page.getByRole('button', { name: 'Cài đặt' }).click();
   const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
   await expect(dlg.getByTestId('shared-config-note')).toBeVisible();
@@ -315,7 +320,7 @@ test('web = local: photos, full article text, shared settings used by the server
 test('web profiles: create Đà Nẵng (stored by the worker), own settings + own automatic times, switch back to TP.HCM', async ({ page, request }) => {
   page.on('dialog', (d) => d.accept());
   await page.goto('');
-  await login(page, 'Người duyệt F', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt F');
   await page.getByRole('button', { name: 'Cài đặt' }).click();
   const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
   await dlg.getByRole('button', { name: 'Tạo cấu hình mới', exact: true }).click();
@@ -373,7 +378,7 @@ test('web profiles: create Đà Nẵng (stored by the worker), own settings + ow
 test('web review is ONE for the whole team: what A selects / moves / removes on one machine, B sees on another', async ({ browser }) => {
   const a = await (await browser.newContext()).newPage();
   await a.goto('');
-  await login(a, 'Người duyệt G', 'HCM-TEST-CODE');
+  await login(a, 'Người duyệt G');
   await expect(a.getByTestId('reviewer-chip')).toContainText('Người duyệt G');
   await a.reload();
   await a.waitForLoadState('networkidle'); // the team review is loaded (earlier tests already changed it)
@@ -437,7 +442,7 @@ test('web: "Dò cấu trúc" and "Thử thu thập" run in the browser through t
   await dlg.getByRole('button', { name: /Dò cấu trúc tự động/ }).click();
   await expect(page.getByText(/Hãy đăng nhập người duyệt để dò \/ thử nguồn trên web/).first()).toBeVisible();
   await dlg.getByRole('button', { name: 'Đóng cài đặt' }).click();
-  await login(page, 'Người duyệt T', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt T');
   await page.getByRole('button', { name: 'Cài đặt' }).click();
   await dlg.getByRole('button', { name: 'Nguồn tin', exact: true }).click();
   await dlg.getByRole('button', { name: 'Thêm nguồn' }).click();
@@ -484,7 +489,7 @@ test('F5 opens the most recent collection; "Kỳ gần nhất" = latest run; pic
   await page.keyboard.press('Escape');
   // a reviewer archives the on-demand run: it moves to "Lưu trữ" (collapsed, at the end) for the team, the latest
   // remaining run opens; it can still be viewed, and brought back (18/11/2026)
-  await login(page, 'Người duyệt E', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt E');
   await picker.click();
   await page.getByRole('button', { name: 'Lưu trữ lượt 08/11 18:00 → 09/11/2026 07:00' }).click();
   await expect(picker).not.toContainText('08/11 18:00 → 09/11/2026 07:00');
@@ -516,7 +521,7 @@ test('daily suggestions: published by the nightly job, applied (then saved) or d
   const pub = await request.post('http://127.0.0.1:5181/suggestions', { headers: { authorization: 'Bearer test-export-token' }, data: { profile: 'hcm', generatedAt: '2026-11-17T16:35:00Z', basis: { stories: 120, votes: 30, decisions: 12 }, items } });
   expect(pub.status()).toBe(200);
   await page.goto('');
-  await login(page, 'Người duyệt S', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt S');
   await page.getByRole('button', { name: 'Cài đặt' }).click();
   const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
   await expect(dlg.getByTestId('suggest-count')).toHaveText('2'); // badge in the menu
@@ -574,7 +579,7 @@ test('Hỏi nhanh: an answer moves on at once (save in the background), every vo
     await route.continue();
   });
   await page.goto('');
-  await login(page, 'Người duyệt Q', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt Q');
   const card = page.getByTestId('quick-ask');
   await expect(card).toBeVisible({ timeout: 15_000 });
   await card.getByRole('button', { name: /Bắt đầu Hỏi nhanh/ }).click(); // a pill in the header (18/11/2026)
@@ -601,11 +606,12 @@ test('Hỏi nhanh: an answer moves on at once (save in the background), every vo
   await expect(card).toContainText(/đã chấm xong/i);
   await expect(card).toBeHidden({ timeout: 8000 });
   // all votes reach the worker (sent one after another in the background)
+  const tq = await tokenOf(request, 'Người duyệt Q');
   await expect.poll(async () => {
     const days = ['2026-11-08', '2026-11-09'];
     let n = 0;
     for (const d of days) {
-      const r = await request.get(`http://127.0.0.1:5181/labels?date=${d}`, { headers: { 'x-review-code': 'HCM-TEST-CODE' } });
+      const r = await request.get(`http://127.0.0.1:5181/labels?date=${d}`, { headers: { 'x-review-code': tq } });
       const v = (await r.json()) as { votes?: Record<string, Array<{ r: string }>> };
       n += Object.values(v.votes ?? {}).filter((list) => list.some((x) => x.r === 'Người duyệt Q')).length;
     }
@@ -626,7 +632,7 @@ test('a page opened before a new version reloads itself when an on-demand part i
   let gone = true;
   await page.route(/\/assets\/styles-[^/]+\.js$/, async (route) => (gone ? (gone = false, route.fulfill({ status: 404, body: 'Not Found' })) : route.continue()));
   await page.goto('');
-  await login(page, 'Người duyệt U', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt U');
   await page.locator('article input[type=checkbox]').first().check();
   await page.getByRole('button', { name: /^Xuất báo cáo/ }).click();
   await page.getByTestId('template-picker').locator('input[value="toi-gian"]').check();
@@ -657,7 +663,7 @@ test('after a scheduled run finishes, the open page shows the new period by itse
 
 test('Biên tập in "Xem chi tiết": edited title / summary are saved for the team and survive a refresh and a later pull', async ({ page }) => {
   await page.goto('');
-  await login(page, 'Người duyệt H', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt H');
   await page.reload();
   await page.waitForLoadState('networkidle');
   const card = page.locator('article').first();
@@ -696,7 +702,7 @@ test('source tile "Kiểm tra nhanh": checks the publisher now (1 listing page +
   // the shared configuration lists the fixture publishers (the button needs the source's settings)
   const cur = ((await (await request.get('http://127.0.0.1:5181/config?profile=hcm')).json()) as { config: { settings: unknown } | null }).config;
   const A = 'https://fixture-a.example.vn';
-  const saved = await request.post('http://127.0.0.1:5181/config', { headers: { 'x-review-code': 'HCM-TEST-CODE', 'content-type': 'application/json' }, data: { profile: 'hcm', reviewer: 'Người duyệt K', settings: cur?.settings ?? {}, sources: [{ id: 'fixture-a', name: 'Báo mẫu thử A', baseUrl: A, rssUrls: [`${A}/rss/thoi-su.rss`], sectionUrls: [`${A}/thoi-su.htm`] }] } });
+  const saved = await request.post('http://127.0.0.1:5181/config', { headers: { 'x-review-code': await tokenOf(request, 'Người duyệt K'), 'content-type': 'application/json' }, data: { profile: 'hcm', reviewer: 'Người duyệt K', settings: cur?.settings ?? {}, sources: [{ id: 'fixture-a', name: 'Báo mẫu thử A', baseUrl: A, rssUrls: [`${A}/rss/thoi-su.rss`], sectionUrls: [`${A}/thoi-su.htm`] }] } });
   expect(saved.status()).toBe(200);
   await page.goto('');
   const btn = page.getByTestId('source-check-fixture-a');
@@ -704,7 +710,7 @@ test('source tile "Kiểm tra nhanh": checks the publisher now (1 listing page +
   await btn.click(); // not logged in → the login dialog
   await expect(page.getByRole('dialog', { name: 'Đăng nhập' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await login(page, 'Người duyệt K', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt K');
   const id = (await btn.getAttribute('data-testid'))!.replace('source-check-', '');
   await btn.click();
   const res = page.getByTestId(`source-check-result-${id}`);
@@ -719,7 +725,7 @@ test('collection token: expiry warning for everyone, replaced from Cài đặt a
   await page.goto('');
   const warn = page.getByTestId('token-warning');
   await expect(warn).toContainText(/Khóa thu thập hết hạn sau (9|10) ngày/);
-  await login(page, 'Người duyệt H', 'HCM-TEST-CODE');
+  await login(page, 'Người duyệt H');
   await warn.click(); // opens Cài đặt › Thời gian
   const dlg = page.getByRole('dialog', { name: 'Cài đặt' });
   const box = dlg.getByTestId('collect-token');
@@ -836,4 +842,14 @@ test('same account on a second device: my Liên quan / Không votes show on the 
   await other.goto('');
   await login(other, 'Người duyệt W');
   await expect(other.getByRole('button', { name: `Liên quan: ${title}`, exact: true })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('shared access code retired (21/11/2026): a browser still holding the old code is asked to sign in with an account', async ({ page, request }) => {
+  await page.addInitScript(() => localStorage.setItem('hcm-demo:reviewer', JSON.stringify({ name: 'Người cũ', code: 'HCM-TEST-CODE' })));
+  await page.goto('');
+  await expect(page.getByTestId('live-banner')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Đăng nhập duyệt tin' })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('hcm-demo:reviewer'))).toBe('null');
+  // the worker refuses the code itself
+  expect((await request.get('http://127.0.0.1:5181/me', { headers: { 'x-review-code': 'HCM-TEST-CODE' } })).status()).toBe(401);
 });

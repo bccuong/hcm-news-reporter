@@ -23,7 +23,7 @@ class MemKV implements KVLike {
   }
 }
 const env = {
-  REVIEWS: new MemKV(), ACCESS_CODE: 'HCM-TEST-CODE', EXPORT_TOKEN: 'test-export-token', ALLOWED_ORIGINS: 'https://tinbaochi.github.io',
+  REVIEWS: new MemKV(), EXPORT_TOKEN: 'test-export-token', ALLOWED_ORIGINS: 'https://tinbaochi.github.io',
   GITHUB_TOKEN: 'fake', GITHUB_REPO: 'tinbaochi/collector', COLLECT_WORKFLOW: 'pages.yml',
 };
 

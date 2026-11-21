@@ -793,7 +793,7 @@ function UsersPanel() {
             </button>
           </div>
         ) : (
-          <p className="text-xs text-slate-500">Bạn đang đăng nhập bằng mã truy cập cũ – hãy đăng xuất và đăng nhập bằng tài khoản.</p>
+          <p className="text-xs text-slate-500">Không đọc được tài khoản của phiên này – hãy đăng xuất rồi đăng nhập lại.</p>
         )}
       </Section>
       {isAdmin && (

@@ -1,5 +1,10 @@
 # ACCEPTANCE_REPORT — Evidence log (2026-11-16, session 13 update)
 
+## Session 14v changes in status (2026-11-21)
+| ID | Status | Evidence |
+|---|---|---|
+| SEC – web review access: personal accounts only (shared ACCESS_CODE retired) | PASS (code) / BLOCKED (live deploy) | tests/review-worker.test.ts: retired code → 401 on /me and /auto even with ACCESS_CODE still set; all endpoints exercised with an admin session; vitest 203/203. tests/ui-live/review.spec.ts "shared access code retired": stored old code dropped, login button shown, worker 401; live suite 20/20. Live worker not redeployed in this session (deploy needs the user's permission). |
+
 ## Session 13 changes in status
 | ID | Status | Evidence |
 |---|---|---|

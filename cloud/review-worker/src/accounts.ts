@@ -2,7 +2,7 @@
  * Reviewer accounts (20/11/2026): user name + password instead of one shared access code. Stored in the review KV
  * (key cfg:users), passwords as salted PBKDF2-SHA256 hashes – never in the repository, which is public. A login
  * returns a session token ("sess_…", KV sess:<token>, one year) that the web sends where it used to send the code,
- * so every other endpoint is unchanged. The old shared code still works (an admin session).
+ * so every other endpoint is unchanged. The old shared code was retired on 21/11/2026 (only sessions are accepted).
  */
 export interface UserRecord { u: string; name: string; role: 'admin' | 'reviewer'; salt: string; hash: string; at: string; by: string }
 export interface Session { u: string; name: string; role: 'admin' | 'reviewer' }
